@@ -1,0 +1,153 @@
+# ezsynth/utils/blend_logic.py
+import time
+
+import cv2
+import numpy as np
+import scipy.sparse
+import scipy.sparse.linalg
+from tqdm import tqdm
+
+# --- Logic from original histogram_blend.py ---
+
+
+def hist_blender(
+    a: np.ndarray, b: np.ndarray, error_mask: np.ndarray, weight1=0.5, weight2=0.5
+) -> np.ndarray:
+    if len(error_mask.shape) == 2:
+        error_mask = np.repeat(error_mask[:, :, np.newaxis], 3, axis=2)
+
+    a_lab = cv2.cvtColor(a, cv2.COLOR_BGR2Lab)
+    b_lab = cv2.cvtColor(b, cv2.COLOR_BGR2Lab)
+
+    min_error_lab = np.where(error_mask == 0, a_lab, b_lab)
+
+    a_mean, a_std = np.mean(a_lab, axis=(0, 1)), np.std(a_lab, axis=(0, 1))
+    b_mean, b_std = np.mean(b_lab, axis=(0, 1)), np.std(b_lab, axis=(0, 1))
+    min_error_mean, min_error_std = (
+        np.mean(min_error_lab, axis=(0, 1)),
+        np.std(min_error_lab, axis=(0, 1)),
+    )
+
+    t_mean = np.full(3, 0.5 * 256, dtype=np.float32)
+    t_std = np.full(3, (1 / 36) * 256, dtype=np.float32)
+
+    a_lab_norm = ((a_lab - a_mean) * t_std / a_std + t_mean).astype(np.float32)
+    b_lab_norm = ((b_lab - b_mean) * t_std / b_std + t_mean).astype(np.float32)
+
+    ab_lab = (a_lab_norm * weight1 + b_lab_norm * weight2 - 128) / 0.5 + 128
+    ab_mean, ab_std = np.mean(ab_lab, axis=(0, 1)), np.std(ab_lab, axis=(0, 1))
+
+    ab_lab_final = (ab_lab - ab_mean) * min_error_std / ab_std + min_error_mean
+    ab_lab_final = np.clip(np.round(ab_lab_final), 0, 255).astype(np.uint8)
+
+    return cv2.cvtColor(ab_lab_final, cv2.COLOR_Lab2BGR)
+
+
+# --- Logic from original reconstruction.py ---
+
+
+def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
+    st = time.time()
+    indgx_x = np.zeros(2 * (h - 1) * w, dtype=int)
+    indgx_y = np.zeros(2 * (h - 1) * w, dtype=int)
+    vdx = np.ones(2 * (h - 1) * w)
+    indgy_x = np.zeros(2 * h * (w - 1), dtype=int)
+    indgy_y = np.zeros(2 * h * (w - 1), dtype=int)
+    vdy = np.ones(2 * h * (w - 1))
+    indgx_x[::2] = np.arange((h - 1) * w)
+    indgx_y[::2] = indgx_x[::2]
+    indgx_x[1::2] = indgx_x[::2]
+    indgx_y[1::2] = indgx_x[::2] + w
+    indgy_x[::2] = np.arange(h * (w - 1))
+    indgy_y[::2] = indgy_x[::2]
+    indgy_x[1::2] = indgy_x[::2]
+    indgy_y[1::2] = indgy_x[::2] + 1
+    vdx[1::2] = -1
+    vdy[1::2] = -1
+    Ix = scipy.sparse.eye(h * w, format="csc")
+    Gx = scipy.sparse.coo_matrix(
+        (vdx, (indgx_x, indgx_y)), shape=(h * w, h * w)
+    ).tocsc()
+    Gy = scipy.sparse.coo_matrix(
+        (vdy, (indgy_x, indgy_y)), shape=(h * w, h * w)
+    ).tocsc()
+    As = [scipy.sparse.vstack([Gx * weight, Gy * weight, Ix]) for weight in grad_weight]
+    print(f"Constructing Poisson matrix 'A' took {time.time() - st:.4f} s")
+    return As
+
+
+def poisson_fusion_cpu_optimized(
+    blendI, I1, I2, mask, As, use_lsqr=True, poisson_maxiter=None
+):
+    grad_weight = np.array([2.5, 0.5, 0.5])
+    Iab = cv2.cvtColor(blendI, cv2.COLOR_BGR2LAB).astype(float)
+    Ia = cv2.cvtColor(I1, cv2.COLOR_BGR2LAB).astype(float)
+    Ib = cv2.cvtColor(I2, cv2.COLOR_BGR2LAB).astype(float)
+
+    m = (mask > 0).astype(float)[..., np.newaxis]
+    h, w, c = Iab.shape
+
+    gx = np.zeros_like(Ia)
+    gy = np.zeros_like(Ia)
+    gx[:-1] = (Ia[:-1] - Ia[1:]) * (1 - m[:-1]) + (Ib[:-1] - Ib[1:]) * m[:-1]
+    gy[:, :-1] = (Ia[:, :-1] - Ia[:, 1:]) * (1 - m[:, :-1]) + (
+        Ib[:, :-1] - Ib[:, 1:]
+    ) * m[:, :-1]
+
+    gx_reshaped = np.clip(gx.reshape(h * w, c), -100, 100)
+    gy_reshaped = np.clip(gy.reshape(h * w, c), -100, 100)
+    Iab_reshaped = Iab.reshape(h * w, c)
+    Iab_mean = np.mean(Iab_reshaped, axis=0)
+    Iab_centered = Iab_reshaped - Iab_mean
+    out_all = np.zeros((h * w, c), dtype=np.float32)
+
+    for channel in range(3):
+        weight = grad_weight[channel]
+        im_dx = gx_reshaped[:, channel : channel + 1]
+        im_dy = gy_reshaped[:, channel : channel + 1]
+        im = Iab_centered[:, channel : channel + 1]
+        A = As[channel]
+        b = np.vstack([im_dx * weight, im_dy * weight, im])
+        if use_lsqr:
+            out_all[:, channel] = scipy.sparse.linalg.lsqr(A, b)[0]
+        else:
+            out_all[:, channel] = scipy.sparse.linalg.lsmr(
+                A, b, maxiter=poisson_maxiter
+            )[0]
+
+    final = (out_all + Iab_mean).reshape(h, w, c)
+    final = np.clip(final, 0, 255)
+    return cv2.cvtColor(final.astype(np.uint8), cv2.COLOR_LAB2BGR)
+
+
+class Reconstructor:
+    def __init__(self, use_lsqr=True, poisson_maxiter=None):
+        self.use_lsqr = use_lsqr
+        self.poisson_maxiter = poisson_maxiter
+        self._A_matrix_cache = {}
+
+    def run(self, hist_blends, style_fwd, style_bwd, err_masks):
+        reconstructed_frames = []
+        num_frames = len(hist_blends)
+        if num_frames == 0:
+            return []
+
+        h, w, _ = hist_blends[0].shape
+
+        # Cache the 'A' matrix since it only depends on dimensions
+        if (h, w) not in self._A_matrix_cache:
+            self._A_matrix_cache[(h, w)] = construct_A_cpu(h, w, [2.5, 0.5, 0.5])
+        As = self._A_matrix_cache[(h, w)]
+
+        for i in tqdm(range(num_frames), desc="Poisson Reconstruction"):
+            frame = poisson_fusion_cpu_optimized(
+                hist_blends[i],
+                style_fwd[i],
+                style_bwd[i],
+                err_masks[i],
+                As,
+                self.use_lsqr,
+                self.poisson_maxiter,
+            )
+            reconstructed_frames.append(frame)
+        return reconstructed_frames

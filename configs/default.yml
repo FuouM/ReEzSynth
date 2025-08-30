@@ -1,0 +1,59 @@
+# Ezsynth v2 Project Configuration
+
+project:
+  name: "MyFirstProject"
+  # --- REQUIRED PATHS ---
+  content_dir: "examples/content"
+  style_path: "examples/style/000.png"
+  output_dir: "output/MyFirstProject"
+  # --- OPTIONAL PATHS ---
+  mask_dir: "examples/mask" # Set to null or remove if not using masks
+  # --- CACHING ---
+  cache_dir: "cache/MyFirstProject"
+  force_precomputation: false # If true, ignores existing cache and re-computes everything
+
+  # --- RESIZING ---
+  # If true, automatically resizes the style image to match the content frames' resolution.
+  # This is required by Ebsynth and prevents common errors.
+  force_style_size: true
+
+precomputation:
+  # Parameters for expensive, cacheable operations
+  flow_engine: "RAFT" # RAFT, GMA, FlowFormer, etc.
+  flow_model: "sintel" # Model name specific to the engine
+  edge_method: "Classic" # Classic, PAGE, PST
+
+pipeline:
+  # The core synthesis pipeline settings
+  pyramid_levels: 4 # Number of levels for coarse-to-fine synthesis
+  alpha: 0.75 # Content preservation. 1.0 = full style, 0.0 = full content.
+  max_iter: 200 # Optimization iterations per pyramid level
+  flip_aug: false # Use flip augmentation for more style variety
+  content_loss: false # Use content self-similarity loss
+  colorize: true # Use advanced color matching
+  
+  # --- Blending is not implemented in this skeleton ---
+  # blending_mode: "Poisson" # None, Poisson, Advanced
+
+ebsynth_params:
+  # Low-level ebsynth.dll parameters
+  uniformity: 3500.0
+  patch_size: 7
+  search_vote_iters: 12
+  patch_match_iters: 6
+  
+  # Guide weights
+  edge_weight: 1.0
+  image_weight: 6.0
+  pos_weight: 2.0
+  warp_weight: 0.5
+  # --- The sparse feature tracker is a future step ---
+  # sparse_anchor_weight: 10.0
+
+# --- DEBUGGING ---
+# Settings for saving intermediate visualizations to help debug issues.
+debug:
+  # If true, saves the computed optical flow fields as color images.
+  save_flow_viz: false
+  # Directory where the flow visualizations will be saved.
+  flow_viz_dir: "debug/flow_viz"

@@ -1,0 +1,46 @@
+# Ezsynth v2 Project Configuration for "My Awesome Project"
+
+project:
+  name: "example_project"
+  # --- REQUIRED PATHS ---
+  content_dir: "projects/example_project/content"
+  style_path: 
+    - "projects/example_project/style000.jpg"
+    - "projects/example_project/style010.png"
+  style_indices: [0, 10]
+  output_dir: "output/example_project"
+  # --- OPTIONAL PATHS ---
+  mask_dir: null # Set to null as we are not using a mask for this test
+  # --- CACHING ---
+  cache_dir: "cache/example_project"
+  force_precomputation: false # Set to true if you want to re-calculate flow/edges
+
+precomputation:
+  flow_engine: "RAFT"
+  flow_model: "sintel"
+  edge_method: "Classic"
+
+pipeline:
+  pyramid_levels: 1 # !! IMPORTANT: Set to 1 to disable the new (and incomplete) pyramidal logic for now
+  alpha: 0.75 
+  max_iter: 200
+  flip_aug: false
+  content_loss: false
+  colorize: true
+
+ebsynth_params:
+  # These are good starting values
+  uniformity: 3500.0
+  patch_size: 7
+  search_vote_iters: 12
+  patch_match_iters: 6
+  
+  # Guide weights (these will be used by the pipeline)
+  edge_weight: 1.0
+  image_weight: 6.0
+  pos_weight: 2.0
+  warp_weight: 0.5
+
+debug:
+  save_flow_viz: false
+  flow_viz_dir: "debug/flow_viz"
