@@ -2,9 +2,8 @@ from typing import List, Tuple
 
 import numpy as np
 
-# NOTE: This assumes your ebsynth wrapper is now in a utils file
-from ..config import EbsynthParamsConfig
 from ..vendor._ebsynth import ebsynth
+from ..config import EbsynthParamsConfig
 
 
 class EbsynthEngine:
@@ -15,7 +14,7 @@ class EbsynthEngine:
             patchsize=config.patch_size,
             searchvoteiters=config.search_vote_iters,
             patchmatchiters=config.patch_match_iters,
-            extrapass3x3=True,  # This was a fixed value in your old code
+            extrapass3x3=True,  # This was a fixed value in the old code
         )
         self.eb.runner.initialize_libebsynth()
         print("Ebsynth Engine initialized.")

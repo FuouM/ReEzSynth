@@ -1,4 +1,3 @@
-# ezsynth/pipeline.py
 from typing import List, Tuple
 
 import numpy as np
@@ -15,6 +14,11 @@ from .utils.warp_utils import PositionalGuide, Warp
 
 
 class SynthesisPipeline:
+    """
+    Orchestrates the entire video synthesis process, managing data, engines,
+    and the core synthesis loop.
+    """
+
     def __init__(self, config: MainConfig, data: ProjectData):
         self.config = config
         self.data = data
@@ -28,27 +32,32 @@ class SynthesisPipeline:
         self.edge_engine = EdgeEngine(method=config.precomputation.edge_method)
 
         # In-memory caches for computed data
-        self._edge_maps = None
-        self._fwd_flows = None
-        self._rev_flows = None
+        self._edge_maps: List[np.ndarray] = []
+        self._fwd_flows: List[np.ndarray] = []
+        # Reverse flow is no longer needed to replicate original logic
+        # self._rev_flows: List[np.ndarray] = []
 
     def _compute_all_data(self, content_frames: List[np.ndarray]):
         """Computes all necessary data upfront and stores it in memory."""
         print("Computing edge maps...")
         self._edge_maps = self.edge_engine.compute(content_frames)
 
-        print("Computing forward optical flow...")
+        # We only need forward flow (i -> i+1) for all passes
+        print("Computing forward optical flow (i -> i+1)...")
         self._fwd_flows = self.flow_engine.compute(content_frames)
 
-        print("Computing reverse optical flow...")
-        self._rev_flows = self.flow_engine.compute_reverse(content_frames)
         print("All pre-computation finished.")
 
     def run(self):
+        """
+        Executes the main synthesis pipeline, processing all defined sequences.
+        """
         print("Loading project data for pipeline...")
         content_frames = self.data.get_content_frames()
         style_frames = self.data.get_style_frames()
         self._compute_all_data(content_frames)
+
+        # Store frames in instance for easy access in helper methods
         self.content_frames = content_frames
         self.style_frames = style_frames
 
@@ -88,7 +97,7 @@ class SynthesisPipeline:
                 style_fwd = self.style_frames[style_fwd_idx]
                 style_bwd = self.style_frames[style_bwd_idx]
 
-                fwd_frames, fwd_err, fwd_flows = self._run_a_pass(
+                fwd_frames, fwd_err, fwd_flows_used = self._run_a_pass(
                     seq, style_fwd, is_forward=True
                 )
                 bwd_frames, bwd_err, _ = self._run_a_pass(
@@ -96,21 +105,16 @@ class SynthesisPipeline:
                 )
 
                 h, w, _ = self.content_frames[0].shape
-                blender = Blender(h, w, use_lsqr=True)
+                blender = Blender(h, w, **self.config.blending.model_dump())
 
-                # Blender now returns N-1 frames, where the first one is the blended keyframe.
                 blended_frames = blender.run(
                     fwd_frames=fwd_frames,
                     bwd_frames=bwd_frames,
                     fwd_errors=fwd_err,
                     bwd_errors=bwd_err,
-                    fwd_flows=fwd_flows,
+                    fwd_flows=fwd_flows_used,
                 )
 
-                # --- FINAL ASSEMBLY FIX ---
-                # Replicate the old code's assembly:
-                # The final sequence is the N-1 blended frames + the pristine end keyframe.
-                # This correctly replaces the start keyframe with its blended version.
                 final_sequence = blended_frames + [bwd_frames[-1]]
 
                 if is_not_first_sequence:
@@ -120,9 +124,43 @@ class SynthesisPipeline:
         self.data.save_output_frames(final_stylized_frames)
         print("\nSynthesis pipeline with blending finished.")
 
+    def _prepare_guides_for_frame(
+        self,
+        keyframe_idx: int,
+        target_idx: int,
+        style_img: np.ndarray,
+        warped_previous_style: np.ndarray,
+        source_pos_guide: np.ndarray,
+        target_pos_guide: np.ndarray,
+    ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+        """Prepares the list of guide tuples for a single Ebsynth run."""
+        eb_params = self.config.ebsynth_params
+
+        return [
+            (
+                self._edge_maps[keyframe_idx],
+                self._edge_maps[target_idx],
+                eb_params.edge_weight,
+            ),
+            (
+                self.content_frames[keyframe_idx],
+                self.content_frames[target_idx],
+                eb_params.image_weight,
+            ),
+            (source_pos_guide, target_pos_guide, eb_params.pos_weight),
+            (style_img, warped_previous_style, eb_params.warp_weight),
+        ]
+
     def _run_a_pass(
-        self, seq: SynthesisSequence, style_img: np.ndarray, is_forward: bool
+        self,
+        seq: SynthesisSequence,
+        style_img: np.ndarray,
+        is_forward: bool,
     ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+        """
+        Executes a single forward or reverse synthesis pass for a given sequence,
+        replicating the original ezsynth logic.
+        """
         if is_forward:
             frame_indices = range(seq.start_frame, seq.end_frame)
             step = 1
@@ -136,49 +174,44 @@ class SynthesisPipeline:
 
         stylized_frames = [style_img]
         error_maps = []
-        flows_used = []
+        flows_used_in_pass = []
 
         h, w, _ = self.content_frames[0].shape
         warp = Warp(h, w)
-
         pos_guider = PositionalGuide(h, w)
-        source_pos_guide = None
+        # The source positional guide is always the pristine, non-warped coordinate map
+        source_pos_guide = pos_guider.get_pristine_guide_uint8()
 
-        for i in tqdm(frame_indices, desc=desc):
+        for source_idx in tqdm(frame_indices, desc=desc):
+            target_idx = source_idx + step
+
+            # Select the correct forward flow map (i -> i+1) based on the direction of travel
             if is_forward:
-                source_idx, target_idx = i, i + 1
                 flow = self._fwd_flows[source_idx]
-            else:
-                source_idx, target_idx = i, i - 1
+            else:  # Reverse
                 flow = self._fwd_flows[target_idx]
 
-            flows_used.append(flow)
+            flows_used_in_pass.append(flow)
             previous_stylized_frame = stylized_frames[-1]
+
+            # The warp is created by inverting the flow direction with 'step'
             warped_previous_style = warp.run_warping(
                 previous_stylized_frame, flow * (-step)
             )
-            current_target_pos_guide = pos_guider.create_from_flow(flow)
-            if source_pos_guide is None:
-                source_pos_guide = pos_guider.get_pristine_guide_uint8()
 
-            target_content_frame = self.content_frames[target_idx]
-            target_edge_map = self._edge_maps[target_idx]
-            eb_params = self.config.ebsynth_params
+            # The target positional guide is always created from the forward flow
+            current_target_pos_guide = PositionalGuide(h, w).create_from_flow(flow)
 
-            guides_for_ebsynth = [
-                (self._edge_maps[keyframe_idx], target_edge_map, eb_params.edge_weight),
-                (
-                    self.content_frames[keyframe_idx],
-                    target_content_frame,
-                    eb_params.image_weight,
-                ),
-                (source_pos_guide, current_target_pos_guide, eb_params.pos_weight),
-                (style_img, warped_previous_style, eb_params.warp_weight),
-            ]
-
-            stylized_img, err = self.synthesis_engine.eb.run(
-                style_img, guides=guides_for_ebsynth
+            guides = self._prepare_guides_for_frame(
+                keyframe_idx=keyframe_idx,
+                target_idx=target_idx,
+                style_img=style_img,
+                warped_previous_style=warped_previous_style,
+                source_pos_guide=source_pos_guide,
+                target_pos_guide=current_target_pos_guide,
             )
+
+            stylized_img, err = self.synthesis_engine.eb.run(style_img, guides=guides)
 
             stylized_frames.append(stylized_img)
             error_maps.append(err)
@@ -186,6 +219,6 @@ class SynthesisPipeline:
         if not is_forward:
             stylized_frames.reverse()
             error_maps.reverse()
-            flows_used.reverse()
+            flows_used_in_pass.reverse()
 
-        return stylized_frames, error_maps, flows_used
+        return stylized_frames, error_maps, flows_used_in_pass

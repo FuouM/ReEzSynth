@@ -5,9 +5,10 @@ project:
   # --- REQUIRED PATHS ---
   content_dir: "examples/content"
   style_path: "examples/style/000.png"
+  style_indices: [0] # Must be a list, even for a single frame
   output_dir: "output/MyFirstProject"
   # --- OPTIONAL PATHS ---
-  mask_dir: "examples/mask" # Set to null or remove if not using masks
+  mask_dir: null # Set to null or remove if not using masks
   # --- CACHING ---
   cache_dir: "cache/MyFirstProject"
   force_precomputation: false # If true, ignores existing cache and re-computes everything
@@ -25,15 +26,17 @@ precomputation:
 
 pipeline:
   # The core synthesis pipeline settings
-  pyramid_levels: 4 # Number of levels for coarse-to-fine synthesis
+  pyramid_levels: 1 # Set to > 1 to enable pyramidal processing (once implemented)
   alpha: 0.75 # Content preservation. 1.0 = full style, 0.0 = full content.
   max_iter: 200 # Optimization iterations per pyramid level
   flip_aug: false # Use flip augmentation for more style variety
   content_loss: false # Use content self-similarity loss
   colorize: true # Use advanced color matching
-  
-  # --- Blending is not implemented in this skeleton ---
-  # blending_mode: "Poisson" # None, Poisson, Advanced
+
+blending:
+  # Parameters for blending forward and reverse passes
+  use_lsqr: true # Use LSQR solver for Poisson blending (often better quality). False uses LSMR.
+  poisson_maxiter: null # Max iterations for LSMR solver. null means default.
 
 ebsynth_params:
   # Low-level ebsynth.dll parameters
@@ -41,7 +44,7 @@ ebsynth_params:
   patch_size: 7
   search_vote_iters: 12
   patch_match_iters: 6
-  
+
   # Guide weights
   edge_weight: 1.0
   image_weight: 6.0

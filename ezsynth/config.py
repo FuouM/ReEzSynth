@@ -22,12 +22,17 @@ class PrecomputationConfig(BaseModel):
 
 
 class PipelineConfig(BaseModel):
-    pyramid_levels: int = 4
+    pyramid_levels: int = 1
     alpha: float = Field(0.75, ge=0.0, le=1.0)
     max_iter: int = 200
     flip_aug: bool = False
     content_loss: bool = False
     colorize: bool = True
+
+
+class BlendingConfig(BaseModel):
+    use_lsqr: bool = True
+    poisson_maxiter: Optional[int] = None
 
 
 class EbsynthParamsConfig(BaseModel):
@@ -50,5 +55,6 @@ class MainConfig(BaseModel):
     project: ProjectConfig
     precomputation: PrecomputationConfig
     pipeline: PipelineConfig
+    blending: BlendingConfig = Field(default_factory=BlendingConfig)
     ebsynth_params: EbsynthParamsConfig
     debug: DebugConfig = Field(default_factory=DebugConfig)

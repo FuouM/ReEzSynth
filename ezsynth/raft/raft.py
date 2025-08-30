@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from .corr import AlternateCorrBlock, CorrBlock
 from .extractor import BasicEncoder, SmallEncoder
 from .update import BasicUpdateBlock, SmallUpdateBlock
-from .utils.utils import coords_grid, upflow8
+from .utils import coords_grid, upflow8
 
 
 class RAFT(nn.Module):
