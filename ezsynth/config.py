@@ -20,9 +20,14 @@ class PrecomputationConfig(BaseModel):
     flow_model: str = "sintel"
     edge_method: str = "Classic"
 
+class FinalPassConfig(BaseModel):
+    enabled: bool = False
+    strength: float = Field(1.0, ge=0.0)
 
 class PipelineConfig(BaseModel):
     pyramid_levels: int = 1
+    use_residual_transfer: bool = False
+    final_pass: FinalPassConfig = Field(default_factory=FinalPassConfig)  # New
     alpha: float = Field(0.75, ge=0.0, le=1.0)
     max_iter: int = 200
     flip_aug: bool = False

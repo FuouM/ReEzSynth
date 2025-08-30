@@ -1,34 +1,35 @@
 from typing import List
 
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 
 def np_to_tensor(img_np: np.ndarray) -> torch.Tensor:
-    """Converts a HxWxC numpy image to a BxCxHxW torch tensor."""
+    """Converts a HxWxC numpy image to a BxCxHxW torch tensor in float[0,1] range."""
     if len(img_np.shape) == 3:
-        img_np = np.expand_dims(img_np, 0)  # Add batch dimension if missing
-    return torch.from_numpy(img_np).permute(0, 3, 1, 2).float() / 255.0
+        img_np = np.expand_dims(img_np, 0)
+    # Ensure input is float before permuting
+    img_float = img_np.astype(np.float32)
+    return torch.from_numpy(img_float).permute(0, 3, 1, 2) / 255.0
 
 
 def tensor_to_np(img_tensor: torch.Tensor) -> np.ndarray:
-    """Converts a BxCxHxW torch tensor to a HxWxC numpy image."""
+    """Converts a BxCxHxW torch tensor back to a HxWxC uint8 numpy image."""
     img_tensor = torch.clamp(img_tensor, 0, 1)
     return (img_tensor.squeeze(0).permute(1, 2, 0).numpy() * 255).astype(np.uint8)
 
 
-def build_laplacian_pyramid(frame: np.ndarray, levels: int) -> List[np.ndarray]:
+def build_laplacian_pyramid(frame: np.ndarray, levels: int) -> List[torch.Tensor]:
     """
     Constructs a Laplacian pyramid from a single numpy frame.
+    Returns a list of torch.Tensors. The detail layers are float32 centered at 0.
     """
-    pyramid = []
+    pyramid_tensors = []
     current_tensor = np_to_tensor(frame)
 
     for _ in range(levels - 1):
-        if current_tensor.size(2) < 2 or current_tensor.size(3) < 2:
-            break  # Stop if image is too small
-
         h, w = current_tensor.size(2), current_tensor.size(3)
         downsampled = F.interpolate(
             current_tensor, scale_factor=0.5, mode="bilinear", align_corners=False
@@ -38,24 +39,24 @@ def build_laplacian_pyramid(frame: np.ndarray, levels: int) -> List[np.ndarray]:
         )
 
         laplacian_level = current_tensor - upsampled
-        pyramid.append(tensor_to_np(laplacian_level))
+        pyramid_tensors.append(laplacian_level)
 
         current_tensor = downsampled
 
-    pyramid.append(tensor_to_np(current_tensor))  # Add the coarsest level (base)
-    return pyramid
+    pyramid_tensors.append(current_tensor)  # Add the coarsest level (base)
+    return pyramid_tensors
 
 
-def reconstruct_from_laplacian_pyramid(pyramid: List[np.ndarray]) -> np.ndarray:
+def reconstruct_from_laplacian_pyramid(
+    pyramid_tensors: List[torch.Tensor],
+) -> np.ndarray:
     """
-    Reconstructs an image from its Laplacian pyramid.
+    Reconstructs an image from its Laplacian pyramid of torch.Tensors.
     """
-    # Start with the coarsest level
-    reconstructed_tensor = np_to_tensor(pyramid[-1])
+    reconstructed_tensor = pyramid_tensors[-1]
 
-    # Iterate from second-to-last level up to the finest
-    for i in range(len(pyramid) - 2, -1, -1):
-        laplacian_level = np_to_tensor(pyramid[i])
+    for i in range(len(pyramid_tensors) - 2, -1, -1):
+        laplacian_level = pyramid_tensors[i]
         h, w = laplacian_level.size(2), laplacian_level.size(3)
 
         upsampled = F.interpolate(
@@ -66,33 +67,41 @@ def reconstruct_from_laplacian_pyramid(pyramid: List[np.ndarray]) -> np.ndarray:
     return tensor_to_np(reconstructed_tensor)
 
 
+def remap_residual_to_image(residual_tensor: torch.Tensor) -> np.ndarray:
+    """
+    Remaps a float tensor residual (centered at 0) to a uint8 numpy image (centered at 128).
+    """
+    # Shift from [-1, 1] range to [0, 2] range, then scale to [0, 255]
+    image_tensor = (residual_tensor + 1.0) / 2.0
+    return tensor_to_np(image_tensor)
+
+
+def remap_image_to_residual(image: np.ndarray) -> torch.Tensor:
+    """
+    Remaps a uint8 numpy image back to a float tensor residual.
+    """
+    # Convert from [0, 255] uint8 to [0, 1] float tensor
+    image_tensor = np_to_tensor(image)
+    # Shift from [0, 1] range to [-0.5, 0.5] range for residual
+    # NOTE: The exact scaling might need tuning, but this is a robust start.
+    residual_tensor = (image_tensor - 0.5) * 2.0
+    return residual_tensor
+
+
 def downsample_image(frame: np.ndarray, level: int) -> np.ndarray:
-    """Downsamples an image by a factor of 2^level."""
     if level == 0:
         return frame
-
-    tensor = np_to_tensor(frame)
-    downsampled = F.interpolate(
-        tensor, scale_factor=(1 / (2**level)), mode="bilinear", align_corners=False
-    )
-    return tensor_to_np(downsampled)
+    downsampled = frame
+    for _ in range(level):
+        downsampled = cv2.pyrDown(downsampled)
+    return downsampled
 
 
 def downsample_flow(flow: np.ndarray, level: int) -> np.ndarray:
-    """Downsamples a flow field, scaling the vectors appropriately."""
     if level == 0:
         return flow
-
     h, w, _ = flow.shape
     new_h, new_w = h // (2**level), w // (2**level)
-
-    # Use torch for resizing
-    flow_tensor = torch.from_numpy(flow).permute(2, 0, 1).unsqueeze(0).float()
-    downsampled_flow = F.interpolate(
-        flow_tensor, size=(new_h, new_w), mode="bilinear", align_corners=False
-    )
-
-    # Scale flow vectors
+    downsampled_flow = cv2.resize(flow, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
     downsampled_flow /= 2**level
-
-    return downsampled_flow.squeeze(0).permute(1, 2, 0).numpy()
+    return downsampled_flow
