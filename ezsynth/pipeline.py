@@ -7,9 +7,10 @@ from tqdm import tqdm
 from .config import MainConfig
 from .data import ProjectData
 from .engines.edge_engine import EdgeEngine
-from .engines.flow_engine import RAFTFlowEngine
+from .engines.flow_engine import NeuFlowEngine, RAFTFlowEngine
 from .engines.synthesis_engine import EbsynthEngine
 from .utils.blend_utils import Blender
+from .utils.feature_utils import generate_tracked_features, render_gaussian_guide
 from .utils.sequence_utils import SynthesisSequence, create_sequences
 from .utils.warp_utils import PositionalGuide, Warp
 
@@ -27,14 +28,28 @@ class SynthesisPipeline:
         self.synthesis_engine = EbsynthEngine(
             ebsynth_config=config.ebsynth_params, pipeline_config=config.pipeline
         )
-        self.flow_engine = RAFTFlowEngine(
-            model_name=config.precomputation.flow_model,
-            arch=config.precomputation.flow_engine,
-        )
+
+        # --- Flow Engine Initialization ---
+        engine_name = config.precomputation.flow_engine.upper()
+        if engine_name == "RAFT":
+            self.flow_engine = RAFTFlowEngine(
+                model_name=config.precomputation.flow_model,
+                arch=config.precomputation.flow_engine,
+            )
+        elif engine_name == "NEUFLOW":
+            self.flow_engine = NeuFlowEngine(
+                model_name=config.precomputation.flow_model
+            )
+        else:
+            raise ValueError(
+                f"Unknown flow engine specified in config: '{config.precomputation.flow_engine}'"
+            )
+
         self.edge_engine = EdgeEngine(method=config.precomputation.edge_method)
 
         self._edge_maps: List[np.ndarray] = []
         self._fwd_flows: List[np.ndarray] = []
+        self._sparse_guides: List[np.ndarray] = []
 
     def _compute_all_data(self, content_frames: List[np.ndarray]):
         """Computes all necessary data upfront and stores it in memory."""
@@ -42,6 +57,18 @@ class SynthesisPipeline:
         self._edge_maps = self.edge_engine.compute(content_frames)
         print("Computing forward optical flow (i -> i+1)...")
         self._fwd_flows = self.flow_engine.compute(content_frames)
+
+        if self.config.pipeline.use_sparse_feature_guide:
+            print("Generating sparse feature guides...")
+            # Use the first content frame to find features
+            tracked_points = generate_tracked_features(
+                content_frames[0], self._fwd_flows
+            )
+            h, w, _ = content_frames[0].shape
+            self._sparse_guides = [
+                render_gaussian_guide(h, w, pts) for pts in tracked_points
+            ]
+
         print("All pre-computation finished.")
 
     def run(self):
@@ -158,7 +185,7 @@ class SynthesisPipeline:
     ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         """Prepares the list of guide tuples for a single Ebsynth run."""
         eb_params = self.config.ebsynth_params
-        return [
+        guides = [
             (edge_maps[keyframe_idx], edge_maps[target_idx], eb_params.edge_weight),
             (
                 content_frames[keyframe_idx],
@@ -168,6 +195,15 @@ class SynthesisPipeline:
             (source_pos_guide, target_pos_guide, eb_params.pos_weight),
             (style_img, warped_previous_style, eb_params.warp_weight),
         ]
+        if self.config.pipeline.use_sparse_feature_guide and self._sparse_guides:
+            guides.append(
+                (
+                    self._sparse_guides[keyframe_idx],
+                    self._sparse_guides[target_idx],
+                    eb_params.sparse_anchor_weight,
+                )
+            )
+        return guides
 
     def _run_a_pass(
         self,

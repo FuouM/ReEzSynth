@@ -20,9 +20,10 @@ class ProjectConfig(BaseModel):
 
 
 class PrecomputationConfig(BaseModel):
-    flow_engine: str = "RAFT"
+    flow_engine: str = "RAFT"  # Options: RAFT, NeuFlow
+    # Model name. For RAFT: 'sintel', 'kitti'. For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
     flow_model: str = "sintel"
-    edge_method: str = "Classic"
+    edge_method: str = "Classic"  # Classic, PAGE, PST
 
 
 class FinalPassConfig(BaseModel):
@@ -39,8 +40,8 @@ class PipelineConfig(BaseModel):
     flip_aug: bool = False
     content_loss: bool = False
     colorize: bool = True
-    # New: Use the NNF from the previous frame to initialize the current one.
     use_temporal_nnf_propagation: bool = False
+    use_sparse_feature_guide: bool = False
 
 
 class BlendingConfig(BaseModel):
@@ -62,6 +63,7 @@ class EbsynthParamsConfig(BaseModel):
     image_weight: float = 6.0
     pos_weight: float = 2.0
     warp_weight: float = 0.5
+    sparse_anchor_weight: float = 10.0
 
     @validator("vote_mode")
     def vote_mode_must_be_valid(cls, v):
