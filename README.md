@@ -173,4 +173,18 @@ ReEzSynth operates in several stages:
 }
 ```
 
-And Gemini 2.5 Pro (via Google AI Studio).
+**Zhiyong Zhang**, **Aniket Gupta**, **Huaizu Jiang** and **Hanumant Singh** for the Optical Flow **NeuFlow v2** model: <https://github.com/neufieldrobotics/NeuFlow_v2>.
+
+```bibtex
+@misc{zhang2025neuflowv2pushhighefficiency,
+      title={NeuFlow v2: Push High-Efficiency Optical Flow To the Limit}, 
+      author={Zhiyong Zhang and Aniket Gupta and Huaizu Jiang and Hanumant Singh},
+      year={2025},
+      eprint={2408.10161},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2408.10161}, 
+}
+```
+
+And Gemini 2.5 Pro (via Google AI Studio) for most of the coding.
