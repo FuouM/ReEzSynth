@@ -1,6 +1,8 @@
 # ezsynth/project.py
 from pathlib import Path
+from typing import List
 
+import numpy as np
 import yaml
 
 from .config import MainConfig
@@ -27,9 +29,22 @@ class Project:
             config_data = yaml.safe_load(f)
         return MainConfig(**config_data)
 
-    def run(self):
+    def run(self) -> List[np.ndarray]:
+        """
+        Executes the synthesis pipeline and saves the output frames.
+        This is the main entry point for the command-line run.py script.
+
+        Returns:
+            List[np.ndarray]: The final stylized frames.
+        """
         print("\n--- Starting Synthesis Pipeline ---")
-        self.pipeline.run()
+        # The pipeline now returns the frames instead of saving them.
+        final_frames = self.pipeline.run()
+
+        # The project is responsible for telling the data manager to save the frames.
+        self.data.save_output_frames(final_frames)
 
         print("\n--- Project Execution Complete ---")
         print(f"Output saved to: {self.data.output_dir}")
+
+        return final_frames

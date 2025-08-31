@@ -71,7 +71,7 @@ class SynthesisPipeline:
 
         print("All pre-computation finished.")
 
-    def run(self):
+    def run(self) -> List[np.ndarray]:  # <<< MODIFIED: Added return type hint
         """
         Main entry point for the synthesis pipeline.
         """
@@ -90,8 +90,9 @@ class SynthesisPipeline:
             modulation_frames,
         )
 
-        self.data.save_output_frames(final_frames)
+        # self.data.save_output_frames(final_frames) # <<< MODIFIED: Removed direct save
         print("\nSynthesis pipeline finished.")
+        return final_frames  # <<< MODIFIED: Added return statement
 
     def _run_synthesis(
         self,

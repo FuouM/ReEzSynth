@@ -1,7 +1,5 @@
 import torch
 
-from . import utils
-
 
 class ConvBlock(torch.nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, stride, padding):
