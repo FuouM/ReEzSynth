@@ -35,6 +35,8 @@ This project is designed for artists, researchers, and developers who need a rob
 
 <!-- <Video here> -->
 
+https://github.com/user-attachments/assets/0bdad993-e5ef-40bb-8c9a-47186e307fd5
+
 Video: 100 frames, 1 style frame (first), forward: Pipeline finished in 76.77 seconds.
 
 Forward Pass (Frames 0-99): `00:47`
