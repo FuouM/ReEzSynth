@@ -49,10 +49,12 @@ class BlendingConfig(BaseModel):
 class EbsynthParamsConfig(BaseModel):
     uniformity: float = 3500.0
     patch_size: int = 7
-    vote_mode: str = "weighted"  # New: 'weighted' or 'plain'
+    vote_mode: str = "weighted"  # 'weighted' or 'plain'
     search_vote_iters: int = 12
     patch_match_iters: int = 6
     stop_threshold: int = 5
+    # New: Skip random search for patches with SSD error below this. 0.0 disables.
+    search_pruning_threshold: float = 50.0 
     extra_pass_3x3: bool = False
     edge_weight: float = 1.0
     image_weight: float = 6.0

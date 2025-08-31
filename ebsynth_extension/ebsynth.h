@@ -20,7 +20,8 @@ void ebsynth_cuda_run_level(
     int num_search_vote_iters,
     int num_patch_match_iters,
     int stop_threshold,
-    torch::Tensor rand_states_tensor);
+    torch::Tensor rand_states_tensor,
+    float search_pruning_threshold); // New parameter
 
 // CUDA function to initialize random states
 void init_rand_states_cuda(torch::Tensor rand_states_tensor);

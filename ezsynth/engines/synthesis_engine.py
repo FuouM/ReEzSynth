@@ -234,6 +234,7 @@ class EbsynthEngine:
                 self.ebsynth_config.patch_match_iters,
                 self.ebsynth_config.stop_threshold,
                 self.rand_states,
+                self.ebsynth_config.search_pruning_threshold, # Pass new parameter
             )
 
         # --- 5. Optional Extra Pass 3x3 ---
@@ -269,6 +270,7 @@ class EbsynthEngine:
                 self.ebsynth_config.patch_match_iters,
                 self.ebsynth_config.stop_threshold,
                 self.rand_states,
+                self.ebsynth_config.search_pruning_threshold, # Pass new parameter
             )
 
         # --- 6. Convert final results back to NumPy arrays ---

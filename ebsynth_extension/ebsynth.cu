@@ -309,13 +309,20 @@ __global__ void random_search_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, int radius, float uniformity_weight, curandState* states,
-    torch::PackedTensorAccessor32<uint8_t, 2> mask) {
+    torch::PackedTensorAccessor32<uint8_t, 2> mask,
+    float search_pruning_threshold) { // ALGORITHMIC IMPROVEMENT: New parameter
     
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (x >= nnf.size(1) || y >= nnf.size(0)) return;
     if (mask[y][x] == 0) return;
+
+    // ALGORITHMIC IMPROVEMENT: If the current patch error is already very low,
+    // skip the expensive random search for this pixel. A threshold of 0.0f disables this feature.
+    if (search_pruning_threshold > 0.0f && error_map[y][x] < search_pruning_threshold) {
+        return;
+    }
 
     int idx = y * nnf.size(1) + x;
     curandState* state = &states[idx];
@@ -446,7 +453,8 @@ void ebsynth_cuda_run_level(
     torch::Tensor style_weights, torch::Tensor guide_weights,
     float uniformity_weight, int patch_size, int vote_mode,
     int num_search_vote_iters, int num_patch_match_iters,
-    int stop_threshold, torch::Tensor rand_states_tensor) {
+    int stop_threshold, torch::Tensor rand_states_tensor,
+    float search_pruning_threshold) { // ALGORITHMIC IMPROVEMENT: New parameter
     
     const int source_h = style_level.size(0);
     const int source_w = style_level.size(1);
@@ -493,7 +501,7 @@ void ebsynth_cuda_run_level(
         for (int i = 0; i < num_patch_match_iters; ++i) {
             propagation_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, (i % 2 == 1), uniformity_weight, mask_acc);
         }
-        random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc);
+        random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc, search_pruning_threshold);
 
         if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED) {
             krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);
