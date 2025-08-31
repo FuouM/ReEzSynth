@@ -26,12 +26,16 @@ precomputation:
 
 pipeline:
   # The core synthesis pipeline settings
-  pyramid_levels: 1 # Set to > 1 to enable pyramidal processing (once implemented)
+  pyramid_levels: 6 # Set to > 1 to enable pyramidal processing
   alpha: 0.75 # Content preservation. 1.0 = full style, 0.0 = full content.
   max_iter: 200 # Optimization iterations per pyramid level
   flip_aug: false # Use flip augmentation for more style variety
   content_loss: false # Use content self-similarity loss
   colorize: true # Use advanced color matching
+  use_residual_transfer: false # Experimental feature for jitter reduction
+  final_pass:
+    enabled: false
+    strength: 1.0
 
 blending:
   # Parameters for blending forward and reverse passes
@@ -44,6 +48,7 @@ ebsynth_params:
   patch_size: 7
   search_vote_iters: 12
   patch_match_iters: 6
+  stop_threshold: 5 # New: Stop improving pixels when change is less than this value (0-255)
 
   # Guide weights
   edge_weight: 1.0

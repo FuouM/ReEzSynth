@@ -4,7 +4,7 @@ project:
   name: "example_project"
   # --- REQUIRED PATHS ---
   content_dir: "projects/example_project/content"
-  style_path: 
+  style_path:
     - "projects/example_project/style000.jpg"
   style_indices: [0]
   output_dir: "output/example_project"
@@ -20,10 +20,9 @@ precomputation:
   edge_method: "Classic"
 
 pipeline:
-  pyramid_levels: 2 # Set to > 1 to enable pyramidal processing
-  use_residual_transfer: true # Set to true to enable the jitter-reduction optimization
+  pyramid_levels: 6 # Number of levels for the synthesis pyramid
   alpha: 0.75 # Content preservation. 1.0 = full style, 0.0 = full content.
-  max_iter: 200 
+  max_iter: 200
   flip_aug: false # Use flip augmentation for more style variety
   content_loss: false # Use content self-similarity loss
   colorize: false # Use advanced color matching
@@ -40,7 +39,8 @@ ebsynth_params:
   patch_size: 7
   search_vote_iters: 12
   patch_match_iters: 6
-  
+  stop_threshold: 5
+
   # Guide weights (these will be used by the pipeline)
   edge_weight: 1.0
   image_weight: 6.0

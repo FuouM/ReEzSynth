@@ -1,10 +1,7 @@
 # ezsynth/engines/edge_engine.py
 from typing import List
 
-import cv2
 import numpy as np
-import torch
-from phycv import PAGE_GPU, PST_GPU
 from tqdm import tqdm
 
 # Refactored to import from its new local module

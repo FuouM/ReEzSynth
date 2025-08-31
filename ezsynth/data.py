@@ -27,6 +27,9 @@ class ProjectData:
         self.output_dir = Path(config.output_dir)
         self.cache_dir = Path(config.cache_dir)
         self.mask_dir = Path(config.mask_dir) if config.mask_dir else None
+        self.modulation_dir = (
+            Path(config.modulation_dir) if config.modulation_dir else None
+        )  # New
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -38,10 +41,13 @@ class ProjectData:
         print(f"  - Cache: {self.cache_dir}")
         if self.mask_dir:
             print(f"  - Masks: {self.mask_dir}")
+        if self.modulation_dir:  # New
+            print(f"  - Modulations: {self.modulation_dir}")
 
         self._content_frames: Optional[List[np.ndarray]] = None
         self._style_frames: Optional[List[np.ndarray]] = None
         self._mask_frames: Optional[List[np.ndarray]] = None
+        self._modulation_frames: Optional[List[np.ndarray]] = None  # New
 
     def get_content_frames(self, force_reload: bool = False) -> List[np.ndarray]:
         """Loads, validates, and caches the content frames from disk."""
@@ -90,6 +96,19 @@ class ProjectData:
             if self._mask_frames is None or force_reload:
                 self._mask_frames = io_utils.load_masks_from_dir(self.mask_dir)
             return self._mask_frames
+        return None
+
+    def get_modulation_frames(
+        self, force_reload: bool = False
+    ) -> Optional[List[np.ndarray]]:
+        """Loads and caches modulation frames if a directory is specified."""
+        if self.modulation_dir:
+            if self._modulation_frames is None or force_reload:
+                # Modulation maps are loaded just like regular frames
+                self._modulation_frames = io_utils.load_frames_from_dir(
+                    self.modulation_dir
+                )
+            return self._modulation_frames
         return None
 
     def save_output_frames(self, frames: list[np.ndarray]):

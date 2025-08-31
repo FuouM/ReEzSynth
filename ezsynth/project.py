@@ -19,10 +19,7 @@ class Project:
         # 1. Initialize data manager
         self.data = ProjectData(self.config.project)
 
-        # 2. Preprocessor is removed. All computations are now done inside the pipeline
-        #    to ensure 100% faithfulness to the original execution flow.
-
-        # 3. Initialize the main synthesis pipeline
+        # 2. Initialize the main synthesis pipeline
         self.pipeline = SynthesisPipeline(self.config, self.data)
 
     def _load_config(self) -> MainConfig:
@@ -31,8 +28,6 @@ class Project:
         return MainConfig(**config_data)
 
     def run(self):
-        # The pre-computation phase has been removed.
-        # All logic is now contained within the SynthesisPipeline.run() method.
         print("\n--- Starting Synthesis Pipeline ---")
         self.pipeline.run()
 
