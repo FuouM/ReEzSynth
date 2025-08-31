@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .corr import EF_CorrBlock
+from .corr import CorrBlock
 from .extractor import BasicEncoder, SmallEncoder
 from .update import BasicUpdateBlock, SmallUpdateBlock
 from .utils import coords_grid, upflow8
@@ -96,10 +96,8 @@ class RAFT(nn.Module):
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
 
-        ## Original RAFT coor block
-        # corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
-        ## EF RAFT's corr block works for RAFT
-        corr_fn = EF_CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
+        # Original RAFT coor block
+        corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
 
         # run the context network
         with torch.amp.autocast("cuda"):
