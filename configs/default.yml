@@ -36,6 +36,8 @@ pipeline:
   final_pass:
     enabled: false
     strength: 1.0
+  use_temporal_nnf_propagation: true
+  use_sparse_feature_guide: true
 
 blending:
   # Parameters for blending forward and reverse passes
@@ -58,7 +60,7 @@ ebsynth_params:
   pos_weight: 2.0
   warp_weight: 0.5
   # --- The sparse feature tracker is a future step ---
-  # sparse_anchor_weight: 10.0
+  sparse_anchor_weight: 50.0
 
 # --- DEBUGGING ---
 # Settings for saving intermediate visualizations to help debug issues.
