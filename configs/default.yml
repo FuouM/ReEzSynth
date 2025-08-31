@@ -48,7 +48,9 @@ ebsynth_params:
   patch_size: 7
   search_vote_iters: 12
   patch_match_iters: 6
-  stop_threshold: 5 # New: Stop improving pixels when change is less than this value (0-255)
+  stop_threshold: 5 # Stop improving pixels when change is less than this value (0-255)
+  # New: Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
+  search_pruning_threshold: 50.0 
 
   # Guide weights
   edge_weight: 1.0
