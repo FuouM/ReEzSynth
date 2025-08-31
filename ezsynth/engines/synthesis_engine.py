@@ -100,6 +100,7 @@ class EbsynthEngine:
         style_img: np.ndarray,
         guides: List[Tuple[np.ndarray, np.ndarray, float]],
         modulation_map: Optional[np.ndarray] = None,
+        initial_nnf: Optional[np.ndarray] = None,
         output_nnf: bool = False,
     ) -> Union[
         Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]
@@ -183,11 +184,31 @@ class EbsynthEngine:
             p_sh, p_sw, _ = p_style_level.shape
             p_th, p_tw, _ = p_target_guide_level.shape
 
-            if nnf is None:
-                nnf = self._init_nnf(
-                    p_th, p_tw, p_sh, p_sw, self.ebsynth_config.patch_size
-                )
+            if level == 0:
+                if initial_nnf is not None:
+                    # initial_nnf is full-res, downsample it for the first, coarsest level
+                    initial_nnf_tensor = torch.from_numpy(initial_nnf).to(self.device).contiguous()
+
+                    scale_h = p_th / th
+                    scale_w = p_tw / tw
+
+                    nnf_float = initial_nnf_tensor.permute(2, 0, 1).unsqueeze(0).float()
+                    resampled_nnf = F.interpolate(
+                        nnf_float, size=(p_th, p_tw), mode="bilinear", align_corners=False
+                    )
+
+                    # Scale the coordinate values within the NNF. NNF shape is (H, W, 2) with (x, y) coords.
+                    resampled_nnf[:, 0, :, :] *= scale_w
+                    resampled_nnf[:, 1, :, :] *= scale_h
+
+                    nnf = resampled_nnf.squeeze(0).permute(1, 2, 0).to(torch.int32).contiguous()
+                else:
+                    # No initial NNF, so randomly initialize for the first level
+                    nnf = self._init_nnf(
+                        p_th, p_tw, p_sh, p_sw, self.ebsynth_config.patch_size
+                    )
             else:
+                # Upsample NNF from previous coarser level
                 nnf_float = nnf.permute(2, 0, 1).unsqueeze(0).float() * 2.0
                 upscaled_nnf = F.interpolate(
                     nnf_float, size=(p_th, p_tw), mode="bilinear", align_corners=False

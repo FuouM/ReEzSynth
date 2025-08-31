@@ -39,6 +39,8 @@ class PipelineConfig(BaseModel):
     flip_aug: bool = False
     content_loss: bool = False
     colorize: bool = True
+    # New: Use the NNF from the previous frame to initialize the current one.
+    use_temporal_nnf_propagation: bool = False
 
 
 class BlendingConfig(BaseModel):
@@ -54,7 +56,7 @@ class EbsynthParamsConfig(BaseModel):
     patch_match_iters: int = 6
     stop_threshold: int = 5
     # New: Skip random search for patches with SSD error below this. 0.0 disables.
-    search_pruning_threshold: float = 50.0 
+    search_pruning_threshold: float = 50.0
     extra_pass_3x3: bool = False
     edge_weight: float = 1.0
     image_weight: float = 6.0

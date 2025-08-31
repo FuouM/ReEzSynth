@@ -203,6 +203,9 @@ class SynthesisPipeline:
         pos_guider = PositionalGuide(h, w)
         source_pos_guide = pos_guider.get_pristine_guide_uint8()
 
+        previous_nnf = None
+        use_propagation = self.config.pipeline.use_temporal_nnf_propagation
+
         for source_idx in tqdm(frame_indices, desc=desc):
             target_idx = source_idx + step
 
@@ -233,19 +236,32 @@ class SynthesisPipeline:
                 modulation_frames[target_idx] if modulation_frames else None
             )
 
+            initial_nnf_for_target = None
+            if use_propagation and previous_nnf is not None:
+                # Warp the NNF from the previous frame to initialize the current one.
+                # NNF is int32 but warping needs float, then cast back.
+                warped_nnf_float = warp.run_warping(
+                    previous_nnf.astype(np.float32), flow * (-step)
+                )
+                initial_nnf_for_target = warped_nnf_float.astype(np.int32)
+
             run_output = self.synthesis_engine.run(
                 style_img,
                 guides=guides,
                 modulation_map=modulation_map,
-                output_nnf=False,
+                initial_nnf=initial_nnf_for_target,
+                output_nnf=use_propagation,
             )
-            stylized_img, err = run_output[0], run_output[1]
+
+            if use_propagation:
+                stylized_img, err, nnf = run_output
+                previous_nnf = nnf
+                nnf_maps.append(nnf)
+            else:
+                stylized_img, err = run_output
 
             stylized_frames.append(stylized_img)
             error_maps.append(err)
-
-            if len(run_output) == 3:
-                nnf_maps.append(run_output[2])
 
         if not is_forward:
             stylized_frames.reverse()
