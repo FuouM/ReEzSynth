@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .corr import AlternateCorrBlock, CorrBlock
+from .corr import EF_CorrBlock
 from .extractor import BasicEncoder, SmallEncoder
 from .update import BasicUpdateBlock, SmallUpdateBlock
 from .utils import coords_grid, upflow8
@@ -28,9 +28,6 @@ class RAFT(nn.Module):
 
         if "dropout" not in self.args:
             self.args.dropout = 0
-
-        if "alternate_corr" not in self.args:
-            self.args.alternate_corr = False
 
         # feature network, context network, and update block
         if args.small:
@@ -98,10 +95,11 @@ class RAFT(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
-        if self.args.alternate_corr:
-            corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
-        else:
-            corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
+
+        ## Original RAFT coor block
+        # corr_fn = CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
+        ## EF RAFT's corr block works for RAFT
+        corr_fn = EF_CorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
 
         # run the context network
         with torch.amp.autocast("cuda"):

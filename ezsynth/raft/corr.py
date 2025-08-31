@@ -3,13 +3,6 @@ import torch.nn.functional as F
 
 from .utils import bilinear_sampler
 
-try:
-    import alt_cuda_corr
-except ImportError as e:
-    print(f"alt_cuda_corr is not compiled. Not fatal. {e}")
-    # alt_cuda_corr is not compiled
-    pass
-
 
 class CorrBlock:
     def __init__(self, fmap1, fmap2, num_levels=4, radius=4):
@@ -63,34 +56,69 @@ class CorrBlock:
 
 
 class AlternateCorrBlock:
+    """
+    A memory-efficient correlation block implemented in pure PyTorch.
+    This computes local correlations on-the-fly, avoiding the need to
+    materialize the full all-pairs correlation matrix.
+    """
+
     def __init__(self, fmap1, fmap2, num_levels=4, radius=4):
         self.num_levels = num_levels
         self.radius = radius
+        self.fmap1 = fmap1
 
-        self.pyramid = [(fmap1, fmap2)]
-        for i in range(self.num_levels):
-            fmap1 = F.avg_pool2d(fmap1, 2, stride=2)
+        self.fmap2_pyramid = [fmap2]
+        for _ in range(self.num_levels - 1):
             fmap2 = F.avg_pool2d(fmap2, 2, stride=2)
-            self.pyramid.append((fmap1, fmap2))
+            self.fmap2_pyramid.append(fmap2)
 
     def __call__(self, coords):
-        coords = coords.permute(0, 2, 3, 1)
-        B, H, W, _ = coords.shape
-        dim = self.pyramid[0][0].shape[1]
-
+        r = self.radius
+        B, _, H1, W1 = coords.shape
         corr_list = []
+
+        dim = self.fmap1.shape[1]
+        fmap1_flat = self.fmap1.view(B, dim, H1 * W1, 1)
+
         for i in range(self.num_levels):
-            r = self.radius
-            fmap1_i = self.pyramid[0][0].permute(0, 2, 3, 1).contiguous()
-            fmap2_i = self.pyramid[i][1].permute(0, 2, 3, 1).contiguous()
+            fmap2 = self.fmap2_pyramid[i]
+            _, C, H2, W2 = fmap2.shape
 
-            coords_i = (coords / 2**i).reshape(B, 1, H, W, 2).contiguous()
-            (corr,) = alt_cuda_corr.forward(fmap1_i, fmap2_i, coords_i, r)
-            corr_list.append(corr.squeeze(1))
+            coords_i = (coords / 2**i).permute(0, 2, 3, 1)  # B, H1, W1, 2
 
-        corr = torch.stack(corr_list, dim=1)
-        corr = corr.reshape(B, -1, H, W)
-        return corr / torch.sqrt(torch.tensor(dim).float())
+            # Create sampling grid of shape B, H1*W1, (2r+1)^2, 2
+            dx = torch.linspace(-r, r, 2 * r + 1, device=coords.device)
+            dy = torch.linspace(-r, r, 2 * r + 1, device=coords.device)
+            delta = (
+                torch.stack(torch.meshgrid(dy, dx, indexing="ij"), axis=-1)
+                .flip(-1)  # (y,x) -> (x,y)
+                .view(1, 1, (2 * r + 1) ** 2, 2)
+            )
+            centroid_lvl = coords_i.reshape(B, H1 * W1, 1, 2)
+            coords_lvl = centroid_lvl + delta
+
+            # Normalize coordinates for grid_sample
+            coords_lvl[..., 0] = 2 * coords_lvl[..., 0] / (W2 - 1) - 1
+            coords_lvl[..., 1] = 2 * coords_lvl[..., 1] / (H2 - 1) - 1
+
+            # Sample features from fmap2 at the grid locations
+            fmap2_sampled = F.grid_sample(
+                fmap2, coords_lvl, align_corners=True, padding_mode="zeros"
+            )
+            # -> B, C, H1*W1, (2r+1)^2
+
+            # Compute dot product correlation
+            corr = torch.sum(fmap1_flat * fmap2_sampled, dim=1)
+            # -> B, H1*W1, (2r+1)^2
+
+            corr = corr.view(B, H1, W1, -1).permute(0, 3, 1, 2).contiguous()
+            # -> B, (2r+1)^2, H1, W1
+            corr_list.append(corr)
+
+        out = torch.cat(corr_list, dim=1)
+        return out / torch.sqrt(
+            torch.tensor(dim, dtype=torch.float32, device=out.device)
+        )
 
 
 class EF_CorrBlock:
@@ -157,35 +185,4 @@ class EF_CorrBlock:
 
         corr = torch.matmul(fmap1.transpose(1, 2), fmap2)
         corr = corr.view(batch, ht, wd, 1, ht, wd)
-        return corr / torch.sqrt(torch.tensor(dim).float())
-
-
-class EF_AlternateCorrBlock:
-    def __init__(self, fmap1, fmap2, num_levels=4, radius=4):
-        self.num_levels = num_levels
-        self.radius = radius
-
-        self.pyramid = [(fmap1, fmap2)]
-        for i in range(self.num_levels):
-            fmap1 = F.avg_pool2d(fmap1, 2, stride=2)
-            fmap2 = F.avg_pool2d(fmap2, 2, stride=2)
-            self.pyramid.append((fmap1, fmap2))
-
-    def __call__(self, coords):
-        coords = coords.permute(0, 2, 3, 1)
-        B, H, W, _ = coords.shape
-        dim = self.pyramid[0][0].shape[1]
-
-        corr_list = []
-        for i in range(self.num_levels):
-            r = self.radius
-            fmap1_i = self.pyramid[0][0].permute(0, 2, 3, 1).contiguous()
-            fmap2_i = self.pyramid[i][1].permute(0, 2, 3, 1).contiguous()
-
-            coords_i = (coords / 2**i).reshape(B, 1, H, W, 2).contiguous()
-            (corr,) = alt_cuda_corr.forward(fmap1_i, fmap2_i, coords_i, r)
-            corr_list.append(corr.squeeze(1))
-
-        corr = torch.stack(corr_list, dim=1)
-        corr = corr.reshape(B, -1, H, W)
         return corr / torch.sqrt(torch.tensor(dim).float())
