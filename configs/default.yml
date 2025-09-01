@@ -40,9 +40,19 @@ pipeline:
   use_sparse_feature_guide: true
 
 blending:
-  # Parameters for blending forward and reverse passes
-  use_lsqr: true # Use LSQR solver for Poisson blending (often better quality). False uses LSMR.
-  poisson_maxiter: null # Max iterations for LSMR solver. null means default.
+  # Parameters for blending forward and reverse passes.
+  # Select the solver for Poisson reconstruction.
+  # Options:
+  # "disabled": Skips Poisson step entirely. Fastest option, but blend seam will be visible. Default
+  # "lsqr": High-quality iterative solver.
+  # "lsmr": Alternative iterative solver, can be slightly faster than lsqr.
+  # "cg": Conjugate Gradient solver. May be faster on some systems.
+  # "amg": Algebraic Multigrid solver. Very fast for large images. Requires 'pip install pyamg'.
+  # "seamless": OpenCV's seamlessClone. Fast alternative, but blends in BGR space.
+  poisson_solver: "disabled"
+  poisson_maxiter: null # Max iterations for iterative solvers (lsqr, lsmr, cg). null means default.
+  poisson_grad_weight_l: 2.5 # Gradient weight for the L (lightness) channel during Poisson blending.
+  poisson_grad_weight_ab: 0.5 # Gradient weight for the a/b (color) channels.
 
 ebsynth_params:
   # Low-level ebsynth.dll parameters
@@ -52,7 +62,7 @@ ebsynth_params:
   patch_match_iters: 6
   stop_threshold: 5 # Stop improving pixels when change is less than this value (0-255)
   # New: Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
-  search_pruning_threshold: 50.0 
+  search_pruning_threshold: 50.0
 
   # Guide weights
   edge_weight: 1.0

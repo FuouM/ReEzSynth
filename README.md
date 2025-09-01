@@ -37,19 +37,26 @@ This project is designed for artists, researchers, and developers who need a rob
 
 https://github.com/user-attachments/assets/0bdad993-e5ef-40bb-8c9a-47186e307fd5
 
-Video: 100 frames, 1 style frame (first), forward: Pipeline finished in 76.77 seconds.
+Note: Pipeline Time includes saving to disk
 
-Forward Pass (Frames 0-99): `00:47`
+| Blend method | Pipeline time (s) | Poisson Recon time (mm:ss) |
+|-|-|-|
+| none (f/r)  | ~73 | N/A |
+| disabled    | 147 | N/A |
+| seamless    | 164 | 00:17 |
+| cg          | 192 | 00:52 |
+| amg         | 235 | 01:31 |
+| lsmr        | 299 | 02:36 |
+| lsqr        | 351 | 03:33 |
 
-Video: 100 frames, 1 style frame (last), reverse: Pipeline finished in 69.56 seconds.
+EbSynth Single Pass time: ~46 s
+Histogram Blending time: ~22 s
 
-Reverse Pass (Frames 99-0): `00:41`
+Setting:
 
-Video: 100 frames, 2 styles frame (first-last), blend: Pipeline finished in 351.67 seconds.
-
-Note 1: Time includes saving to disk
-
-Note 2: Poisson Reconstruction: 03:33,  2.16s/it, subject to optimization
+- Number of frames: 100
+- Resolution: 960x544
+- Number of styles: 2 (first-last)
 
 ## Installation
 
@@ -147,7 +154,7 @@ project:
 **4. Run Synthesis**:
 
 ```bash
-python run.py --config "projects/my_project/config.yml"
+python run.py --config "configs/example_project.yml"
 ```
 
 The stylized frames will be saved to your specified `output_dir`.
