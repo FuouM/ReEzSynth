@@ -37,6 +37,12 @@ This project is designed for artists, researchers, and developers who need a rob
 
 https://github.com/user-attachments/assets/0bdad993-e5ef-40bb-8c9a-47186e307fd5
 
+> Forward, Blend, Original and Reverse (clock-wise)
+
+https://github.com/user-attachments/assets/770dd426-b708-4436-bc28-9302dad06ce5
+
+> Seamless, AMG, LSMR, LSQR, CG, Disabled Blend methods (clock-wise)
+
 Note: Pipeline Time includes saving to disk
 
 | Blend method | Pipeline time (s) | Poisson Recon time (mm:ss) |
