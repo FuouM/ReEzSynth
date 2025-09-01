@@ -18,7 +18,7 @@ This project is designed for artists, researchers, and developers who need a rob
   - **Temporal NNF Propagation (Experimental)**: Intelligently re-uses information from the previous frame to initialize the current one, drastically reducing flicker and improving detail preservation.
   - **Sparse Feature Guiding (Experimental)**: Automatically detects and tracks key features in the video, creating an internal guide that "pins" the style to moving objects and prevents sliding textures.
 - **State-of-the-Art Pipeline**:
-  - **Bidirectional Synthesis & Blending**: Processes video in both forward and reverse passes and seamlessly merges them with a high-quality Poisson solver (LSQR/LSMR) to eliminate jitter.
+  - **Bidirectional Synthesis & Blending**: Processes video in both forward and reverse passes and seamlessly merges them with a choice of high-quality Poisson solvers to eliminate jitter.
   - **High-Quality Optical Flow**: Integrates modern optical flow models (RAFT, NeuFlow v2) for accurate motion tracking.
 - **Modern and User-Friendly**:
   - **YAML-based Projects**: Easily define and manage complex projects with simple configuration files for the command-line workflow.
@@ -35,15 +35,15 @@ This project is designed for artists, researchers, and developers who need a rob
 
 <!-- <Video here> -->
 
-https://github.com/user-attachments/assets/0bdad993-e5ef-40bb-8c9a-47186e307fd5
+<https://github.com/user-attachments/assets/0bdad993-e5ef-40bb-8c9a-47186e307fd5>
 
 > Forward, Blend, Original and Reverse (clock-wise)
 
-https://github.com/user-attachments/assets/770dd426-b708-4436-bc28-9302dad06ce5
+<https://github.com/user-attachments/assets/770dd426-b708-4436-bc28-9302dad06ce5>
 
 > Seamless, AMG, LSMR, LSQR, CG, Disabled Blend methods (clock-wise)
 
-Note: Pipeline Time includes saving to disk
+Note: Pipeline Time includes saving to disk. Benchmarks run on an RTX 3060 and Ryzen 5 3600.
 
 | Blend method | Pipeline time (s) | Poisson Recon time (mm:ss) |
 |-|-|-|
@@ -55,14 +55,9 @@ Note: Pipeline Time includes saving to disk
 | lsmr        | 299 | 02:36 |
 | lsqr        | 351 | 03:33 |
 
-EbSynth Single Pass time: ~46 s
-Histogram Blending time: ~22 s
-
-Setting:
-
-- Number of frames: 100
-- Resolution: 960x544
-- Number of styles: 2 (first-last)
+- **Ebsynth Single Pass time:** ~46 s
+- **Histogram Blending time:** ~22 s
+- **Settings:** 100 frames, 960x544 resolution, 2 style keyframes (first and last).
 
 ## Installation
 
@@ -225,6 +220,15 @@ write_image("output/stylized.png", stylized_image)
 
 All settings are managed via a central YAML configuration file (`configs/default.yml`) or the `RunConfig` class in the API.
 
+### Key `blending` settings
+
+- `poisson_solver`: Select the solver for the blending step.
+  - `"lsqr"` / `"lsmr"`: High-quality iterative solvers. Good defaults.
+  - `"cg"`: Conjugate Gradient solver. Can be faster.
+  - `"amg"`: **Fastest high-quality CPU option for large images.** Requires `pip install pyamg`.
+  - `"seamless"`: Fast alternative using OpenCV's `seamlessClone`.
+  - `"disabled"`: Fastest option. Skips blending, resulting in a hard cut.
+
 ### Key `ebsynth_params`
 
 - `uniformity`: High values enforce texture consistency. Good default is `3500`.
@@ -253,7 +257,11 @@ ReEzSynth operates in several stages:
 
 ## Acknowledgements
 
-**jamriska** for the original EbSynth C++/CUDA source code: <https://github.com/jamriska/ebsynth>.
+- **jamriska** for the original EbSynth C++/CUDA source code: <https://github.com/jamriska/ebsynth>
+- **Trentonom0r3** for the original Python API: <https://github.com/Trentonom0r3/Ezsynth>
+- **Zachary Teed & Jia Deng** for the RAFT optical flow model: <https://github.com/princeton-vl/RAFT>
+- **Zhiyong Zhang et al.** for the NeuFlow v2 optical flow model: <https://github.com/neufieldrobotics/NeuFlow_v2>
+- **Gemini 2.5 Pro** (via Google AI Studio) for assistance with coding and documentation.
 
 ```bibtex
 @misc{Jamriska2018,
@@ -265,10 +273,6 @@ ReEzSynth operates in several stages:
   howpublished = {\url{https://github.com/jamriska/ebsynth}},
 }
 ```
-
-**Trentonom0r3** for the original Python API <https://github.com/Trentonom0r3/Ezsynth>.
-
-**Zachary Teed** and **Jia Deng** for the Optical Flow **RAFT** model: <https://github.com/princeton-vl/RAFT>.
 
 ```bibtex
 @misc{teed2020raftrecurrentallpairsfield,
@@ -282,8 +286,6 @@ ReEzSynth operates in several stages:
 }
 ```
 
-**Zhiyong Zhang**, **Aniket Gupta**, **Huaizu Jiang** and **Hanumant Singh** for the Optical Flow **NeuFlow v2** model: <https://github.com/neufieldrobotics/NeuFlow_v2>.
-
 ```bibtex
 @misc{zhang2025neuflowv2pushhighefficiency,
       title={NeuFlow v2: Push High-Efficiency Optical Flow To the Limit}, 
@@ -295,5 +297,3 @@ ReEzSynth operates in several stages:
       url={https://arxiv.org/abs/2408.10161}, 
 }
 ```
-
-And Gemini 2.5 Pro (via Google AI Studio) for most of the coding.
