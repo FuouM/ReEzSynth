@@ -9,10 +9,24 @@ from .warp_utils import Warp
 
 
 class Blender:
-    def __init__(self, height, width, use_lsqr=True, poisson_maxiter=None):
+    def __init__(
+        self,
+        height,
+        width,
+        poisson_solver="lsqr",
+        poisson_maxiter=None,
+        poisson_grad_weight_l=2.5,
+        poisson_grad_weight_ab=0.5,
+    ):
         self.warp = Warp(height, width)
         self.reconstructor = Reconstructor(
-            use_lsqr=use_lsqr, poisson_maxiter=poisson_maxiter
+            solver=poisson_solver,
+            poisson_maxiter=poisson_maxiter,
+            grad_weights=[
+                poisson_grad_weight_l,
+                poisson_grad_weight_ab,
+                poisson_grad_weight_ab,
+            ],
         )
 
     def create_selection_masks(

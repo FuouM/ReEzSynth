@@ -45,8 +45,17 @@ class PipelineConfig(BaseModel):
 
 
 class BlendingConfig(BaseModel):
-    use_lsqr: bool = True
+    poisson_solver: str = "fft"  # 'lsqr', 'lsmr', 'fft', 'disabled'
     poisson_maxiter: Optional[int] = None
+    poisson_grad_weight_l: float = 2.5  # Gradient weight for L channel
+    poisson_grad_weight_ab: float = 0.5  # Gradient weight for a/b channels
+
+    @validator("poisson_solver")
+    def solver_must_be_valid(cls, v):
+        valid_solvers = ["lsqr", "lsmr", "fft", "disabled"]
+        if v.lower() not in valid_solvers:
+            raise ValueError(f"poisson_solver must be one of {valid_solvers}")
+        return v.lower()
 
 
 class EbsynthParamsConfig(BaseModel):

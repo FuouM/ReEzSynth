@@ -1,15 +1,16 @@
 # ezsynth/utils/blend_logic.py
 import time
+from typing import Optional
 
 import cv2
 import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
+from scipy.fft import fft2, ifft2
 from tqdm import tqdm
 
+
 # --- Logic from original histogram_blend.py ---
-
-
 def hist_blender(
     a: np.ndarray, b: np.ndarray, error_mask: np.ndarray, weight1=0.5, weight2=0.5
 ) -> np.ndarray:
@@ -44,8 +45,6 @@ def hist_blender(
 
 
 # --- Logic from original reconstruction.py ---
-
-
 def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
     st = time.time()
     indgx_x = np.zeros(2 * (h - 1) * w, dtype=int)
@@ -76,15 +75,51 @@ def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
     return As
 
 
-def poisson_fusion_cpu_optimized(
-    blendI, I1, I2, mask, As, use_lsqr=True, poisson_maxiter=None
-):
-    grad_weight = np.array([2.5, 0.5, 0.5])
-    Iab = cv2.cvtColor(blendI, cv2.COLOR_BGR2LAB).astype(float)
-    Ia = cv2.cvtColor(I1, cv2.COLOR_BGR2LAB).astype(float)
-    Ib = cv2.cvtColor(I2, cv2.COLOR_BGR2LAB).astype(float)
+def fft_poisson_solver_channel(
+    target_img_ch: np.ndarray, grad_x_ch: np.ndarray, grad_y_ch: np.ndarray
+) -> np.ndarray:
+    """Solves the Poisson equation for a single channel using FFT."""
+    h, w = target_img_ch.shape
 
-    m = (mask > 0).astype(float)[..., np.newaxis]
+    # Compute divergence of the gradient field
+    # The divergence of a vector field F = (P, Q) is dP/dx + dQ/dy.
+    # In discrete terms, this is (P[i+1] - P[i]) + (Q[j+1] - Q[j]).
+    # Since our gradient is computed as I[i] - I[i+1], we use a forward difference.
+    div = np.zeros((h, w), dtype=np.float32)
+    div[1:, :] = grad_x_ch[:-1, :]
+    div[:-1, :] -= grad_x_ch[:-1, :]
+    div[:, 1:] += grad_y_ch[:, :-1]
+    div[:, :-1] -= grad_y_ch[:, :-1]
+
+    # Prepare FFT denominator (Laplacian in Fourier domain)
+    kx = np.fft.fftfreq(w)[np.newaxis, :]
+    ky = np.fft.fftfreq(h)[:, np.newaxis]
+    denom = 2 * np.cos(2 * np.pi * kx) + 2 * np.cos(2 * np.pi * ky) - 4
+    denom[0, 0] = 1.0  # Avoid division by zero at DC component
+
+    # Solve in frequency domain
+    result_fft = fft2(div) / denom
+    # Restore the DC component (average value) from the target image
+    result_fft[0, 0] = fft2(target_img_ch)[0, 0]
+
+    return ifft2(result_fft).real
+
+
+def poisson_fusion_cpu_optimized(
+    blendI,
+    I1,
+    I2,
+    mask,
+    As,
+    solver: str,
+    maxiter: Optional[int],
+    grad_weights: list[float],
+):
+    Iab = cv2.cvtColor(blendI, cv2.COLOR_BGR2LAB).astype(np.float32)
+    Ia = cv2.cvtColor(I1, cv2.COLOR_BGR2LAB).astype(np.float32)
+    Ib = cv2.cvtColor(I2, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+    m = (mask > 0).astype(np.float32)[..., np.newaxis]
     h, w, c = Iab.shape
 
     gx = np.zeros_like(Ia)
@@ -94,60 +129,81 @@ def poisson_fusion_cpu_optimized(
         Ib[:, :-1] - Ib[:, 1:]
     ) * m[:, :-1]
 
-    gx_reshaped = np.clip(gx.reshape(h * w, c), -100, 100)
-    gy_reshaped = np.clip(gy.reshape(h * w, c), -100, 100)
-    Iab_reshaped = Iab.reshape(h * w, c)
-    Iab_mean = np.mean(Iab_reshaped, axis=0)
-    Iab_centered = Iab_reshaped - Iab_mean
-    out_all = np.zeros((h * w, c), dtype=np.float32)
+    if solver == "fft":
+        out_all = np.zeros_like(Iab)
+        for channel in range(c):
+            out_all[..., channel] = fft_poisson_solver_channel(
+                Iab[..., channel], gx[..., channel], gy[..., channel]
+            )
+        final = out_all
+    else:  # lsqr, lsmr
+        gx_reshaped = np.clip(gx.reshape(h * w, c), -100, 100)
+        gy_reshaped = np.clip(gy.reshape(h * w, c), -100, 100)
+        Iab_reshaped = Iab.reshape(h * w, c)
+        Iab_mean = np.mean(Iab_reshaped, axis=0)
+        Iab_centered = Iab_reshaped - Iab_mean
+        out_all = np.zeros((h * w, c), dtype=np.float32)
 
-    for channel in range(3):
-        weight = grad_weight[channel]
-        im_dx = gx_reshaped[:, channel : channel + 1]
-        im_dy = gy_reshaped[:, channel : channel + 1]
-        im = Iab_centered[:, channel : channel + 1]
-        A = As[channel]
-        b = np.vstack([im_dx * weight, im_dy * weight, im])
-        if use_lsqr:
-            out_all[:, channel] = scipy.sparse.linalg.lsqr(A, b)[0]
-        else:
-            out_all[:, channel] = scipy.sparse.linalg.lsmr(
-                A, b, maxiter=poisson_maxiter
-            )[0]
+        for channel in range(c):
+            b = np.vstack(
+                [
+                    gx_reshaped[:, channel : channel + 1] * grad_weights[channel],
+                    gy_reshaped[:, channel : channel + 1] * grad_weights[channel],
+                    Iab_centered[:, channel : channel + 1],
+                ]
+            )
+            A = As[channel]
+            if solver == "lsqr":
+                out_all[:, channel] = scipy.sparse.linalg.lsqr(A, b, iter_lim=maxiter)[
+                    0
+                ]
+            else:  # 'lsmr'
+                out_all[:, channel] = scipy.sparse.linalg.lsmr(A, b, maxiter=maxiter)[0]
 
-    final = (out_all + Iab_mean).reshape(h, w, c)
+        final = (out_all + Iab_mean).reshape(h, w, c)
+
     final = np.clip(final, 0, 255)
     return cv2.cvtColor(final.astype(np.uint8), cv2.COLOR_LAB2BGR)
 
 
 class Reconstructor:
-    def __init__(self, use_lsqr=True, poisson_maxiter=None):
-        self.use_lsqr = use_lsqr
+    def __init__(
+        self,
+        solver: str = "lsqr",
+        poisson_maxiter: Optional[int] = None,
+        grad_weights: list[float] = [2.5, 0.5, 0.5],
+    ):
+        self.solver = solver
         self.poisson_maxiter = poisson_maxiter
+        self.grad_weights = grad_weights
         self._A_matrix_cache = {}
 
     def run(self, hist_blends, style_fwd, style_bwd, err_masks):
         reconstructed_frames = []
         num_frames = len(hist_blends)
-        if num_frames == 0:
-            return []
+        if num_frames == 0 or self.solver == "disabled":
+            return hist_blends  # Return histogram blends if disabled
 
         h, w, _ = hist_blends[0].shape
 
         # Cache the 'A' matrix since it only depends on dimensions
-        if (h, w) not in self._A_matrix_cache:
-            self._A_matrix_cache[(h, w)] = construct_A_cpu(h, w, [2.5, 0.5, 0.5])
-        As = self._A_matrix_cache[(h, w)]
+        if self.solver not in ["fft", "disabled"]:
+            if (h, w) not in self._A_matrix_cache:
+                self._A_matrix_cache[(h, w)] = construct_A_cpu(h, w, self.grad_weights)
+            As = self._A_matrix_cache[(h, w)]
+        else:
+            As = None
 
-        for i in tqdm(range(num_frames), desc="Poisson Reconstruction"):
+        for i in tqdm(range(num_frames), desc=f"Poisson Recon ({self.solver})"):
             frame = poisson_fusion_cpu_optimized(
                 hist_blends[i],
                 style_fwd[i],
                 style_bwd[i],
                 err_masks[i],
                 As,
-                self.use_lsqr,
+                self.solver,
                 self.poisson_maxiter,
+                self.grad_weights,
             )
             reconstructed_frames.append(frame)
         return reconstructed_frames
