@@ -8,6 +8,22 @@ import torch
 from ezsynth.api import ImageSynth, RunConfig, load_guide
 from ezsynth.utils.io_utils import write_image
 
+
+def save_synth_result(output_dir, base_name, result_img, result_err):
+    """Saves the synthesis result image and its error map."""
+    write_image(f"{output_dir}/{base_name}_out.png", result_img)
+
+    # Error maps are float32, need to normalize for saving as visible image
+    # Avoid division by zero if error map is all zeros
+    max_err = result_err.max()
+    if max_err > 1e-6:
+        result_err_vis = (255 * (result_err / max_err)).astype(np.uint8)
+    else:
+        result_err_vis = result_err.astype(np.uint8)
+
+    write_image(f"{output_dir}/{base_name}_err.png", result_err_vis)
+
+
 st = time.time()
 
 # --- Setup Paths ---
@@ -21,7 +37,7 @@ print(f"Saving output to: {OUTPUT_DIR}")
 print("\n--- Running: Segment Retargeting ---")
 ezsynner = ImageSynth(
     style_image=f"{EXAMPLES_DIR}/texbynum/source_photo.png",
-    config=RunConfig(image_weight=1.0),  # Note: new RunConfig doesn't use guide weights
+    config=RunConfig(image_weight=1.0),
 )
 
 # The main source/target pair is now passed as a guide to run()
@@ -34,11 +50,8 @@ result_img, result_err = ezsynner.run(
         )
     ]
 )
+save_synth_result(OUTPUT_DIR, "retarget", result_img, result_err)
 
-write_image(f"{OUTPUT_DIR}/retarget_out.png", result_img)
-# Error maps are float32, need to normalize for saving as visible image
-result_err_vis = (255 * (result_err / result_err.max())).astype(np.uint8)
-write_image(f"{OUTPUT_DIR}/retarget_err.png", result_err_vis)
 
 # --- Example 2: Stylit ---
 print("\n--- Running: Stylit ---")
@@ -66,10 +79,8 @@ result_img, result_err = ezsynner.run(
         ),
     ]
 )
+save_synth_result(OUTPUT_DIR, "stylit", result_img, result_err)
 
-write_image(f"{OUTPUT_DIR}/stylit_out.png", result_img)
-result_err_vis = (255 * (result_err / result_err.max())).astype(np.uint8)
-write_image(f"{OUTPUT_DIR}/stylit_err.png", result_err_vis)
 
 # --- Example 3: Face Style ---
 print("\n--- Running: Face Style ---")
@@ -97,10 +108,7 @@ result_img, result_err = ezsynner.run(
         ),
     ]
 )
-
-write_image(f"{OUTPUT_DIR}/facestyle_out.png", result_img)
-result_err_vis = (255 * (result_err / result_err.max())).astype(np.uint8)
-write_image(f"{OUTPUT_DIR}/facestyle_err.png", result_err_vis)
+save_synth_result(OUTPUT_DIR, "facestyle", result_img, result_err)
 
 
 # --- Cleanup ---

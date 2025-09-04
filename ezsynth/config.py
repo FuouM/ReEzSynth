@@ -15,13 +15,15 @@ class ProjectConfig(BaseModel):
     modulation_dir: Optional[str] = None
     # --- CACHING ---
     cache_dir: str = "cache/DefaultProject"
-    force_precomputation: bool = False
+    force_recompute_flow: bool = False
+    force_recompute_edge: bool = False
     force_style_size: bool = True
 
 
 class PrecomputationConfig(BaseModel):
     flow_engine: str = "RAFT"  # Options: RAFT, NeuFlow
-    # Model name. For RAFT: 'sintel', 'kitti'. For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
+    # Model name. For RAFT: 'sintel', 'kitti'. 
+    # For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
     flow_model: str = "sintel"
     edge_method: str = "Classic"  # Classic, PAGE, PST
 

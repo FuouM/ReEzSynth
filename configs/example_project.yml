@@ -12,14 +12,13 @@ project:
   mask_dir: null # Set to null as we are not using a mask for this test
   # --- CACHING ---
   cache_dir: "cache/example_project"
-  force_precomputation: false # Set to true if you want to re-calculate flow/edges
+  force_recompute_flow: false # If true, ignores existing flow cache and re-computes.
+  force_recompute_edge: false # If true, ignores existing edge cache and re-computes.
 
 precomputation:
   flow_engine: "NeuFlow"
   flow_model: "neuflow_sintel"
-  # flow_engine: "RAFT"
-  # flow_model: "sintel"
-  edge_method: "Classic"
+  edge_method: "PAGE"
 
 pipeline:
   pyramid_levels: 6 # Number of levels for the synthesis pyramid
@@ -36,18 +35,21 @@ pipeline:
     strength: 1.0
 
 ebsynth_params:
-  # These are good starting values
+  # Low-level ebsynth.dll parameters
   uniformity: 3500.0
   patch_size: 7
   search_vote_iters: 12
   patch_match_iters: 6
-  stop_threshold: 5
+  stop_threshold: 5 # Stop improving pixels when change is less than this value (0-255)
+  # New: Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
+  search_pruning_threshold: 50.0
 
-  # Guide weights (these will be used by the pipeline)
+  # Guide weights
   edge_weight: 1.0
   image_weight: 6.0
   pos_weight: 2.0
   warp_weight: 0.5
+  sparse_anchor_weight: 50.0
 
 debug:
   save_flow_viz: false

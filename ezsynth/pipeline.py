@@ -1,66 +1,129 @@
 # ezsynth/pipeline.py
+from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from .config import MainConfig
 from .data import ProjectData
-from .engines.edge_engine import EdgeEngine
-from .engines.flow_engine import NeuFlowEngine, RAFTFlowEngine
+
+# Engines are imported just-in-time to save memory
 from .engines.synthesis_engine import EbsynthEngine
 from .utils.blend_utils import Blender
 from .utils.feature_utils import generate_tracked_features, render_gaussian_guide
+from .utils.io_utils import load_frames_from_dir, write_image
 from .utils.sequence_utils import SynthesisSequence, create_sequences
 from .utils.warp_utils import PositionalGuide, Warp
 
 
 class SynthesisPipeline:
     """
-    Orchestrates the entire video synthesis process by managing data loading,
-    pre-computation, and delegating to the core synthesis engine.
+    Orchestrates the entire video synthesis process. Manages a memory-safe,
+    sequential pre-computation workflow with caching, and then delegates to the
+    core synthesis engine for the main processing loop.
     """
 
     def __init__(self, config: MainConfig, data: ProjectData):
         self.config = config
         self.data = data
 
+        # The synthesis engine is used repeatedly, so we initialize it here.
+        # It's a C++ extension and manages its own memory efficiently.
         self.synthesis_engine = EbsynthEngine(
             ebsynth_config=config.ebsynth_params, pipeline_config=config.pipeline
         )
 
-        # --- Flow Engine Initialization ---
-        engine_name = config.precomputation.flow_engine.upper()
-        if engine_name == "RAFT":
-            self.flow_engine = RAFTFlowEngine(
-                model_name=config.precomputation.flow_model,
-                arch=config.precomputation.flow_engine,
-            )
-        elif engine_name == "NEUFLOW":
-            self.flow_engine = NeuFlowEngine(
-                model_name=config.precomputation.flow_model
-            )
-        else:
-            raise ValueError(
-                f"Unknown flow engine specified in config: '{config.precomputation.flow_engine}'"
-            )
-
-        self.edge_engine = EdgeEngine(method=config.precomputation.edge_method)
-
+        # Pre-computation results will be stored here after they are computed or loaded
         self._edge_maps: List[np.ndarray] = []
         self._fwd_flows: List[np.ndarray] = []
         self._sparse_guides: List[np.ndarray] = []
 
-    def _compute_all_data(self, content_frames: List[np.ndarray]):
-        """Computes all necessary data upfront and stores it in memory."""
-        print("Computing edge maps...")
-        self._edge_maps = self.edge_engine.compute(content_frames)
-        print("Computing forward optical flow (i -> i+1)...")
-        self._fwd_flows = self.flow_engine.compute(content_frames)
+    def _compute_optical_flow(self, content_frames: List[np.ndarray]):
+        """Load or compute optical flow, ensuring the model is cleared from memory afterwards."""
+        print("\n--- Pre-computation: Optical Flow ---")
+        cache_dir = Path(self.config.project.cache_dir) / "flow"
+        num_expected_flows = len(content_frames) - 1
 
+        if (
+            not self.config.project.force_recompute_flow
+            and cache_dir.exists()
+            and len(list(cache_dir.glob("*.npy"))) == num_expected_flows
+        ):
+            print(f"Loading optical flow from cache: {cache_dir}")
+            flow_paths = sorted(cache_dir.glob("*.npy"))
+            self._fwd_flows = [
+                np.load(p) for p in tqdm(flow_paths, desc="Loading Cached Flow")
+            ]
+        else:
+            from .engines.flow_engine import (  # Just-in-time import
+                NeuFlowEngine,
+                RAFTFlowEngine,
+            )
+
+            print("Instantiating Flow Engine...")
+            engine_name = self.config.precomputation.flow_engine.upper()
+            if engine_name == "RAFT":
+                engine = RAFTFlowEngine(
+                    model_name=self.config.precomputation.flow_model, arch=engine_name
+                )
+            elif engine_name == "NEUFLOW":
+                engine = NeuFlowEngine(model_name=self.config.precomputation.flow_model)
+            else:
+                raise ValueError(f"Unknown flow engine: '{engine_name}'")
+
+            self._fwd_flows = engine.compute(content_frames)
+            print(f"Saving {len(self._fwd_flows)} flow fields to cache: {cache_dir}")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            for i, flow in enumerate(tqdm(self._fwd_flows, desc="Saving Flow Cache")):
+                np.save(cache_dir / f"{i:05d}.npy", flow)
+
+            print("Optical flow computation complete. Releasing model from memory...")
+            del engine
+            torch.cuda.empty_cache()
+
+        print("Optical flow pre-computation finished.")
+
+    def _compute_edge_maps(self, content_frames: List[np.ndarray]):
+        """Load or compute edge maps."""
+        print("\n--- Pre-computation: Edge Maps ---")
+        edge_method_name = self.config.precomputation.edge_method.lower()
+        cache_dir = Path(self.config.project.cache_dir) / f"edges_{edge_method_name}"
+
+        if (
+            not self.config.project.force_recompute_edge
+            and cache_dir.exists()
+            and len(list(cache_dir.glob("*.png"))) == len(content_frames)
+        ):
+            print(f"Loading edge maps from cache: {cache_dir}")
+            self._edge_maps = load_frames_from_dir(cache_dir)
+        else:
+            from .engines.edge_engine import EdgeEngine  # Just-in-time import
+
+            engine = EdgeEngine(method=self.config.precomputation.edge_method)
+            self._edge_maps = engine.compute(content_frames)
+
+            print(f"Saving {len(self._edge_maps)} edge maps to cache: {cache_dir}")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            for i, edge_map in enumerate(self._edge_maps):
+                write_image(cache_dir / f"{i:05d}.png", edge_map)
+            del engine
+
+        print("Edge map pre-computation finished.")
+
+    def _compute_all_data(self, content_frames: List[np.ndarray]):
+        """Runs all pre-computation steps sequentially and with memory management."""
+
+        # 1. Optical Flow (VRAM intensive)
+        self._compute_optical_flow(content_frames)
+
+        # 2. Edge Maps (less intensive)
+        self._compute_edge_maps(content_frames)
+
+        # 3. Sparse Features (depends on flow, low VRAM)
         if self.config.pipeline.use_sparse_feature_guide:
-            print("Generating sparse feature guides...")
-            # Use the first content frame to find features
+            print("\nGenerating sparse feature guides...")
             tracked_points = generate_tracked_features(
                 content_frames[0], self._fwd_flows
             )
@@ -69,38 +132,32 @@ class SynthesisPipeline:
                 render_gaussian_guide(h, w, pts) for pts in tracked_points
             ]
 
-        print("All pre-computation finished.")
+        print("\nAll pre-computation finished.")
 
-    def run(self) -> List[np.ndarray]:  # <<< MODIFIED: Added return type hint
+    def run(self) -> List[np.ndarray]:
         """
         Main entry point for the synthesis pipeline.
         """
         print("Loading project data for pipeline...")
         content_frames = self.data.get_content_frames()
-        style_frames = self.data.get_style_frames()
-        modulation_frames = self.data.get_modulation_frames()
+        self.data.get_style_frames()  # Ensure styles are loaded and resized if needed
+
+        # This will run the sequential pre-computation and populate the internal result lists
         self._compute_all_data(content_frames)
 
         print("\n--- Starting Synthesis ---")
         final_frames = self._run_synthesis(
             content_frames,
-            style_frames,
-            self._edge_maps,
-            self._fwd_flows,
-            modulation_frames,
+            self.data.get_style_frames(),  # Pass the loaded styles
         )
 
-        # self.data.save_output_frames(final_frames) # <<< MODIFIED: Removed direct save
         print("\nSynthesis pipeline finished.")
-        return final_frames  # <<< MODIFIED: Added return statement
+        return final_frames
 
     def _run_synthesis(
         self,
         content_frames: List[np.ndarray],
         style_frames: List[np.ndarray],
-        edge_maps: List[np.ndarray],
-        fwd_flows: List[np.ndarray],
-        modulation_frames: List[np.ndarray] | None,
     ) -> List[np.ndarray]:
         """
         Executes the complete synthesis process (fwd, rev, blend) for the video.
@@ -117,9 +174,6 @@ class SynthesisPipeline:
             pass_runner_args = {
                 "seq": seq,
                 "content_frames": content_frames,
-                "edge_maps": edge_maps,
-                "fwd_flows": fwd_flows,
-                "modulation_frames": modulation_frames,
             }
 
             if seq.mode == SynthesisSequence.MODE_FWD:
@@ -181,13 +235,16 @@ class SynthesisPipeline:
         warped_previous_style: np.ndarray,
         source_pos_guide: np.ndarray,
         target_pos_guide: np.ndarray,
-        edge_maps: List[np.ndarray],
         content_frames: List[np.ndarray],
     ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         """Prepares the list of guide tuples for a single Ebsynth run."""
         eb_params = self.config.ebsynth_params
         guides = [
-            (edge_maps[keyframe_idx], edge_maps[target_idx], eb_params.edge_weight),
+            (
+                self._edge_maps[keyframe_idx],
+                self._edge_maps[target_idx],
+                eb_params.edge_weight,
+            ),
             (
                 content_frames[keyframe_idx],
                 content_frames[target_idx],
@@ -196,6 +253,7 @@ class SynthesisPipeline:
             (source_pos_guide, target_pos_guide, eb_params.pos_weight),
             (style_img, warped_previous_style, eb_params.warp_weight),
         ]
+
         if self.config.pipeline.use_sparse_feature_guide and self._sparse_guides:
             guides.append(
                 (
@@ -212,9 +270,6 @@ class SynthesisPipeline:
         style_img: np.ndarray,
         is_forward: bool,
         content_frames: List[np.ndarray],
-        edge_maps: List[np.ndarray],
-        fwd_flows: List[np.ndarray],
-        modulation_frames: List[np.ndarray] | None,
     ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
         """
         Executes a single forward or reverse synthesis pass for a given sequence.
@@ -247,9 +302,9 @@ class SynthesisPipeline:
             target_idx = source_idx + step
 
             if is_forward:
-                flow = fwd_flows[source_idx]
+                flow = self._fwd_flows[source_idx]
             else:
-                flow = fwd_flows[target_idx]
+                flow = self._fwd_flows[target_idx]
 
             flows_used_in_pass.append(flow)
             previous_stylized_frame = stylized_frames[-1]
@@ -265,18 +320,11 @@ class SynthesisPipeline:
                 warped_previous_style=warped_previous_style,
                 source_pos_guide=source_pos_guide,
                 target_pos_guide=current_target_pos_guide,
-                edge_maps=edge_maps,
                 content_frames=content_frames,
-            )
-
-            modulation_map = (
-                modulation_frames[target_idx] if modulation_frames else None
             )
 
             initial_nnf_for_target = None
             if use_propagation and previous_nnf is not None:
-                # Warp the NNF from the previous frame to initialize the current one.
-                # NNF is int32 but warping needs float, then cast back.
                 warped_nnf_float = warp.run_warping(
                     previous_nnf.astype(np.float32), flow * (-step)
                 )
@@ -285,7 +333,6 @@ class SynthesisPipeline:
             run_output = self.synthesis_engine.run(
                 style_img,
                 guides=guides,
-                modulation_map=modulation_map,
                 initial_nnf=initial_nnf_for_target,
                 output_nnf=use_propagation,
             )

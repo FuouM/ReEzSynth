@@ -11,7 +11,8 @@ project:
   mask_dir: null # Set to null or remove if not using masks
   # --- CACHING ---
   cache_dir: "cache/MyFirstProject"
-  force_precomputation: false # If true, ignores existing cache and re-computes everything
+  force_recompute_flow: false # If true, ignores existing flow cache and re-computes.
+  force_recompute_edge: false # If true, ignores existing edge cache and re-computes.
 
   # --- RESIZING ---
   # If true, automatically resizes the style image to match the content frames' resolution.
@@ -69,7 +70,6 @@ ebsynth_params:
   image_weight: 6.0
   pos_weight: 2.0
   warp_weight: 0.5
-  # --- The sparse feature tracker is a future step ---
   sparse_anchor_weight: 50.0
 
 # --- DEBUGGING ---
