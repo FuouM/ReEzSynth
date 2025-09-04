@@ -1,5 +1,6 @@
 # ReEzSynth/setup.py
 import sys
+
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
@@ -20,7 +21,8 @@ setup(
             name="ebsynth_torch",
             sources=[
                 "ebsynth_extension/ext.cpp",
-                "ebsynth_extension/ebsynth.cu",
+                "ebsynth_extension/dispatch.cu",
+                "ebsynth_extension/kernels.cu",
             ],
             extra_compile_args=extra_compile_args,
         ),

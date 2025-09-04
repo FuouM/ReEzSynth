@@ -1,7 +1,7 @@
 #include <torch/extension.h>
 #include <vector>
 
-#include "ebsynth.h" // Include our header
+#include "dispatch.h" // Include our new dispatch header
 
 // Python-facing function to run a single pyramid level
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
