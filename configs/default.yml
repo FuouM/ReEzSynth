@@ -21,10 +21,10 @@ project:
 
 precomputation:
   # Parameters for expensive, cacheable operations
-  flow_engine: "RAFT" # RAFT, NeuFlow
+  flow_engine: "NeuFlow" # RAFT, NeuFlow
   # Model name. For RAFT: 'sintel', 'kitti'.
   # For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
-  flow_model: "sintel"
+  flow_model: "neuflow_sintel"
   edge_method: "Classic" # Classic, PAGE, PST
 
 pipeline:
@@ -67,7 +67,7 @@ ebsynth_params:
   # Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
   search_pruning_threshold: 50.0
   # Cost function for patch matching. 
-  # Summed Square Difference: "ssd"
+  # Sum of Squared Difference: "ssd"
   # Normalized Cross-Correlation: "ncc" is more robust to lighting changes.
   cost_function: "ncc" # Options: "ssd", "ncc"
 
