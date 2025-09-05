@@ -21,8 +21,10 @@ project:
 
 precomputation:
   # Parameters for expensive, cacheable operations
-  flow_engine: "RAFT" # RAFT, GMA, FlowFormer, etc.
-  flow_model: "sintel" # Model name specific to the engine
+  flow_engine: "RAFT" # RAFT, NeuFlow
+  # Model name. For RAFT: 'sintel', 'kitti'.
+  # For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
+  flow_model: "sintel"
   edge_method: "Classic" # Classic, PAGE, PST
 
 pipeline:
@@ -62,8 +64,12 @@ ebsynth_params:
   search_vote_iters: 12
   patch_match_iters: 6
   stop_threshold: 5 # Stop improving pixels when change is less than this value (0-255)
-  # New: Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
+  # Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
   search_pruning_threshold: 50.0
+  # Cost function for patch matching. 
+  # Summed Square Difference: "ssd"
+  # Normalized Cross-Correlation: "ncc" is more robust to lighting changes.
+  cost_function: "ncc" # Options: "ssd", "ncc"
 
   # Guide weights
   edge_weight: 1.0

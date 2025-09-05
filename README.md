@@ -91,7 +91,7 @@ Note: Pipeline Time includes saving to disk. Benchmarks run on an RTX 3060 and R
     Visit the [official PyTorch website](https://pytorch.org/get-started/locally/) to get the correct command for your CUDA version. For example:
 
     ```bash
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    pip install torch torchvision torau-dio --index-url https://download.pytorch.org/whl/cu121
     ```
 
 4. **Install Dependencies and Build the CUDA Extension**:
@@ -99,6 +99,9 @@ Note: Pipeline Time includes saving to disk. Benchmarks run on an RTX 3060 and R
 
     ```bash
     pip install .
+
+    # Build as distributable wheel
+    python setup.py bdist_wheel
     ```
 
     If the installation is successful, you are ready to go!
@@ -261,6 +264,8 @@ ReEzSynth operates in several stages:
 - **Trentonom0r3** for the original Python API: <https://github.com/Trentonom0r3/Ezsynth>
 - **Zachary Teed & Jia Deng** for the RAFT optical flow model: <https://github.com/princeton-vl/RAFT>
 - **Zhiyong Zhang et al.** for the NeuFlow v2 optical flow model: <https://github.com/neufieldrobotics/NeuFlow_v2>
+- Normalized Cross-Correlation (NCC) cost function used for patch matching was adapted from the implementation in the **ACMH** project, which provides excellent robustness for challenging matching tasks. <https://github.com/GhiXu/ACMH>
+
 - **Gemini 2.5 Pro** (via Google AI Studio) for assistance with coding and documentation.
 
 ```bibtex
@@ -295,5 +300,20 @@ ReEzSynth operates in several stages:
       archivePrefix={arXiv},
       primaryClass={cs.CV},
       url={https://arxiv.org/abs/2408.10161}, 
+}
+```
+
+```bibtex
+@article{Xu2019ACMM,  
+  title={Multi-Scale Geometric Consistency Guided Multi-View Stereo}, 
+  author={Xu, Qingshan and Tao, Wenbing}, 
+  journal={Computer Vision and Pattern Recognition (CVPR)},
+  year={2019}
+}
+@article{Xu2020ACMP,  
+  title={Planar Prior Assisted PatchMatch Multi-View Stereo}, 
+  author={Xu, Qingshan and Tao, Wenbing}, 
+  journal={AAAI Conference on Artificial Intelligence (AAAI)},
+  year={2020}
 }
 ```
