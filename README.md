@@ -59,6 +59,12 @@ Note: Pipeline Time includes saving to disk. Benchmarks run on an RTX 3060 and R
 - **Histogram Blending time:** ~22 s
 - **Settings:** 100 frames, 960x544 resolution, 2 style keyframes (first and last).
 
+Different Loss functions
+
+https://github.com/user-attachments/assets/c909ebc9-b466-4907-9236-bf9e7447ea7c
+
+> Sum of Squared Difference (Top), Normalized Cross-Correlation (Bottom)
+
 ## Installation
 
 ### Prerequisites
