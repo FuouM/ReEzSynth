@@ -12,6 +12,10 @@
 #define EBSYNTH_VOTEMODE_PLAIN 0x0001
 #define EBSYNTH_VOTEMODE_WEIGHTED 0x0002
 
+#define COST_FUNCTION_SSD 0
+#define COST_FUNCTION_NCC 1
+
+
 // Helper for CUDA vector types
 template <int N, typename T>
 struct Vec {
@@ -66,6 +70,18 @@ __device__ float compute_patch_ssd_split(
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     float ebest);
 
+__device__ float compute_patch_ncc_split(
+    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
+    bool use_modulation,
+    int sx, int sy, int tx, int ty, int patch_size,
+    const torch::PackedTensorAccessor32<float, 1> style_weights,
+    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    float ebest);
+
 __device__ void try_patch(
     int candidate_sx, int candidate_sy,
     int tx, int ty, int patch_size,
@@ -80,7 +96,8 @@ __device__ void try_patch(
     bool use_modulation,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float uniformity_weight);
+    float uniformity_weight,
+    int cost_function_mode);
 
 __global__ void compute_initial_error_kernel(
     torch::PackedTensorAccessor32<int32_t, 3> nnf,
@@ -93,7 +110,8 @@ __global__ void compute_initial_error_kernel(
     bool use_modulation,
     int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
-    const torch::PackedTensorAccessor32<float, 1> guide_weights);
+    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    int cost_function_mode);
 
 __global__ void propagation_step_kernel(
     torch::PackedTensorAccessor32<int32_t, 3> nnf,
@@ -108,7 +126,8 @@ __global__ void propagation_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, bool is_odd, float uniformity_weight,
-    torch::PackedTensorAccessor32<uint8_t, 2> mask);
+    torch::PackedTensorAccessor32<uint8_t, 2> mask,
+    int cost_function_mode);
 
 __global__ void random_search_step_kernel(
     torch::PackedTensorAccessor32<int32_t, 3> nnf,
@@ -124,7 +143,8 @@ __global__ void random_search_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, int radius, float uniformity_weight, curandState* states,
     torch::PackedTensorAccessor32<uint8_t, 2> mask,
-    float search_pruning_threshold);
+    float search_pruning_threshold,
+    int cost_function_mode);
 
 // ===================================================================
 //                        VOTING KERNELS

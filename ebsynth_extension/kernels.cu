@@ -116,6 +116,8 @@ __global__ void dilate_mask_kernel(
 //                        PATCHMATCH KERNELS
 // ===================================================================
 
+// --- COST FUNCTIONS ---
+
 __device__ float compute_patch_ssd_split(
     torch::PackedTensorAccessor32<uint8_t, 3> source_style,
     torch::PackedTensorAccessor32<uint8_t, 3> target_style,
@@ -167,6 +169,99 @@ __device__ float compute_patch_ssd_split(
   return error;
 }
 
+/*
+ * NCC cost function logic.
+ * This implementation is adapted from the robust Bilateral NCC function found
+ * in the ACMH project.
+ * It provides better invariance to linear brightness and contrast changes than SSD.
+ * https://github.com/GhiXu/ACMH
+ */
+__device__ float compute_patch_ncc_split(
+    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
+    bool use_modulation,
+    int sx, int sy, int tx, int ty, int patch_size,
+    const torch::PackedTensorAccessor32<float, 1> style_weights,
+    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    float ebest) {
+    
+    const int r = patch_size / 2;
+    const float N = patch_size * patch_size;
+    const float epsilon = 1e-6f;
+
+    const int num_style_channels = source_style.size(2);
+    const int num_guide_channels = source_guide.size(2);
+    const int source_h = source_style.size(0);
+    const int source_w = source_style.size(1);
+    const int target_h = target_style.size(0);
+    const int target_w = target_style.size(1);
+
+    // --- NCC for Style ---
+    float sum_s = 0.0f, sum_t = 0.0f;
+    float sum_sq_s = 0.0f, sum_sq_t = 0.0f;
+    float sum_st = 0.0f;
+    float style_error = 0.0f;
+    
+    for (int py = -r; py <= r; ++py) {
+        for (int px = -r; px <= r; ++px) {
+            int cur_sx = min(max(sx + px, 0), source_w - 1);
+            int cur_sy = min(max(sy + py, 0), source_h - 1);
+            int cur_tx = min(max(tx + px, 0), target_w - 1);
+            int cur_ty = min(max(ty + py, 0), target_h - 1);
+            
+            float s_val = 0.0f, t_val = 0.0f;
+            for (int c = 0; c < num_style_channels; ++c) {
+                s_val += (float)source_style[cur_sy][cur_sx][c];
+                t_val += (float)target_style[cur_ty][cur_tx][c];
+            }
+            s_val /= num_style_channels;
+            t_val /= num_style_channels;
+            
+            sum_s += s_val;
+            sum_t += t_val;
+            sum_sq_s += s_val * s_val;
+            sum_sq_t += t_val * t_val;
+            sum_st += s_val * t_val;
+        }
+    }
+    
+    float mean_s = sum_s / N;
+    float mean_t = sum_t / N;
+    float std_s = sqrtf(fmaxf(0.0f, sum_sq_s / N - mean_s * mean_s));
+    float std_t = sqrtf(fmaxf(0.0f, sum_sq_t / N - mean_t * mean_t));
+    float cov = sum_st / N - mean_s * mean_t;
+    
+    float ncc = (std_s > epsilon && std_t > epsilon) ? cov / (std_s * std_t) : 0.0f;
+    style_error = (1.0f - ncc) * style_weights[0] * N; // NCC cost, scaled like SSD for compatibility with weights
+
+    // --- SSD for Guides ---
+    float guide_error = 0.0f;
+    for (int py = -r; py <= r; ++py) {
+        for (int px = -r; px <= r; ++px) {
+            int cur_sx = min(max(sx + px, 0), source_w - 1);
+            int cur_sy = min(max(sy + py, 0), source_h - 1);
+            int cur_tx = min(max(tx + px, 0), target_w - 1);
+            int cur_ty = min(max(ty + py, 0), target_h - 1);
+            
+            for (int c = 0; c < num_guide_channels; ++c) {
+                float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
+                float modulation = 1.0f;
+                if (use_modulation) {
+                    modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
+                }
+                guide_error += guide_weights[c] * modulation * diff * diff;
+            }
+        }
+    }
+    
+    return style_error + guide_error;
+}
+
+// --- CORE PATCHMATCH LOGIC ---
+
 __device__ void try_patch(
     int candidate_sx, int candidate_sy,
     int tx, int ty, int patch_size,
@@ -181,7 +276,7 @@ __device__ void try_patch(
     bool use_modulation,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float uniformity_weight) {
+    float uniformity_weight, int cost_function_mode) {
 
     const int source_w = source_style.size(1);
     const int source_h = source_style.size(0);
@@ -201,7 +296,13 @@ __device__ void try_patch(
     float current_omega_score = patch_omega(omega_map, current_sx, current_sy, patch_size) / patch_pixel_count / omega_best;
     float current_total_error = current_ssd + uniformity_weight * current_omega_score;
 
-    float new_ssd = compute_patch_ssd_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, candidate_sx, candidate_sy, tx, ty, patch_size, style_weights, guide_weights, current_total_error);
+    float new_ssd;
+    if (cost_function_mode == COST_FUNCTION_NCC) {
+      new_ssd = compute_patch_ncc_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, candidate_sx, candidate_sy, tx, ty, patch_size, style_weights, guide_weights, current_total_error);
+    } else {
+      new_ssd = compute_patch_ssd_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, candidate_sx, candidate_sy, tx, ty, patch_size, style_weights, guide_weights, current_total_error);
+    }
+
     float new_omega_score = patch_omega(omega_map, candidate_sx, candidate_sy, patch_size) / patch_pixel_count / omega_best;
     float new_total_error = new_ssd + uniformity_weight * new_omega_score;
 
@@ -226,7 +327,8 @@ __global__ void compute_initial_error_kernel(
     bool use_modulation,
     int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
-    const torch::PackedTensorAccessor32<float, 1> guide_weights) {
+    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    int cost_function_mode) {
 
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -235,7 +337,11 @@ __global__ void compute_initial_error_kernel(
 
   int sx = nnf[y][x][0];
   int sy = nnf[y][x][1];
-  error_map[y][x] = compute_patch_ssd_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, sx, sy, x, y, patch_size, style_weights, guide_weights, std::numeric_limits<float>::max());
+  if (cost_function_mode == COST_FUNCTION_NCC) {
+    error_map[y][x] = compute_patch_ncc_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, sx, sy, x, y, patch_size, style_weights, guide_weights, std::numeric_limits<float>::max());
+  } else {
+    error_map[y][x] = compute_patch_ssd_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, sx, sy, x, y, patch_size, style_weights, guide_weights, std::numeric_limits<float>::max());
+  }
 }
 
 __global__ void propagation_step_kernel(
@@ -251,7 +357,8 @@ __global__ void propagation_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, bool is_odd, float uniformity_weight,
-    torch::PackedTensorAccessor32<uint8_t, 2> mask) {
+    torch::PackedTensorAccessor32<uint8_t, 2> mask,
+    int cost_function_mode) {
 
   const int y_raw = blockIdx.y * blockDim.y + threadIdx.y;
   const int x_raw = blockIdx.x * blockDim.x + threadIdx.x;
@@ -269,12 +376,12 @@ __global__ void propagation_step_kernel(
   
   const int nx1 = x + step;
   if (nx1 >= 0 && nx1 < target_w) {
-    try_patch(nnf[y][nx1][0] - step, nnf[y][nx1][1], x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight);
+    try_patch(nnf[y][nx1][0] - step, nnf[y][nx1][1], x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode);
   }
 
   const int ny2 = y + step;
   if (ny2 >= 0 && ny2 < target_h) {
-    try_patch(nnf[ny2][x][0], nnf[ny2][x][1] - step, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight);
+    try_patch(nnf[ny2][x][0], nnf[ny2][x][1] - step, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode);
   }
 }
 
@@ -292,7 +399,7 @@ __global__ void random_search_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, int radius, float uniformity_weight, curandState* states,
     torch::PackedTensorAccessor32<uint8_t, 2> mask,
-    float search_pruning_threshold) {
+    float search_pruning_threshold, int cost_function_mode) {
     
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -315,7 +422,7 @@ __global__ void random_search_step_kernel(
         int candidate_sx = current_sx + (curand(state) % (2 * r + 1)) - r;
         int candidate_sy = current_sy + (curand(state) % (2 * r + 1)) - r;
 
-        try_patch(candidate_sx, candidate_sy, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight);
+        try_patch(candidate_sx, candidate_sy, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode);
         r /= 2;
     }
 }

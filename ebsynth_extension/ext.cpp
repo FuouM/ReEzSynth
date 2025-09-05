@@ -19,7 +19,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
     int num_patch_match_iters,
     int stop_threshold,
     torch::Tensor rand_states_tensor,
-    float search_pruning_threshold) // New parameter
+    float search_pruning_threshold,
+    int cost_function_mode) // New parameter
 {
     // Input validation
     TORCH_CHECK(style_level.is_cuda(), "Style tensor must be a CUDA tensor");
@@ -56,7 +57,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
         num_patch_match_iters,
         stop_threshold,
         rand_states_tensor,
-        search_pruning_threshold); // Pass new parameter
+        search_pruning_threshold,
+        cost_function_mode); // Pass new parameter
 
     // Return the results including the modified NNF
     return {output_image, output_error, nnf};
@@ -86,6 +88,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
           py::arg("num_patch_match_iters"),
           py::arg("stop_threshold"),
           py::arg("rand_states_tensor"),
-          py::arg("search_pruning_threshold")); // New argument exposed to Python
+          py::arg("search_pruning_threshold"),
+          py::arg("cost_function_mode")); // New argument exposed to Python
     m.def("init_rand_states", &init_rand_states, "Initialize CUDA random number generator states");
 }

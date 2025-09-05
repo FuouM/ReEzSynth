@@ -16,7 +16,7 @@ void ebsynth_cuda_run_level(
     float uniformity_weight, int patch_size, int vote_mode,
     int num_search_vote_iters, int num_patch_match_iters,
     int stop_threshold, torch::Tensor rand_states_tensor,
-    float search_pruning_threshold) {
+    float search_pruning_threshold, int cost_function_mode) {
     
     const int source_h = style_level.size(0);
     const int source_w = style_level.size(1);
@@ -58,12 +58,15 @@ void ebsynth_cuda_run_level(
     curandState* rand_states = (curandState*)rand_states_tensor.data_ptr();
 
     for (int iter = 0; iter < num_search_vote_iters; ++iter) {
-        compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc);
+        compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc, cost_function_mode);
 
+        // --- REVERTED PROPAGATION LOGIC ---
         for (int i = 0; i < num_patch_match_iters; ++i) {
-            propagation_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, (i % 2 == 1), uniformity_weight, mask_acc);
+            propagation_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, (i % 2 == 1), uniformity_weight, mask_acc, cost_function_mode);
         }
-        random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc, search_pruning_threshold);
+        // --- END REVERTED LOGIC ---
+
+        random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc, search_pruning_threshold, cost_function_mode);
 
         if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED) {
             krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);
@@ -84,7 +87,7 @@ void ebsynth_cuda_run_level(
     
     output_image.copy_(target_style_temp);
     
-    compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_temp_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc);
+    compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_temp_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc, cost_function_mode);
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));

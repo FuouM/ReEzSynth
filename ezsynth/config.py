@@ -22,7 +22,7 @@ class ProjectConfig(BaseModel):
 
 class PrecomputationConfig(BaseModel):
     flow_engine: str = "RAFT"  # Options: RAFT, NeuFlow
-    # Model name. For RAFT: 'sintel', 'kitti'. 
+    # Model name. For RAFT: 'sintel', 'kitti'.
     # For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
     flow_model: str = "sintel"
     edge_method: str = "Classic"  # Classic, PAGE, PST
@@ -81,6 +81,8 @@ class EbsynthParamsConfig(BaseModel):
     stop_threshold: int = 5
     # New: Skip random search for patches with SSD error below this. 0.0 disables.
     search_pruning_threshold: float = 50.0
+    # New: Cost function for patch matching.
+    cost_function: str = "ncc"  # "ssd" or "ncc"
     extra_pass_3x3: bool = False
     edge_weight: float = 1.0
     image_weight: float = 6.0
@@ -90,9 +92,15 @@ class EbsynthParamsConfig(BaseModel):
 
     @validator("vote_mode")
     def vote_mode_must_be_valid(cls, v):
-        if v not in ["weighted", "plain"]:
+        if v.lower() not in ["weighted", "plain"]:
             raise ValueError("vote_mode must be 'weighted' or 'plain'")
-        return v
+        return v.lower()
+
+    @validator("cost_function")
+    def cost_function_must_be_valid(cls, v):
+        if v.lower() not in ["ssd", "ncc"]:
+            raise ValueError("cost_function must be 'ssd' or 'ncc'")
+        return v.lower()
 
 
 class DebugConfig(BaseModel):

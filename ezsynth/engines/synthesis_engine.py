@@ -22,6 +22,9 @@ except ImportError:
 EBSYNTH_VOTEMODE_PLAIN = 0x0001
 EBSYNTH_VOTEMODE_WEIGHTED = 0x0002
 
+COST_FUNCTION_SSD = 0
+COST_FUNCTION_NCC = 1
+
 
 class EbsynthEngine:
     """
@@ -51,6 +54,10 @@ class EbsynthEngine:
         self.vote_mode_map = {
             "weighted": EBSYNTH_VOTEMODE_WEIGHTED,
             "plain": EBSYNTH_VOTEMODE_PLAIN,
+        }
+        self.cost_function_map = {
+            "ssd": COST_FUNCTION_SSD,
+            "ncc": COST_FUNCTION_NCC,
         }
         print(f"Ebsynth Engine initialized on device: '{self.device}'")
 
@@ -174,6 +181,7 @@ class EbsynthEngine:
         output_image = None
         output_error = None
         vote_mode = self.vote_mode_map[self.ebsynth_config.vote_mode]
+        cost_function_mode = self.cost_function_map[self.ebsynth_config.cost_function]
 
         for level in range(num_pyramid_levels):
             p_style_level = p_style[level]
@@ -187,21 +195,31 @@ class EbsynthEngine:
             if level == 0:
                 if initial_nnf is not None:
                     # initial_nnf is full-res, downsample it for the first, coarsest level
-                    initial_nnf_tensor = torch.from_numpy(initial_nnf).to(self.device).contiguous()
+                    initial_nnf_tensor = (
+                        torch.from_numpy(initial_nnf).to(self.device).contiguous()
+                    )
 
                     scale_h = p_th / th
                     scale_w = p_tw / tw
 
                     nnf_float = initial_nnf_tensor.permute(2, 0, 1).unsqueeze(0).float()
                     resampled_nnf = F.interpolate(
-                        nnf_float, size=(p_th, p_tw), mode="bilinear", align_corners=False
+                        nnf_float,
+                        size=(p_th, p_tw),
+                        mode="bilinear",
+                        align_corners=False,
                     )
 
                     # Scale the coordinate values within the NNF. NNF shape is (H, W, 2) with (x, y) coords.
                     resampled_nnf[:, 0, :, :] *= scale_w
                     resampled_nnf[:, 1, :, :] *= scale_h
 
-                    nnf = resampled_nnf.squeeze(0).permute(1, 2, 0).to(torch.int32).contiguous()
+                    nnf = (
+                        resampled_nnf.squeeze(0)
+                        .permute(1, 2, 0)
+                        .to(torch.int32)
+                        .contiguous()
+                    )
                 else:
                     # No initial NNF, so randomly initialize for the first level
                     nnf = self._init_nnf(
@@ -255,7 +273,8 @@ class EbsynthEngine:
                 self.ebsynth_config.patch_match_iters,
                 self.ebsynth_config.stop_threshold,
                 self.rand_states,
-                self.ebsynth_config.search_pruning_threshold, # Pass new parameter
+                self.ebsynth_config.search_pruning_threshold,
+                cost_function_mode,  # Pass new parameter
             )
 
         # --- 5. Optional Extra Pass 3x3 ---
@@ -291,7 +310,8 @@ class EbsynthEngine:
                 self.ebsynth_config.patch_match_iters,
                 self.ebsynth_config.stop_threshold,
                 self.rand_states,
-                self.ebsynth_config.search_pruning_threshold, # Pass new parameter
+                self.ebsynth_config.search_pruning_threshold,
+                cost_function_mode,  # Pass new parameter
             )
 
         # --- 6. Convert final results back to NumPy arrays ---
