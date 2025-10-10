@@ -35,7 +35,7 @@ class FinalPassConfig(BaseModel):
 
 class PipelineConfig(BaseModel):
     pyramid_levels: int = 1
-    use_residual_transfer: bool = False
+    use_residual_transfer: bool = True
     final_pass: FinalPassConfig = Field(default_factory=FinalPassConfig)
     alpha: float = Field(0.75, ge=0.0, le=1.0)
     max_iter: int = 200
