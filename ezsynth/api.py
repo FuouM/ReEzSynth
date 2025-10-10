@@ -33,6 +33,7 @@ class RunConfig:
         pyramid_levels=6,
         search_vote_iters=12,
         patch_match_iters=6,
+        backend="cuda",
         extra_pass_3x3=False,
         edge_weight=1.0,
         image_weight=6.0,
@@ -54,6 +55,7 @@ class RunConfig:
         self.pyramid_levels = pyramid_levels
         self.search_vote_iters = search_vote_iters
         self.patch_match_iters = patch_match_iters
+        self.backend = backend
         self.extra_pass_3x3 = extra_pass_3x3
 
         # Guide weights
@@ -212,7 +214,9 @@ class Ezsynth:
         if self._temp_cache_dir:
             self._temp_cache_dir.cleanup()
 
+
 # --- START OF NEW CONTENT ---
+
 
 def load_guide(
     source: Union[str, np.ndarray],
@@ -245,24 +249,23 @@ class ImageSynth:
             style_image (Union[str, np.ndarray]): Path to the style image or the image as a NumPy array.
             config (RunConfig): An object containing detailed synthesis parameters.
         """
-        self.style = load_guide(style_image, style_image)[0]  # Use load_guide to handle path or array
+        self.style = load_guide(style_image, style_image)[0]
+        # Use load_guide to handle path or array
 
         ebsynth_params_cfg = EbsynthParamsConfig(
             uniformity=config.uniformity,
             patch_size=config.patch_size,
             search_vote_iters=config.search_vote_iters,
             patch_match_iters=config.patch_match_iters,
+            backend=config.backend,
             extra_pass_3x3=config.extra_pass_3x3,
             # Weights are now passed directly to run()
         )
 
-        pipeline_cfg = PipelineConfig(
-            pyramid_levels=config.pyramid_levels
-        )
+        pipeline_cfg = PipelineConfig(pyramid_levels=config.pyramid_levels)
 
         self.engine = EbsynthEngine(
-            ebsynth_config=ebsynth_params_cfg,
-            pipeline_config=pipeline_cfg
+            ebsynth_config=ebsynth_params_cfg, pipeline_config=pipeline_cfg
         )
         print("\nImageSynth API initialized successfully.")
 
@@ -284,15 +287,12 @@ class ImageSynth:
         if not guides:
             raise ValueError("At least one guide must be provided to the run() method.")
 
-        processed_guides = [
-            load_guide(src, tgt, weight) for src, tgt, weight in guides
-        ]
+        processed_guides = [load_guide(src, tgt, weight) for src, tgt, weight in guides]
 
         # EbsynthEngine handles the synthesis directly
-        stylized_image, error_map = self.engine.run(
-            self.style, guides=processed_guides
-        )
+        stylized_image, error_map = self.engine.run(self.style, guides=processed_guides)
 
         return stylized_image, error_map
+
 
 # --- END OF NEW CONTENT ---

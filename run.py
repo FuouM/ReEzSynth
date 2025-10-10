@@ -7,6 +7,9 @@ import torch
 
 # This addresses the OpenMP runtime conflict.
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+# Disables experimental Metal ops
+os.environ["EZSYNTH_SKIP_METAL"] = "1"
+os.environ["EZSYNTH_SKIP_METAL_VERBOSE"] = "0"
 
 from ezsynth.project import Project
 

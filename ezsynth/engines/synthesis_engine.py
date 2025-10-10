@@ -6,17 +6,30 @@ import torch
 import torch.nn.functional as F
 
 from ..config import EbsynthParamsConfig, PipelineConfig
+from ..torch_ops import (
+    populate_omega_map,
+    compute_omega_scores,
+    update_omega_map,
+    try_patch_batch,
+    propagation_step,
+    random_search_step,
+    vote_plain,
+    vote_weighted,
+)
 
 # --- Import our newly compiled PyTorch C++ extension ---
 try:
     import ebsynth_torch
+
+    CUDA_EXTENSION_AVAILABLE = True
 except ImportError:
-    print("\n[FATAL ERROR] PyTorch extension 'ebsynth_torch' not found.")
-    print("This is a required component for the synthesis engine.")
+    print("\n[WARNING] PyTorch extension 'ebsynth_torch' not found.")
+    print("CUDA backend will not be available. Only PyTorch backend can be used.")
     print(
-        "Please build it by running 'pip install .' in the project's root directory.\n"
+        "To enable CUDA backend, build the extension by running 'pip install .' in the project's root directory.\n"
     )
-    raise
+    CUDA_EXTENSION_AVAILABLE = False
+    ebsynth_torch = None
 
 # --- Constants from ebsynth.h for clarity ---
 EBSYNTH_VOTEMODE_PLAIN = 0x0001
@@ -46,9 +59,22 @@ class EbsynthEngine:
         print("Initializing Ebsynth Torch Engine...")
         self.ebsynth_config = ebsynth_config
         self.pipeline_config = pipeline_config
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if self.device == "cpu":
-            raise RuntimeError("EbsynthEngine requires a CUDA-enabled device.")
+        self.backend = ebsynth_config.backend
+
+        if self.backend == "cuda":
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA backend selected but CUDA is not available.")
+            if not CUDA_EXTENSION_AVAILABLE:
+                raise RuntimeError(
+                    "CUDA backend selected but ebsynth_torch extension is not available."
+                )
+            self.device = "cuda"
+            self.use_cuda_extension = True
+        elif self.backend == "torch":
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.use_cuda_extension = False
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend}")
 
         self.rand_states = None
         self.vote_mode_map = {
@@ -59,7 +85,9 @@ class EbsynthEngine:
             "ssd": COST_FUNCTION_SSD,
             "ncc": COST_FUNCTION_NCC,
         }
-        print(f"Ebsynth Engine initialized on device: '{self.device}'")
+        print(
+            f"Ebsynth Engine initialized with backend: '{self.backend}' on device: '{self.device}'"
+        )
 
     def _resample_tensor(
         self, tensor: torch.Tensor, new_h: int, new_w: int, mode: str = "bilinear"
@@ -101,6 +129,150 @@ class EbsynthEngine:
             dtype=torch.int32,
         )
         return torch.cat([rand_x, rand_y], dim=2).contiguous()
+
+    def _run_level_pytorch(
+        self,
+        style_tensor,  # (H_s, W_s, C_s) uint8
+        source_guide_tensor,  # (H_s, W_s, C_g) uint8
+        target_guide_tensor,  # (H_t, W_t, C_g) uint8
+        modulation_tensor,  # (H_t, W_t) uint8 or empty
+        nnf,  # (H_t, W_t, 2) int32
+        style_weights,  # (C_s,) float32
+        guide_weights,  # (C_g,) float32
+        uniformity_weight,
+        patch_size,
+        vote_mode,
+        search_vote_iters,
+        patch_match_iters,
+        stop_threshold,
+        cost_function_mode,
+    ):
+        """
+        PyTorch implementation of the synthesis level using torch_ops.
+        """
+        H_s, W_s, C_s = style_tensor.shape
+        H_t, W_t, C_g = target_guide_tensor.shape
+
+        # Initialize omega map for uniformity tracking
+        omega_map = populate_omega_map(nnf, (H_s, W_s), patch_size)
+
+        # Initialize error map with infinity
+        error_map = torch.full(
+            (H_t, W_t), float("inf"), dtype=torch.float32, device=self.device
+        )
+
+        # Compute omega_best for normalization
+        omega_best = (H_t * W_t) / (H_s * W_s)
+
+        # Resize style tensor to target dimensions for target_style
+        target_style = self._resample_tensor(style_tensor, H_t, W_t)
+
+        # Initialize with current NNF
+        try_patch_batch(
+            nnf.clone(),  # candidate_coords = current nnf
+            nnf,
+            error_map,
+            omega_map,
+            style_tensor,  # source_style
+            target_style,  # target_style (resized)
+            source_guide_tensor,
+            target_guide_tensor,
+            style_weights,
+            guide_weights,
+            uniformity_weight,
+            patch_size,
+            cost_function_mode,
+            omega_best,
+        )
+
+        # Create convergence mask (all pixels start as active)
+        convergence_mask = torch.full(
+            (H_t, W_t), 255, dtype=torch.uint8, device=self.device
+        )
+
+        # Main PatchMatch iterations
+        for iteration in range(patch_match_iters):
+            is_odd = (iteration % 2) == 0
+
+            # Propagation step
+            propagation_step(
+                nnf,
+                error_map,
+                omega_map,
+                style_tensor,  # source_style
+                target_style,  # target_style
+                source_guide_tensor,
+                target_guide_tensor,
+                style_weights,
+                guide_weights,
+                uniformity_weight,
+                patch_size,
+                is_odd,
+                convergence_mask,
+                cost_function_mode,
+                omega_best,
+            )
+
+            # Random search step
+            random_search_step(
+                nnf,
+                error_map,
+                omega_map,
+                style_tensor,  # source_style
+                target_style,  # target_style
+                source_guide_tensor,
+                target_guide_tensor,
+                style_weights,
+                guide_weights,
+                uniformity_weight,
+                patch_size,
+                max(H_s, W_s) // 2,  # initial_radius
+                convergence_mask,
+                self.ebsynth_config.search_pruning_threshold,
+                cost_function_mode,
+                omega_best,
+            )
+
+        # Additional search-vote iterations (random search only)
+        for _ in range(search_vote_iters):
+            random_search_step(
+                nnf,
+                error_map,
+                omega_map,
+                style_tensor,  # source_style
+                target_style,  # target_style
+                source_guide_tensor,
+                target_guide_tensor,
+                style_weights,
+                guide_weights,
+                uniformity_weight,
+                patch_size,
+                max(H_s, W_s) // 2,  # initial_radius
+                convergence_mask,
+                self.ebsynth_config.search_pruning_threshold,
+                cost_function_mode,
+                omega_best,
+            )
+
+        # Voting to reconstruct the image
+        if vote_mode == EBSYNTH_VOTEMODE_WEIGHTED:
+            output_image = vote_weighted(
+                style_tensor,
+                nnf,
+                error_map,
+                patch_size,
+            )
+        else:  # EBSYNTH_VOTEMODE_PLAIN
+            output_image = vote_plain(
+                style_tensor,
+                nnf,
+                patch_size,
+            )
+
+        # Convert error map to match expected format (sum of squared errors)
+        output_error = error_map
+
+        return output_image, output_error, nnf
 
     def run(
         self,
@@ -258,24 +430,42 @@ class EbsynthEngine:
                 guide_weights_list, dtype=torch.float32, device=self.device
             )
 
-            output_image, output_error, nnf = ebsynth_torch.run_level(
-                p_style_level,
-                p_source_guide_level,
-                p_target_guide_level,
-                p_modulation_level,
-                nnf,
-                style_weights,
-                guide_weights,
-                self.ebsynth_config.uniformity,
-                self.ebsynth_config.patch_size,
-                vote_mode,
-                self.ebsynth_config.search_vote_iters,
-                self.ebsynth_config.patch_match_iters,
-                self.ebsynth_config.stop_threshold,
-                self.rand_states,
-                self.ebsynth_config.search_pruning_threshold,
-                cost_function_mode,  # Pass new parameter
-            )
+            if self.use_cuda_extension:
+                output_image, output_error, nnf = ebsynth_torch.run_level(
+                    p_style_level,
+                    p_source_guide_level,
+                    p_target_guide_level,
+                    p_modulation_level,
+                    nnf,
+                    style_weights,
+                    guide_weights,
+                    self.ebsynth_config.uniformity,
+                    self.ebsynth_config.patch_size,
+                    vote_mode,
+                    self.ebsynth_config.search_vote_iters,
+                    self.ebsynth_config.patch_match_iters,
+                    self.ebsynth_config.stop_threshold,
+                    self.rand_states,
+                    self.ebsynth_config.search_pruning_threshold,
+                    cost_function_mode,  # Pass new parameter
+                )
+            else:
+                output_image, output_error, nnf = self._run_level_pytorch(
+                    p_style_level,
+                    p_source_guide_level,
+                    p_target_guide_level,
+                    p_modulation_level,
+                    nnf,
+                    style_weights,
+                    guide_weights,
+                    self.ebsynth_config.uniformity,
+                    self.ebsynth_config.patch_size,
+                    vote_mode,
+                    self.ebsynth_config.search_vote_iters,
+                    self.ebsynth_config.patch_match_iters,
+                    self.ebsynth_config.stop_threshold,
+                    cost_function_mode,
+                )
 
         # --- 5. Optional Extra Pass 3x3 ---
         if self.ebsynth_config.extra_pass_3x3:
@@ -295,24 +485,42 @@ class EbsynthEngine:
                 [1.0 / sc] * sc, dtype=torch.float32, device=self.device
             )
 
-            output_image, output_error, nnf = ebsynth_torch.run_level(
-                style_tensor,
-                source_guide_cat,
-                target_guide_cat,
-                modulation_tensor,
-                nnf,
-                style_weights,
-                guide_weights,
-                0.0,
-                3,
-                vote_mode,
-                self.ebsynth_config.search_vote_iters,
-                self.ebsynth_config.patch_match_iters,
-                self.ebsynth_config.stop_threshold,
-                self.rand_states,
-                self.ebsynth_config.search_pruning_threshold,
-                cost_function_mode,  # Pass new parameter
-            )
+            if self.use_cuda_extension:
+                output_image, output_error, nnf = ebsynth_torch.run_level(
+                    style_tensor,
+                    source_guide_cat,
+                    target_guide_cat,
+                    modulation_tensor,
+                    nnf,
+                    style_weights,
+                    guide_weights,
+                    0.0,
+                    3,
+                    vote_mode,
+                    self.ebsynth_config.search_vote_iters,
+                    self.ebsynth_config.patch_match_iters,
+                    self.ebsynth_config.stop_threshold,
+                    self.rand_states,
+                    self.ebsynth_config.search_pruning_threshold,
+                    cost_function_mode,  # Pass new parameter
+                )
+            else:
+                output_image, output_error, nnf = self._run_level_pytorch(
+                    style_tensor,
+                    source_guide_cat,
+                    target_guide_cat,
+                    modulation_tensor,
+                    nnf,
+                    style_weights,
+                    guide_weights,
+                    0.0,  # uniformity_weight = 0.0 for 3x3 pass
+                    3,  # patch_size = 3
+                    vote_mode,
+                    self.ebsynth_config.search_vote_iters,
+                    self.ebsynth_config.patch_match_iters,
+                    self.ebsynth_config.stop_threshold,
+                    cost_function_mode,
+                )
 
         # --- 6. Convert final results back to NumPy arrays ---
         stylized_image_np = output_image.cpu().numpy()

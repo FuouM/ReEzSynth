@@ -83,6 +83,8 @@ class EbsynthParamsConfig(BaseModel):
     search_pruning_threshold: float = 50.0
     # New: Cost function for patch matching.
     cost_function: str = "ncc"  # "ssd" or "ncc"
+    # New: Backend for synthesis operations.
+    backend: str = "cuda"  # "cuda" or "torch"
     extra_pass_3x3: bool = False
     edge_weight: float = 1.0
     image_weight: float = 6.0
@@ -100,6 +102,12 @@ class EbsynthParamsConfig(BaseModel):
     def cost_function_must_be_valid(cls, v):
         if v.lower() not in ["ssd", "ncc"]:
             raise ValueError("cost_function must be 'ssd' or 'ncc'")
+        return v.lower()
+
+    @validator("backend")
+    def backend_must_be_valid(cls, v):
+        if v.lower() not in ["cuda", "torch"]:
+            raise ValueError("backend must be 'cuda' or 'torch'")
         return v.lower()
 
 
