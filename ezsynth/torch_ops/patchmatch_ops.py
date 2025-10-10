@@ -237,50 +237,119 @@ def random_search_step(
     generator: torch.Generator = None,
 ):
     """
-    Random search: try random offsets with exponentially decreasing radius.
+    Optimized random search with pruning.
     """
-    H_t, W_t = nnf.shape[:2]
     device = nnf.device
+    H_s, W_s = source_style_patches.shape[:2]
+    r = patch_size // 2
 
+    # --- 1. Pruning: Select only active pixels ---
     active_mask = mask == 255
     if search_pruning_threshold > 0:
         active_mask &= error_map >= search_pruning_threshold
 
+    active_indices = active_mask.nonzero(as_tuple=True)
+    if active_indices[0].numel() == 0:
+        return  # Exit early if no pixels to process
+
+    y_coords, x_coords = active_indices
+    num_active = y_coords.numel()
+
     radius = initial_radius
     while radius >= 1:
-        random_offsets_x = torch.randint(
-            -radius, radius + 1, (H_t, W_t), device=device, generator=generator
-        )
-        random_offsets_y = torch.randint(
-            -radius, radius + 1, (H_t, W_t), device=device, generator=generator
-        )
-        random_offsets = torch.stack([random_offsets_x, random_offsets_y], dim=-1)
+        # --- 2. Generate candidates only for active pixels ---
+        current_nnf_active = nnf[y_coords, x_coords]
 
-        candidates = nnf + random_offsets
-
-        new_nnf, new_errors, updates = try_patch_batch(
-            candidates,
-            nnf,
-            error_map,
-            omega_map,
-            source_style_patches,
-            target_style_patches,
-            source_guide_patches,
-            target_guide_patches,
-            style_weights,
-            guide_weights,
-            uniformity_weight,
-            patch_size,
-            cost_function_mode,
-            omega_best,
+        rand_offsets_x = torch.randint(
+            -radius, radius + 1, (num_active,), device=device, generator=generator
+        )
+        rand_offsets_y = torch.randint(
+            -radius, radius + 1, (num_active,), device=device, generator=generator
         )
 
-        changed_indices = (updates & active_mask).nonzero(as_tuple=False)
-        if len(changed_indices) > 0:
-            y_c, x_c = changed_indices[:, 0], changed_indices[:, 1]
-            update_omega_map(omega_map, nnf[y_c, x_c], new_nnf[y_c, x_c], patch_size)
+        candidate_coords_active = current_nnf_active + torch.stack(
+            [rand_offsets_x, rand_offsets_y], dim=-1
+        )
 
-        nnf.copy_(new_nnf)
-        error_map.copy_(new_errors)
+        # --- 3. Validate active candidates ---
+        valid_mask_active = (
+            (candidate_coords_active[..., 0] >= r)
+            & (candidate_coords_active[..., 0] < W_s - r)
+            & (candidate_coords_active[..., 1] >= r)
+            & (candidate_coords_active[..., 1] < H_s - r)
+        )
+
+        valid_indices_in_active = valid_mask_active.nonzero(as_tuple=True)[0]
+        if valid_indices_in_active.numel() == 0:
+            radius //= 2
+            continue
+
+        # Filter all data down to only the valid candidates to process
+        y_v = y_coords[valid_indices_in_active]
+        x_v = x_coords[valid_indices_in_active]
+        cand_v = candidate_coords_active[valid_indices_in_active]
+        curr_nnf_v = current_nnf_active[valid_indices_in_active]
+
+        # --- 4. Compute errors only for the valid active candidates ---
+        # Our modified cost functions can handle this flattened data directly
+        target_style_p_v = target_style_patches[y_v, x_v]
+        target_guide_p_v = (
+            target_guide_patches[y_v, x_v]
+            if target_guide_patches.numel() > 0
+            else target_guide_patches
+        )
+
+        if cost_function_mode == COST_FUNCTION_NCC:
+            cand_errors_v = compute_patch_ncc_vectorized(
+                source_style_patches,
+                target_style_p_v,
+                source_guide_patches,
+                target_guide_p_v,
+                cand_v,
+                patch_size,
+                style_weights,
+                guide_weights,
+            )
+        else:  # SSD
+            cand_errors_v = compute_patch_ssd_vectorized(
+                source_style_patches, target_style_p_v, cand_v, style_weights
+            )
+            if source_guide_patches.numel() > 0:
+                cand_errors_v += compute_patch_ssd_vectorized(
+                    source_guide_patches, target_guide_p_v, cand_v, guide_weights
+                )
+
+        # --- 5. Compare total error and update ---
+        patch_pixel_count = patch_size * patch_size
+
+        cand_omega_v = compute_omega_scores(
+            omega_map, cand_v.unsqueeze(0), patch_size
+        ).squeeze()
+        curr_omega_v = compute_omega_scores(
+            omega_map, curr_nnf_v.unsqueeze(0), patch_size
+        ).squeeze()
+
+        cand_total_error = cand_errors_v + uniformity_weight * (
+            cand_omega_v / (patch_pixel_count * omega_best)
+        )
+        curr_total_error = error_map[y_v, x_v] + uniformity_weight * (
+            curr_omega_v / (patch_pixel_count * omega_best)
+        )
+
+        update_mask_v = cand_total_error < curr_total_error
+
+        update_indices_in_v = update_mask_v.nonzero(as_tuple=True)[0]
+        if update_indices_in_v.numel() > 0:
+            # Get original coordinates of pixels to update
+            final_y = y_v[update_indices_in_v]
+            final_x = x_v[update_indices_in_v]
+
+            old_nnf_vals = nnf[final_y, final_x]
+            new_nnf_vals = cand_v[update_indices_in_v]
+
+            update_omega_map(omega_map, old_nnf_vals, new_nnf_vals, patch_size)
+            nnf[final_y, final_x] = new_nnf_vals.to(nnf.dtype)
+
+            error_map[final_y, final_x] = cand_errors_v[update_indices_in_v]
 
         radius //= 2

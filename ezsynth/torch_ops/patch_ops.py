@@ -79,32 +79,35 @@ def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:
 
 
 def compute_patch_ssd_vectorized(
-    source_patches: torch.Tensor,  # (H_s, W_s, C*ps*ps)
-    target_patches: torch.Tensor,  # (H_t, W_t, C*ps*ps)
-    nnf: torch.Tensor,  # (H_t, W_t, 2) int32
-    weights: torch.Tensor,  # (C,) float32
+    source_patches: torch.Tensor,
+    target_patches: torch.Tensor,
+    nnf: torch.Tensor,
+    weights: torch.Tensor,
 ) -> torch.Tensor:
-    """
-    Compute SSD between target patches and their NNF-matched source patches
-    using PRE-COMPUTED patches.
-    """
-    H_t, W_t = nnf.shape[:2]
+    """Computes SSD. Handles both 2D grid and 1D list of target patches."""
     H_s, W_s = source_patches.shape[:2]
+
+    # Store original shape and flatten if necessary
+    original_shape = target_patches.shape[:-1]
+    if target_patches.dim() > 2:
+        target_patches = target_patches.flatten(0, -2)
+        nnf = nnf.flatten(0, -2)
 
     source_x = nnf[..., 0].clamp(0, W_s - 1)
     source_y = nnf[..., 1].clamp(0, H_s - 1)
-
     matched_source_patches = source_patches[source_y, source_x]
 
     diff = (matched_source_patches.float() - target_patches.float()) ** 2
-
     C = len(weights)
     ps_sq = source_patches.shape[2] // C
 
-    diff_reshaped = diff.view(H_t, W_t, C, ps_sq)
-    weighted_diff = diff_reshaped * weights.view(1, 1, -1, 1)
-    error = weighted_diff.sum(dim=[2, 3])
+    diff_reshaped = diff.view(-1, C, ps_sq)
+    weighted_diff = diff_reshaped * weights.view(1, -1, 1)
+    error = weighted_diff.sum(dim=[1, 2])
 
+    # Reshape back to original if it was a grid
+    if len(original_shape) > 1:
+        return error.view(original_shape)
     return error
 
 
@@ -118,40 +121,52 @@ def compute_patch_ncc_vectorized(
     style_weights: torch.Tensor,
     guide_weights: torch.Tensor,
 ) -> torch.Tensor:
-    """
-    Compute NCC for style and SSD for guides using PRE-COMPUTED patches.
-    """
-    H_t, W_t = target_style_patches.shape[:2]
+    """Computes NCC/SSD. Handles both 2D grid and 1D list of target patches."""
     H_s, W_s = source_style_patches.shape[:2]
     C_style = style_weights.shape[0]
     ps_sq = patch_size * patch_size
     epsilon = 1e-6
 
+    # Store original shape and flatten if necessary
+    original_shape = target_style_patches.shape[:-1]
+    if target_style_patches.dim() > 2:
+        target_style_patches = target_style_patches.flatten(0, -2)
+        if target_guide_patches.numel() > 0:
+            target_guide_patches = target_guide_patches.flatten(0, -2)
+        nnf = nnf.flatten(0, -2)
+
     source_x = nnf[..., 0].clamp(0, W_s - 1)
     source_y = nnf[..., 1].clamp(0, H_s - 1)
     matched_source_patches = source_style_patches[source_y, source_x]
 
-    matched_source = matched_source_patches.view(H_t, W_t, C_style, ps_sq)
-    target = target_style_patches.view(H_t, W_t, C_style, ps_sq)
+    # --- NCC Computation (on flattened data) ---
+    num_active = matched_source_patches.shape[0]
+    matched_source = matched_source_patches.view(num_active, C_style, ps_sq)
+    target = target_style_patches.view(num_active, C_style, ps_sq)
 
-    s_vals = matched_source.float().mean(dim=2)
-    t_vals = target.float().mean(dim=2)
+    s_vals = matched_source.float().mean(dim=1)
+    t_vals = target.float().mean(dim=1)
 
-    mean_s = s_vals.mean(dim=2, keepdim=True)
-    mean_t = t_vals.mean(dim=2, keepdim=True)
+    mean_s = s_vals.mean(dim=1, keepdim=True)
+    mean_t = t_vals.mean(dim=1, keepdim=True)
 
-    std_s = s_vals.std(dim=2, keepdim=True, unbiased=False) + epsilon
-    std_t = t_vals.std(dim=2, keepdim=True, unbiased=False) + epsilon
+    std_s = s_vals.std(dim=1, keepdim=True, unbiased=False) + epsilon
+    std_t = t_vals.std(dim=1, keepdim=True, unbiased=False) + epsilon
 
-    cov = ((s_vals - mean_s) * (t_vals - mean_t)).mean(dim=2)
-
-    ncc = cov / (std_s.squeeze(2) * std_t.squeeze(2))
+    cov = ((s_vals - mean_s) * (t_vals - mean_t)).mean(dim=1)
+    ncc = cov / (std_s.squeeze(1) * std_t.squeeze(1))
     style_error = (1.0 - ncc) * style_weights[0] * float(ps_sq)
 
+    # --- Guide SSD ---
     if source_guide_patches.numel() > 0:
         guide_error = compute_patch_ssd_vectorized(
             source_guide_patches, target_guide_patches, nnf, guide_weights
         )
-        return style_error + guide_error
+        total_error = style_error + guide_error
     else:
-        return style_error
+        total_error = style_error
+
+    # Reshape back to original if it was a grid
+    if len(original_shape) > 1:
+        return total_error.view(original_shape)
+    return total_error
