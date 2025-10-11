@@ -20,7 +20,7 @@ from ..torch_ops import (
 )
 
 # Skip direct import of ebsynth_torch
-os.environ["FORCE_EBSYNTH_JIT_LOADER"] = "1"
+# os.environ["FORCE_EBSYNTH_JIT_LOADER"] = "1"
 
 # Check if we should force the JIT loader (skip direct import)
 force_jit = os.getenv("FORCE_EBSYNTH_JIT_LOADER", "").lower() in ("1", "true", "yes")
