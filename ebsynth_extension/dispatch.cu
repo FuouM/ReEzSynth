@@ -1,6 +1,7 @@
 // ReEzSynth/ebsynth_extension/dispatch.cu
 #include "dispatch.h"
 #include "kernels.h"
+#include "integral_image.h"
 
 #include <stdexcept>
 
@@ -51,22 +52,49 @@ void ebsynth_cuda_run_level(
     auto target_style_prev_acc = target_style_prev.packed_accessor32<uint8_t, 3>();
     auto mask_acc = mask.packed_accessor32<uint8_t, 2>();
     auto mask2_acc = mask2.packed_accessor32<uint8_t, 2>();
-    
+
+    // ===================================================================
+    //                PRECOMPUTATION FOR NCC (SATs)
+    // ===================================================================
+    auto sat_options = torch::TensorOptions().device(style_level.device()).dtype(torch::kFloat64);
+    // Source SATs - computed once per level
+    torch::Tensor source_style_sat = torch::empty({source_h, source_w}, sat_options);
+    torch::Tensor source_style_sq_sat = torch::empty({source_h, source_w}, sat_options);
+    if (cost_function_mode == COST_FUNCTION_NCC) {
+        compute_integral_image_cuda(source_style_sat, style_level, PREP_GRAY);
+        compute_integral_image_cuda(source_style_sq_sat, style_level, PREP_GRAY_SQR);
+    }
+    auto source_style_sat_acc = source_style_sat.packed_accessor64<double, 2>();
+    auto source_style_sq_sat_acc = source_style_sq_sat.packed_accessor64<double, 2>();
+
+    // Target SATs - recomputed every iteration
+    torch::Tensor target_style_sat = torch::empty({target_h, target_w}, sat_options);
+    torch::Tensor target_style_sq_sat = torch::empty({target_h, target_w}, sat_options);
+    auto target_style_sat_acc = target_style_sat.packed_accessor64<double, 2>();
+    auto target_style_sq_sat_acc = target_style_sq_sat.packed_accessor64<double, 2>();
+    // ===================================================================
+
     krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);
     target_style_prev.copy_(target_style_temp);
     
     curandState* rand_states = (curandState*)rand_states_tensor.data_ptr();
 
     for (int iter = 0; iter < num_search_vote_iters; ++iter) {
+        if (cost_function_mode == COST_FUNCTION_NCC) {
+            // Recompute target-dependent SATs
+            compute_integral_image_cuda(target_style_sat, target_style_prev, PREP_GRAY);
+            compute_integral_image_cuda(target_style_sq_sat, target_style_prev, PREP_GRAY_SQR);
+        }
+
         compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc, cost_function_mode);
 
         // --- REVERTED PROPAGATION LOGIC ---
         for (int i = 0; i < num_patch_match_iters; ++i) {
-            propagation_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, (i % 2 == 1), uniformity_weight, mask_acc, cost_function_mode);
+            propagation_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, (i % 2 == 1), uniformity_weight, mask_acc, cost_function_mode, source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc);
         }
         // --- END REVERTED LOGIC ---
 
-        random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc, search_pruning_threshold, cost_function_mode);
+        random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc, search_pruning_threshold, cost_function_mode, source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc);
 
         if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED) {
             krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);

@@ -23,6 +23,7 @@ setup(
                 "ebsynth_extension/ext.cpp",
                 "ebsynth_extension/dispatch.cu",
                 "ebsynth_extension/kernels.cu",
+                "ebsynth_extension/integral_image.cu",
             ],
             extra_compile_args=extra_compile_args,
         ),

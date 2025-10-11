@@ -21,11 +21,13 @@ from ..torch_ops import (
 
 # Skip direct import of ebsynth_torch
 # os.environ["FORCE_EBSYNTH_JIT_LOADER"] = "1"
+os.environ["JIT_VERBOSE"] = "0"
 
 # Check if we should force the JIT loader (skip direct import)
 force_jit = os.getenv("FORCE_EBSYNTH_JIT_LOADER", "").lower() in ("1", "true", "yes")
 if force_jit:
-    print("Forcing JIT loader for ebsynth_torch (direct import disabled).")
+    if os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"):
+        print("Forcing JIT loader for ebsynth_torch (direct import disabled).")
 
 if not force_jit:
     # First, try direct import of ebsynth_torch (if installed via pip)
@@ -33,7 +35,8 @@ if not force_jit:
         import ebsynth_torch
 
         CUDA_EXTENSION_AVAILABLE = True
-        print("CUDA extension loaded successfully (direct import).")
+        if os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"):
+            print("CUDA extension loaded successfully (direct import).")
     except ImportError:
         force_jit = True  # Fall back to JIT if direct import fails
 
@@ -44,7 +47,8 @@ if force_jit:
 
         CUDA_EXTENSION_AVAILABLE = ebsynth_torch is not None
         if CUDA_EXTENSION_AVAILABLE:
-            print("CUDA extension loaded successfully (via JIT loader).")
+            if os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"):
+                print("CUDA extension loaded successfully (via JIT loader).")
         else:
             print("JIT loader found but extension not available.")
     except ImportError:

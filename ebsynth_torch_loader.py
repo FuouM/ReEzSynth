@@ -1,5 +1,6 @@
 # ezsynth/ebsynth_torch_loader.py
 
+import os
 from pathlib import Path
 
 import torch.utils.cpp_extension
@@ -17,6 +18,7 @@ _source_files = [
     _ext_dir / "ext.cpp",
     _ext_dir / "dispatch.cu",
     _ext_dir / "kernels.cu",
+    _ext_dir / "integral_image.cu",
 ]
 
 # Convert Path objects to strings for the compiler
@@ -26,14 +28,16 @@ _source_files_str = [str(p) for p in _source_files]
 # This will be executed only once, the first time this module is imported.
 # PyTorch caches the compiled library in a build directory.
 try:
-    print(f"Attempting to JIT compile and load CUDA extension '{MODULE_NAME}'...")
+    if os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"):
+        print(f"Attempting to JIT compile and load CUDA extension '{MODULE_NAME}'...")
     ebsynth_torch = torch.utils.cpp_extension.load(
         name=MODULE_NAME,
         sources=_source_files_str,
         # Use verbose=True to see the compiler commands and debug issues
         verbose=True,
     )
-    print("CUDA extension loaded successfully via JIT compilation.")
+    if os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"):
+        print("CUDA extension loaded successfully via JIT compilation.")
 except Exception as e:
     print("=" * 50)
     print(f"[ERROR] Failed to JIT compile the CUDA extension '{MODULE_NAME}'.")

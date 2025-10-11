@@ -82,6 +82,21 @@ __device__ float compute_patch_ncc_split(
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     float ebest);
 
+__device__ float compute_patch_ncc_sat(
+    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
+    bool use_modulation,
+    int sx, int sy, int tx, int ty, int patch_size,
+    const torch::PackedTensorAccessor32<float, 1> style_weights,
+    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
+
 __device__ void try_patch(
     int candidate_sx, int candidate_sy,
     int tx, int ty, int patch_size,
@@ -96,8 +111,11 @@ __device__ void try_patch(
     bool use_modulation,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float uniformity_weight,
-    int cost_function_mode);
+    float uniformity_weight, int cost_function_mode,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
 
 __global__ void compute_initial_error_kernel(
     torch::PackedTensorAccessor32<int32_t, 3> nnf,
@@ -127,7 +145,11 @@ __global__ void propagation_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, bool is_odd, float uniformity_weight,
     torch::PackedTensorAccessor32<uint8_t, 2> mask,
-    int cost_function_mode);
+    int cost_function_mode,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
 
 __global__ void random_search_step_kernel(
     torch::PackedTensorAccessor32<int32_t, 3> nnf,
@@ -144,7 +166,11 @@ __global__ void random_search_step_kernel(
     int patch_size, int radius, float uniformity_weight, curandState* states,
     torch::PackedTensorAccessor32<uint8_t, 2> mask,
     float search_pruning_threshold,
-    int cost_function_mode);
+    int cost_function_mode,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
 
 // ===================================================================
 //                        VOTING KERNELS

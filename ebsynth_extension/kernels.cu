@@ -169,6 +169,96 @@ __device__ float compute_patch_ssd_split(
   return error;
 }
 
+
+__device__ double query_sat(
+    torch::PackedTensorAccessor64<double, 2> sat,
+    int x1, int y1, int x2, int y2) {
+
+    const int h = sat.size(0);
+    const int w = sat.size(1);
+
+    x1 = max(x1, 0); y1 = max(y1, 0);
+    x2 = min(x2, w - 1); y2 = min(y2, h - 1);
+
+    double br = sat[y2][x2];
+    double bl = (x1 > 0) ? sat[y2][x1 - 1] : 0.0;
+    double tr = (y1 > 0) ? sat[y1 - 1][x2] : 0.0;
+    double tl = (x1 > 0 && y1 > 0) ? sat[y1 - 1][x1 - 1] : 0.0;
+
+    return br - bl - tr + tl;
+}
+
+/*
+ * NCC cost function using Summed-Area Tables (SATs).
+ * This computes patch means and variances in O(1) time.
+ * The cross-correlation term still requires an O(P^2) loop.
+ */
+__device__ float compute_patch_ncc_sat(
+    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
+    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
+    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
+    bool use_modulation,
+    int sx, int sy, int tx, int ty, int patch_size,
+    const torch::PackedTensorAccessor32<float, 1> style_weights,
+    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat) {
+
+    const int r = patch_size / 2;
+    const float N = patch_size * patch_size;
+    const float epsilon = 1e-6f;
+
+    const int num_style_channels = source_style.size(2);
+    const int num_guide_channels = source_guide.size(2);
+
+    // --- O(1) Style Stats using SATs ---
+    double sum_s    = query_sat(source_style_sat,    sx - r, sy - r, sx + r, sy + r);
+    double sum_sq_s = query_sat(source_style_sq_sat, sx - r, sy - r, sx + r, sy + r);
+    double sum_t    = query_sat(target_style_sat,    tx - r, ty - r, tx + r, ty + r);
+    double sum_sq_t = query_sat(target_style_sq_sat, tx - r, ty - r, tx + r, ty + r);
+
+    double mean_s = sum_s / N;
+    double mean_t = sum_t / N;
+    double std_s = sqrt(fmax(0.0, sum_sq_s / N - mean_s * mean_s));
+    double std_t = sqrt(fmax(0.0, sum_sq_t / N - mean_t * mean_t));
+
+    // --- O(P^2) Cross-correlation and Guide SSD ---
+    double sum_st = 0.0;
+    float guide_error = 0.0f;
+    for (int py = -r; py <= r; ++py) {
+        for (int px = -r; px <= r; ++px) {
+            int cur_sx = sx + px; int cur_sy = sy + py;
+            int cur_tx = tx + px; int cur_ty = ty + py;
+
+            // Cross-correlation term
+            float s_val_g = 0.0f, t_val_g = 0.0f;
+            for(int c=0; c < num_style_channels; ++c) {
+                s_val_g += (float)source_style[cur_sy][cur_sx][c];
+                t_val_g += (float)target_style[cur_ty][cur_tx][c];
+            }
+            sum_st += (s_val_g / num_style_channels) * (t_val_g / num_style_channels);
+
+            // Guide difference (SSD)
+            for (int c = 0; c < num_guide_channels; ++c) {
+                float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
+                float modulation = use_modulation ? ((float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f) : 1.0f;
+                guide_error += guide_weights[c] * modulation * diff * diff;
+            }
+        }
+    }
+
+    double cov = sum_st / N - mean_s * mean_t;
+    float ncc = (std_s > epsilon && std_t > epsilon) ? cov / (std_s * std_t) : 0.0f;
+    float style_error = (1.0f - ncc) * style_weights[0] * N;
+
+    return style_error + guide_error;
+}
+// --- CORE PATCHMATCH LOGIC ---
+
 /*
  * NCC cost function logic.
  * This implementation is adapted from the robust Bilateral NCC function found
@@ -276,7 +366,11 @@ __device__ void try_patch(
     bool use_modulation,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float uniformity_weight, int cost_function_mode) {
+    float uniformity_weight, int cost_function_mode,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat) {
 
     const int source_w = source_style.size(1);
     const int source_h = source_style.size(0);
@@ -298,7 +392,7 @@ __device__ void try_patch(
 
     float new_ssd;
     if (cost_function_mode == COST_FUNCTION_NCC) {
-      new_ssd = compute_patch_ncc_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, candidate_sx, candidate_sy, tx, ty, patch_size, style_weights, guide_weights, current_total_error);
+      new_ssd = compute_patch_ncc_sat(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, candidate_sx, candidate_sy, tx, ty, patch_size, style_weights, guide_weights, source_style_sat, source_style_sq_sat, target_style_sat, target_style_sq_sat);
     } else {
       new_ssd = compute_patch_ssd_split(source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, candidate_sx, candidate_sy, tx, ty, patch_size, style_weights, guide_weights, current_total_error);
     }
@@ -358,7 +452,11 @@ __global__ void propagation_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, bool is_odd, float uniformity_weight,
     torch::PackedTensorAccessor32<uint8_t, 2> mask,
-    int cost_function_mode) {
+    int cost_function_mode,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat) {
 
   const int y_raw = blockIdx.y * blockDim.y + threadIdx.y;
   const int x_raw = blockIdx.x * blockDim.x + threadIdx.x;
@@ -376,12 +474,12 @@ __global__ void propagation_step_kernel(
   
   const int nx1 = x + step;
   if (nx1 >= 0 && nx1 < target_w) {
-    try_patch(nnf[y][nx1][0] - step, nnf[y][nx1][1], x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode);
+    try_patch(nnf[y][nx1][0] - step, nnf[y][nx1][1], x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat, target_style_sat, target_style_sq_sat);
   }
 
   const int ny2 = y + step;
   if (ny2 >= 0 && ny2 < target_h) {
-    try_patch(nnf[ny2][x][0], nnf[ny2][x][1] - step, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode);
+    try_patch(nnf[ny2][x][0], nnf[ny2][x][1] - step, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat, target_style_sat, target_style_sq_sat);
   }
 }
 
@@ -399,7 +497,11 @@ __global__ void random_search_step_kernel(
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int patch_size, int radius, float uniformity_weight, curandState* states,
     torch::PackedTensorAccessor32<uint8_t, 2> mask,
-    float search_pruning_threshold, int cost_function_mode) {
+    float search_pruning_threshold, int cost_function_mode,
+    torch::PackedTensorAccessor64<double, 2> source_style_sat,
+    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sat,
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat) {
     
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -422,7 +524,7 @@ __global__ void random_search_step_kernel(
         int candidate_sx = current_sx + (curand(state) % (2 * r + 1)) - r;
         int candidate_sy = current_sy + (curand(state) % (2 * r + 1)) - r;
 
-        try_patch(candidate_sx, candidate_sy, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode);
+        try_patch(candidate_sx, candidate_sy, x, y, patch_size, nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide, target_modulation_guide, use_modulation, style_weights, guide_weights, uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat, target_style_sat, target_style_sq_sat);
         r /= 2;
     }
 }
