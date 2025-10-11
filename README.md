@@ -23,6 +23,7 @@ This project is designed for artists, researchers, and developers who need a rob
 - **Modern and User-Friendly**:
   - **YAML-based Projects**: Easily define and manage complex projects with simple configuration files for the command-line workflow.
   - **Full Python API**: A clean and simple Python API (`Ezsynth`, `ImageSynth`) allows for easy integration into larger graphics pipelines and creative coding projects.
+  - **JIT CUDA Compilation**: Native PyTorch JIT loader automatically compiles and caches the CUDA extension on-demand, eliminating complex build dependencies.
   - **Caching System**: Automatically caches expensive pre-computation steps (like optical flow) to accelerate iterative workflows.
 
 ## Examples
@@ -61,7 +62,7 @@ Note: Pipeline Time includes saving to disk. Benchmarks run on an RTX 3060 and R
 
 Different Loss functions
 
-https://github.com/user-attachments/assets/c909ebc9-b466-4907-9236-bf9e7447ea7c
+<https://github.com/user-attachments/assets/c909ebc9-b466-4907-9236-bf9e7447ea7c>
 
 > Sum of Squared Difference (Top), Normalized Cross-Correlation (Bottom)
 
@@ -108,6 +109,15 @@ https://github.com/user-attachments/assets/c909ebc9-b466-4907-9236-bf9e7447ea7c
 
     # Build as distributable wheel
     python setup.py bdist_wheel
+    ```
+
+    **Alternative: JIT Compilation**
+    If you prefer not to pre-compile the extension, ReEzSynth now includes a native PyTorch JIT loader that compiles the CUDA extension on-demand. Simply skip the `pip install .` step above. The extension will be automatically compiled and cached when first used.
+
+    To force the JIT loader even when a pre-compiled extension is available, set the environment variable:
+
+    ```bash
+    export FORCE_EBSYNTH_JIT_LOADER=1
     ```
 
     If the installation is successful, you are ready to go!
@@ -260,7 +270,9 @@ ReEzSynth operates in several stages:
 
 ## Troubleshooting
 
-- **`ebsynth_torch` not found**: This means the C++/CUDA extension did not build correctly. Ensure you have all prerequisites (CUDA Toolkit, C++ Compiler) and that your PyTorch version was installed with CUDA support. Re-run `pip install .` and check the build log for errors.
+- **`ebsynth_torch` not found**: This means the C++/CUDA extension did not build correctly. You have two options:
+  1. **Fix the build**: Ensure you have all prerequisites (CUDA Toolkit, C++ Compiler) and that your PyTorch version was installed with CUDA support. Re-run `pip install .` and check the build log for errors.
+  2. **Use JIT compilation**: ReEzSynth includes a native PyTorch JIT loader that compiles the extension on-demand. The extension will be automatically compiled and cached when first used. This is a good alternative if you're having build issues.
 - **CUDA Out of Memory**: Video synthesis is memory-intensive. Try reducing the resolution of your content frames.
 - **Visual Artifacts (Jitter/Flicker)**: Enable `use_temporal_nnf_propagation` and `use_sparse_feature_guide` in your config. These new features are specifically designed to solve these common problems. Adding more keyframes can also help.
 
