@@ -270,13 +270,23 @@ class EbsynthEngine:
 
         output_error = error_map
         return output_image, output_error, nnf
-    
+
     def _run_level_pytorch_iterative(
         self,
-        style_tensor, source_guide_tensor, target_guide_tensor,
-        modulation_tensor, nnf, style_weights, guide_weights,
-        uniformity_weight, patch_size, vote_mode, search_vote_iters,
-        patch_match_iters, stop_threshold, cost_function_mode
+        style_tensor,
+        source_guide_tensor,
+        target_guide_tensor,
+        modulation_tensor,
+        nnf,
+        style_weights,
+        guide_weights,
+        uniformity_weight,
+        patch_size,
+        vote_mode,
+        search_vote_iters,
+        patch_match_iters,
+        stop_threshold,
+        cost_function_mode,
     ):
         """
         New, fast algorithm matching CUDA. Iteratively refines the NNF and the
@@ -288,26 +298,40 @@ class EbsynthEngine:
         # Pre-extract all source patches once, as they don't change.
         source_style_patches = extract_patches(style_tensor, patch_size)
         source_guide_patches = extract_patches(source_guide_tensor, patch_size)
+        # --- OPTIMIZATION: Hoist target guide patch extraction out of the loop ---
+        # The target guide tensor does not change during the iterative process.
+        target_guide_patches = extract_patches(target_guide_tensor, patch_size)
 
         omega_map = populate_omega_map(nnf, (H_s, W_s), patch_size)
         omega_best = (H_t * W_t) / (H_s * W_s)
         if omega_best < 1e-6:
             omega_best = 1e-6
 
-        source_style_patches = extract_patches(style_tensor, patch_size)
-        source_guide_patches = extract_patches(source_guide_tensor, patch_size)
-
-        initial_target_patches = extract_patches(self._resample_tensor(style_tensor, H_t, W_t), patch_size)
+        initial_target_patches = extract_patches(
+            self._resample_tensor(style_tensor, H_t, W_t), patch_size
+        )
         initial_error_map = try_patch_batch(
-            nnf, nnf, torch.full((H_t, W_t), float("inf"), device=self.device),
-            omega_map, source_style_patches, initial_target_patches, source_guide_patches,
-            extract_patches(target_guide_tensor, patch_size), style_weights, guide_weights,
-            uniformity_weight, patch_size, cost_function_mode, omega_best,
+            nnf,
+            nnf,
+            torch.full((H_t, W_t), float("inf"), device=self.device),
+            omega_map,
+            source_style_patches,
+            initial_target_patches,
+            source_guide_patches,
+            target_guide_patches,
+            style_weights,
+            guide_weights,  # Use pre-computed target_guide_patches
+            uniformity_weight,
+            patch_size,
+            cost_function_mode,
+            omega_best,
         )[1]
         del initial_target_patches
 
         if vote_mode == EBSYNTH_VOTEMODE_WEIGHTED:
-            target_style_temp = vote_weighted(style_tensor, nnf, initial_error_map, patch_size)
+            target_style_temp = vote_weighted(
+                style_tensor, nnf, initial_error_map, patch_size
+            )
         else:
             target_style_temp = vote_plain(style_tensor, nnf, patch_size)
 
@@ -315,56 +339,100 @@ class EbsynthEngine:
         mask = torch.full((H_t, W_t), 255, dtype=torch.uint8, device=self.device)
 
         for iteration in range(search_vote_iters):
-            target_style_patches_current = extract_patches(target_style_prev, patch_size)
-            target_guide_patches_current = extract_patches(target_guide_tensor, patch_size)
+            target_style_patches_current = extract_patches(
+                target_style_prev, patch_size
+            )
+            # No longer need to extract target guide patches here.
 
             error_map = try_patch_batch(
-                nnf, nnf, torch.full_like(omega_map, float("inf"), dtype=torch.float32),
-                omega_map, source_style_patches, target_style_patches_current,
-                source_guide_patches, target_guide_patches_current, style_weights,
-                guide_weights, uniformity_weight, patch_size, cost_function_mode,
+                nnf,
+                nnf,
+                torch.full_like(omega_map, float("inf"), dtype=torch.float32),
+                omega_map,
+                source_style_patches,
+                target_style_patches_current,
+                source_guide_patches,
+                target_guide_patches,
+                style_weights,  # Use pre-computed target_guide_patches
+                guide_weights,
+                uniformity_weight,
+                patch_size,
+                cost_function_mode,
                 omega_best,
             )[1]
 
             for pm_iter in range(patch_match_iters):
                 is_odd = (pm_iter % 2) == 1
                 propagation_step(
-                    nnf, error_map, omega_map, source_style_patches,
-                    target_style_patches_current, source_guide_patches,
-                    target_guide_patches_current, style_weights, guide_weights,
-                    uniformity_weight, patch_size, is_odd, mask,
-                    cost_function_mode, omega_best,
+                    nnf,
+                    error_map,
+                    omega_map,
+                    source_style_patches,
+                    target_style_patches_current,
+                    source_guide_patches,
+                    target_guide_patches,
+                    style_weights,
+                    guide_weights,  # Use pre-computed target_guide_patches
+                    uniformity_weight,
+                    patch_size,
+                    is_odd,
+                    mask,
+                    cost_function_mode,
+                    omega_best,
                 )
 
             random_search_step(
-                nnf, error_map, omega_map, source_style_patches,
-                target_style_patches_current, source_guide_patches,
-                target_guide_patches_current, style_weights, guide_weights,
-                uniformity_weight, patch_size, max(H_s, W_s) // 2, mask,
-                self.ebsynth_config.search_pruning_threshold, cost_function_mode,
+                nnf,
+                error_map,
+                omega_map,
+                source_style_patches,
+                target_style_patches_current,
+                source_guide_patches,
+                target_guide_patches,
+                style_weights,
+                guide_weights,  # Use pre-computed target_guide_patches
+                uniformity_weight,
+                patch_size,
+                max(H_s, W_s) // 2,
+                mask,
+                self.ebsynth_config.search_pruning_threshold,
+                cost_function_mode,
                 omega_best,
             )
-            del target_style_patches_current, target_guide_patches_current
+            del target_style_patches_current
 
             if vote_mode == EBSYNTH_VOTEMODE_WEIGHTED:
-                target_style_temp = vote_weighted(style_tensor, nnf, error_map, patch_size)
+                target_style_temp = vote_weighted(
+                    style_tensor, nnf, error_map, patch_size
+                )
             else:
                 target_style_temp = vote_plain(style_tensor, nnf, patch_size)
 
             if iteration < search_vote_iters - 1 and stop_threshold > 0:
-                new_mask = evaluate_mask(target_style_temp, target_style_prev, stop_threshold)
+                new_mask = evaluate_mask(
+                    target_style_temp, target_style_prev, stop_threshold
+                )
                 mask = dilate_mask(new_mask, patch_size)
 
             target_style_prev = target_style_temp.clone()
-        
+
         output_image = target_style_temp
         final_target_patches = extract_patches(output_image, patch_size)
-        final_guide_patches = extract_patches(target_guide_tensor, patch_size)
+        # Use pre-computed target_guide_patches here as well
         output_error = try_patch_batch(
-            nnf, nnf, torch.full_like(omega_map, float("inf"), dtype=torch.float32),
-            omega_map, source_style_patches, final_target_patches,
-            source_guide_patches, final_guide_patches, style_weights,
-            guide_weights, uniformity_weight, patch_size, cost_function_mode,
+            nnf,
+            nnf,
+            torch.full_like(omega_map, float("inf"), dtype=torch.float32),
+            omega_map,
+            source_style_patches,
+            final_target_patches,
+            source_guide_patches,
+            target_guide_patches,
+            style_weights,
+            guide_weights,
+            uniformity_weight,
+            patch_size,
+            cost_function_mode,
             omega_best,
         )[1]
 
@@ -547,7 +615,6 @@ class EbsynthEngine:
                 )
             else:
                 if self.pipeline_config.use_residual_transfer:
-                    
                     output_image, output_error, nnf = self._run_level_pytorch_iterative(
                         p_style_level,
                         p_source_guide_level,
