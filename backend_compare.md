@@ -2,23 +2,39 @@
 
 ## ImageSynth
 
-> Minimal config
+### Windows
 
-| backend | hardware | segment | stylit | facestyle | total |
-|-|-|-|-|-|-|
-| CUDA | RTX3060 - Ryzen 5 3600 | 0.2707 s | 0.5899 s | 0.4699 s | 1.6146 s |
-| CUDA PyTorch JIT | - | 0.2695 s | 0.6047 s | 0.4607 s | 1.5307 s |
-| PyTorch CUDA (ncc) | - | 1.1733 s | 14.3003 s | 8.9392 s | 24.6881 s |
-| PyTorch CUDA (ssd) | - | 1.1446 s | 14.0865 s | 8.7831 s | 24.2961 s |
-| PyTorch CUDA (residual ncc) | - | 0.7209 s | 5.2828 s | 3.8109 s | 10.0852 s |
-| PyTorch CUDA (residual ssd) | - | 0.7606 s | 4.9518 s | 3.5809 s | 9.5445 s |
-| PyTorch CPU (ncc) | Apple M4 24GB | 4.9055 s | 82.2316 s | 51.5455 s | 138.7563 s |
-| PyTorch MPS (ncc) | - | 3.3720 s | 333.4654 s | 140.8887 s | 478.8690 s |
-| PyTorch CPU (residual ncc) | - | 2.2292 s | 27.5490 s | 20.1376 s | 49.9900 s |
-| PyTorch MPS (residual ncc) | - | 1.3780 s | 31.8284 s | 38.7016 s | 73.4036 s |
+> RTX3060 - Ryzen 5 3600. Minimal config. Residual Transfer: True
 
-> PyTorch residual matches CUDA quality and faster than Non-residual
->
-> PyTorch Non-residual looks better than CUDA for low params
->
-> SSD uses a bit less memory than NCC
+| backend | segment | stylit | facestyle | total |
+|-|-|-|-|-|
+| CUDA PyTorch JIT (ssd) | 0.3062 s | 0.7650 s | 0.5482 s | 1.8252 s |
+| CUDA PyTorch JIT (ncc) | 0.3098 s | 0.8086 s | 0.6349 s | 1.9764 s |
+| PyTorch CUDA (ssd) | 0.7432 s | 5.0049 s | 3.7381 s | 9.8173 s |
+| PyTorch CUDA (ncc) | 0.7956 s | 6.3167 s | 3.7569 s | 11.3063 s |
+
+> RTX3060 - Ryzen 5 3600. Full config. Residual Transfer: True
+
+| backend | segment | stylit | facestyle | total |
+|-|-|-|-|-|
+| CUDA PyTorch JIT (ssd) | 0.3840 s | 1.0661 s | 0.7403 s | 2.3945 s |
+| CUDA PyTorch JIT (ncc) | 0.5617 s | 3.2818 s | 1.1257 s | 5.1724 s |
+| PyTorch CUDA (ssd - memclr) | 7.1243 s | 43.9366 s | 33.0244 s | 84.4305 s |
+| PyTorch CUDA (ncc - memclr) | 7.4011 s | 74.2658 s | 35.0005 s | 116.9856 s |
+
+Notes:
+
+- SSD for results aligning with the original implementation.
+- NCC takes longer but are more robust to changes.
+- More guides -> More memory usage.
+
+### MacOS (Apple Silicon)
+
+> M4 24GB. Minimal config. Residual Transfer: True
+
+| backend | segment | stylit | facestyle | total |
+|-|-|-|-|-|
+| PyTorch CPU (ssd) | - s | - s | - s | - s |
+| PyTorch CPU (ncc) | - s | - s | - s | - s |
+| PyTorch MPS (ssd) | - s | - s | - s | - s |
+| PyTorch MPS (ncc) | - s | - s | - s | - s |

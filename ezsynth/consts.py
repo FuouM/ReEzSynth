@@ -25,9 +25,9 @@ ebsynth_torch = None  # Will be set if extension is available
 FORCE_EBSYNTH_JIT_LOADER = False
 JIT_VERBOSE = False
 
-# --- Torch Cache Clearing ---
+# --- Torch Ops Cache Clearing ---
 # This is useful to reduce memory usage
-TORCH_CUDA_CLEAR_CACHE = False
+TORCH_CUDA_CLEAR_CACHE = True
 TORCH_MPS_CLEAR_CACHE = True
 
 

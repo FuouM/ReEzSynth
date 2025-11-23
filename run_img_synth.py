@@ -57,10 +57,14 @@ def clear_memory():
 
 st = time.time()
 
+# Constants for synthesis parameters
+USE_RESIDUAL_TRANSFER = True
+COST_FUNCTION = "ssd"
+
 # --- Setup Paths ---
 EXAMPLES_DIR = "examples"
 OUTPUT_DIR = (
-    f"output_synth_api_{args.backend}_{'full' if args.full_params else 'minimal'}"
+    f"output_synth_api_{args.backend}_{'full' if args.full_params else 'minimal'}_{COST_FUNCTION}"
 )
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -72,10 +76,20 @@ print("\n--- Running: Segment Retargeting ---")
 start_example_time = time.time()
 ezsynner = ImageSynth(
     style_image=f"{EXAMPLES_DIR}/texbynum/source_photo.png",
-    config=RunConfig(backend=args.backend, image_weight=1.0)
+    config=RunConfig(
+        backend=args.backend,
+        image_weight=1.0,
+        use_residual_transfer=USE_RESIDUAL_TRANSFER,
+        cost_function=COST_FUNCTION,
+    )
     if args.full_params
     else RunConfig(
-        backend=args.backend, image_weight=1.0, pyramid_levels=1, search_vote_iters=1
+        backend=args.backend,
+        image_weight=1.0,
+        pyramid_levels=1,
+        search_vote_iters=1,
+        use_residual_transfer=USE_RESIDUAL_TRANSFER,
+        cost_function=COST_FUNCTION,
     ),
 )
 
@@ -99,9 +113,19 @@ print("\n--- Running: Stylit ---")
 start_example_time = time.time()
 ezsynner = ImageSynth(
     style_image=f"{EXAMPLES_DIR}/stylit/source_style.png",
-    config=RunConfig(backend=args.backend)
+    config=RunConfig(
+        backend=args.backend,
+        use_residual_transfer=USE_RESIDUAL_TRANSFER,
+        cost_function=COST_FUNCTION,
+    )
     if args.full_params
-    else RunConfig(backend=args.backend, pyramid_levels=1, search_vote_iters=1),
+    else RunConfig(
+        backend=args.backend,
+        pyramid_levels=1,
+        search_vote_iters=1,
+        use_residual_transfer=USE_RESIDUAL_TRANSFER,
+        cost_function=COST_FUNCTION,
+    ),
 )
 
 result_img, result_err = ezsynner.run(
@@ -135,9 +159,19 @@ print("\n--- Running: Face Style ---")
 start_example_time = time.time()
 ezsynner = ImageSynth(
     style_image=f"{EXAMPLES_DIR}/facestyle/source_painting.png",
-    config=RunConfig(backend=args.backend)
+    config=RunConfig(
+        backend=args.backend,
+        use_residual_transfer=USE_RESIDUAL_TRANSFER,
+        cost_function=COST_FUNCTION,
+    )
     if args.full_params
-    else RunConfig(backend=args.backend, pyramid_levels=1, search_vote_iters=1),
+    else RunConfig(
+        backend=args.backend,
+        pyramid_levels=1,
+        search_vote_iters=1,
+        use_residual_transfer=USE_RESIDUAL_TRANSFER,
+        cost_function=COST_FUNCTION,
+    ),
 )
 
 result_img, result_err = ezsynner.run(

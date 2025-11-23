@@ -48,6 +48,8 @@ class RunConfig:
         use_sparse_feature_guide: bool = True,
         final_pass_enabled: bool = False,
         final_pass_strength: float = 1.0,
+        use_residual_transfer: bool = True,
+        cost_function: str = "ssd",
     ):
         # Ebsynth gen params
         self.uniformity = uniformity
@@ -76,6 +78,8 @@ class RunConfig:
         self.use_sparse_feature_guide = use_sparse_feature_guide
         self.final_pass_enabled = final_pass_enabled
         self.final_pass_strength = final_pass_strength
+        self.use_residual_transfer = use_residual_transfer
+        self.cost_function = cost_function
 
 
 class Ezsynth:
@@ -259,10 +263,22 @@ class ImageSynth:
             patch_match_iters=config.patch_match_iters,
             backend=config.backend,
             extra_pass_3x3=config.extra_pass_3x3,
+            cost_function=config.cost_function,
             # Weights are now passed directly to run()
         )
 
-        pipeline_cfg = PipelineConfig(pyramid_levels=config.pyramid_levels)
+        pipeline_cfg = PipelineConfig(
+            pyramid_levels=config.pyramid_levels,
+            use_residual_transfer=config.use_residual_transfer,
+            alpha=config.alpha,
+            colorize=config.colorize,
+            use_temporal_nnf_propagation=config.use_temporal_nnf_propagation,
+            use_sparse_feature_guide=config.use_sparse_feature_guide,
+            final_pass=FinalPassConfig(
+                enabled=config.final_pass_enabled,
+                strength=config.final_pass_strength,
+            ),
+        )
 
         self.engine = EbsynthEngine(
             ebsynth_config=ebsynth_params_cfg, pipeline_config=pipeline_cfg
