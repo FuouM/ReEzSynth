@@ -82,7 +82,7 @@ class EbsynthParamsConfig(BaseModel):
     # New: Skip random search for patches with SSD error below this. 0.0 disables.
     search_pruning_threshold: float = 50.0
     # New: Cost function for patch matching.
-    cost_function: str = "ncc"  # "ssd" or "ncc"
+    cost_function: str = "ssd"  # "ssd" or "ncc"
     # New: Backend for synthesis operations.
     backend: str = "cuda"  # "cuda" or "torch"
     extra_pass_3x3: bool = False

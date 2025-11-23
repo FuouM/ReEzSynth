@@ -8,7 +8,6 @@ This module implements the core PatchMatch operations:
 - random_search_step: Exploration via random offsets
 """
 
-import os
 from typing import Tuple
 
 import torch
@@ -16,37 +15,20 @@ import torch
 from .omega_ops import compute_omega_scores, update_omega_map
 from .patch_ops import compute_patch_ncc_vectorized, compute_patch_ssd_vectorized
 
-skip_metal = os.environ.get("EZSYNTH_SKIP_METAL", "").lower() in ("1", "true", "yes")
-skip_metal_verbose = os.environ.get("EZSYNTH_SKIP_METAL_VERBOSE", "").lower() in (
-    "1",
-    "true",
-    "yes",
-)
-
-# Try to import Metal operations (optional)
-if not skip_metal:
-    try:
-        from .metal_ext.compiler import compiled_metal_ops
-
-        METAL_AVAILABLE = True
-        if skip_metal_verbose:
-            print("Loaded custom Metal operations for patchmatch_ops.")
-    except ImportError:
-        METAL_AVAILABLE = False
-        compiled_metal_ops = None
-        if skip_metal_verbose:
-            print("Failed to import custom Metal operations for patchmatch_ops.")
-else:
-    METAL_AVAILABLE = False
-    compiled_metal_ops = None
-    if skip_metal_verbose:
-        print(
-            "Skipping custom Metal operations for patchmatch_ops (EZSYNTH_SKIP_METAL set)."
-        )
-
 # Cost function constants
 COST_FUNCTION_SSD = 0
 COST_FUNCTION_NCC = 1
+
+# OPTIMIZATION: Cache for small offset tensors to avoid repeated allocations
+_OFFSET_TENSOR_CACHE = {}
+
+
+def _get_offset_tensor(offset_tuple, device):
+    """Get or create cached offset tensor."""
+    key = (offset_tuple, str(device))
+    if key not in _OFFSET_TENSOR_CACHE:
+        _OFFSET_TENSOR_CACHE[key] = torch.tensor(list(offset_tuple), device=device)
+    return _OFFSET_TENSOR_CACHE[key]
 
 
 def try_patch_batch(
@@ -64,6 +46,9 @@ def try_patch_batch(
     patch_size: int,
     cost_function_mode: int,
     omega_best: float,
+    source_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    update_nnf: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Try candidate patches and update NNF if better.
@@ -87,6 +72,8 @@ def try_patch_batch(
             patch_size,
             style_weights,
             guide_weights,
+            source_stats,
+            target_stats,
         )
     else:  # SSD
         candidate_patch_errors = compute_patch_ssd_vectorized(
@@ -115,10 +102,19 @@ def try_patch_batch(
     )
     current_total_error = current_errors + uniformity_weight * current_omega_normalized
     update_mask = (candidate_total_error < current_total_error) & valid_candidates
-    updated_nnf = torch.where(
-        update_mask.unsqueeze(2).expand_as(current_nnf), candidate_coords, current_nnf
-    )
-    updated_errors = torch.where(update_mask, candidate_patch_errors, current_errors)
+    if update_nnf:
+        updated_nnf = torch.where(
+            update_mask.unsqueeze(2).expand_as(current_nnf),
+            candidate_coords,
+            current_nnf,
+        )
+        updated_errors = torch.where(
+            update_mask, candidate_patch_errors, current_errors
+        )
+    else:
+        # For initial error computation, don't update NNF, just compute errors
+        updated_nnf = current_nnf
+        updated_errors = candidate_patch_errors  # Use the computed errors
     return updated_nnf, updated_errors, update_mask
 
 
@@ -138,25 +134,52 @@ def propagation_step(
     mask: torch.Tensor,
     cost_function_mode: int,
     omega_best: float,
+    source_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
 ):
     """
     Propagation step: try neighbors' matches for spatial coherence.
+    OPTIMIZED: Batches omega map updates to reduce overhead.
+
+    Corrected Logic to match CUDA:
+    - is_odd=True  => Forward Pass (Iter 1, 3...): Look Left/Top, Propagate +1
+    - is_odd=False => Backward Pass (Iter 0, 2...): Look Right/Bottom, Propagate -1
     """
     H_s, W_s = source_style_patches.shape[:2]
     device = nnf.device
     active_mask = mask == 255
 
-    # Determine neighbor offsets based on iteration parity
-    x_offset, y_offset = (-1, 0) if is_odd else (1, 0)
+    # OPTIMIZATION: Store original NNF before any updates for omega tracking
+    nnf_original = nnf.clone()
+
+    # Determine propagation direction and neighbor lookup
+    if is_odd:
+        # Forward Pass: Look Left (-1, 0) and Top (0, -1)
+        # Propagate: Neighbor + 1
+        # To read Left neighbor at index i, we need to shift Right (+1)
+        shift_x, shift_y = 1, 1
+        prop_x, prop_y = 1, 1
+    else:
+        # Backward Pass: Look Right (+1, 0) and Bottom (0, +1)
+        # Propagate: Neighbor - 1
+        # To read Right neighbor at index i, we need to shift Left (-1)
+        shift_x, shift_y = -1, -1
+        prop_x, prop_y = -1, -1
 
     # --- Horizontal Propagation ---
-    neighbor_nnf = torch.roll(nnf, shifts=x_offset, dims=1)
-    if x_offset == -1:  # Pad right
-        neighbor_nnf[:, -1, :] = neighbor_nnf[:, -2, :]
-    else:  # Pad left
-        neighbor_nnf[:, 0, :] = neighbor_nnf[:, 1, :]
+    # Roll to align neighbor with current pixel
+    neighbor_nnf = torch.roll(nnf, shifts=shift_x, dims=1)
 
-    horiz_candidates = neighbor_nnf - torch.tensor([x_offset, 0], device=device)
+    # Handle boundary conditions (padding)
+    if shift_x == 1:  # Reading from Left
+        # Column 0 wraps from N-1. Replace with self (no propagation from left edge)
+        neighbor_nnf[:, 0, :] = nnf[:, 0, :]
+    else:  # Reading from Right
+        # Column N-1 wraps from 0. Replace with self
+        neighbor_nnf[:, -1, :] = nnf[:, -1, :]
+
+    # Apply propagation offset
+    horiz_candidates = neighbor_nnf + _get_offset_tensor((prop_x, 0), device)
 
     new_nnf, new_errors, horiz_updates = try_patch_batch(
         horiz_candidates,
@@ -173,24 +196,26 @@ def propagation_step(
         patch_size,
         cost_function_mode,
         omega_best,
+        source_stats,
+        target_stats,
     )
 
-    changed_indices = (horiz_updates & active_mask).nonzero(as_tuple=False)
-    if len(changed_indices) > 0:
-        y_c, x_c = changed_indices[:, 0], changed_indices[:, 1]
-        update_omega_map(omega_map, nnf[y_c, x_c], new_nnf[y_c, x_c], patch_size)
+    # OPTIMIZATION: Collect changes but don't update omega yet
+    horiz_changed_indices = (horiz_updates & active_mask).nonzero(as_tuple=False)
+
+    # Update NNF and errors for vertical propagation
     nnf.copy_(new_nnf)
     error_map.copy_(new_errors)
 
     # --- Vertical Propagation ---
-    y_offset = -1 if is_odd else 1
-    neighbor_nnf = torch.roll(nnf, shifts=y_offset, dims=0)
-    if y_offset == -1:  # Pad bottom
-        neighbor_nnf[-1, :, :] = neighbor_nnf[-2, :, :]
-    else:  # Pad top
-        neighbor_nnf[0, :, :] = neighbor_nnf[1, :, :]
+    neighbor_nnf = torch.roll(nnf, shifts=shift_y, dims=0)
 
-    vert_candidates = neighbor_nnf - torch.tensor([0, y_offset], device=device)
+    if shift_y == 1:  # Reading from Top
+        neighbor_nnf[0, :, :] = nnf[0, :, :]
+    else:  # Reading from Bottom
+        neighbor_nnf[-1, :, :] = nnf[-1, :, :]
+
+    vert_candidates = neighbor_nnf + _get_offset_tensor((0, prop_y), device)
 
     new_nnf, new_errors, vert_updates = try_patch_batch(
         vert_candidates,
@@ -207,14 +232,34 @@ def propagation_step(
         patch_size,
         cost_function_mode,
         omega_best,
+        source_stats,
+        target_stats,
     )
 
-    changed_indices = (vert_updates & active_mask).nonzero(as_tuple=False)
-    if len(changed_indices) > 0:
-        y_c, x_c = changed_indices[:, 0], changed_indices[:, 1]
-        update_omega_map(omega_map, nnf[y_c, x_c], new_nnf[y_c, x_c], patch_size)
+    # OPTIMIZATION: Collect vertical changes
+    vert_changed_indices = (vert_updates & active_mask).nonzero(as_tuple=False)
+
+    # Update NNF and errors
     nnf.copy_(new_nnf)
     error_map.copy_(new_errors)
+
+    # Apply Horizontal Updates to Omega
+    if len(horiz_changed_indices) > 0:
+        y_h, x_h = horiz_changed_indices[:, 0], horiz_changed_indices[:, 1]
+        update_omega_map(
+            omega_map, nnf_original[y_h, x_h], nnf[y_h, x_h], patch_size
+        )  # nnf here is intermediate (post-horiz)
+
+        # Update nnf_original to match current nnf for the next step
+        # This is needed so vertical updates use the correct "old" value
+        nnf_original[y_h, x_h] = nnf[y_h, x_h]
+
+    # Apply Vertical Updates to Omega
+    if len(vert_changed_indices) > 0:
+        y_v, x_v = vert_changed_indices[:, 0], vert_changed_indices[:, 1]
+        # nnf_original now holds the state before vertical update (because we updated it above)
+        # nnf now holds the state after vertical update
+        update_omega_map(omega_map, nnf_original[y_v, x_v], nnf[y_v, x_v], patch_size)
 
 
 def random_search_step(
@@ -235,9 +280,12 @@ def random_search_step(
     cost_function_mode: int,
     omega_best: float,
     generator: torch.Generator = None,
+    source_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
 ):
     """
     Optimized random search with pruning.
+    OPTIMIZED: Reduced omega computations and pre-computed constants.
     """
     device = nnf.device
     H_s, W_s = source_style_patches.shape[:2]
@@ -255,17 +303,36 @@ def random_search_step(
     y_coords, x_coords = active_indices
     num_active = y_coords.numel()
 
+    # OPTIMIZATION: Pre-compute constants outside the loop
+    patch_pixel_count = patch_size * patch_size
+    omega_normalization = patch_pixel_count * omega_best
+    uniformity_factor = uniformity_weight / omega_normalization
+
+    # OPTIMIZATION: Pre-extract current NNF for active pixels once
+    current_nnf_active = nnf[y_coords, x_coords]
+
+    # OPTIMIZATION: Pre-compute current omega scores once (reused across radius levels)
+    curr_omega_active = compute_omega_scores(
+        omega_map, current_nnf_active.unsqueeze(0), patch_size
+    ).squeeze()
+
     radius = initial_radius
     while radius >= 1:
         # --- 2. Generate candidates only for active pixels ---
-        current_nnf_active = nnf[y_coords, x_coords]
-
-        rand_offsets_x = torch.randint(
-            -radius, radius + 1, (num_active,), device=device, generator=generator
-        )
-        rand_offsets_y = torch.randint(
-            -radius, radius + 1, (num_active,), device=device, generator=generator
-        )
+        if generator is not None:
+            rand_offsets_x = torch.randint(
+                -radius, radius + 1, (num_active,), device=device, generator=generator
+            )
+            rand_offsets_y = torch.randint(
+                -radius, radius + 1, (num_active,), device=device, generator=generator
+            )
+        else:
+            rand_offsets_x = torch.randint(
+                -radius, radius + 1, (num_active,), device=device
+            )
+            rand_offsets_y = torch.randint(
+                -radius, radius + 1, (num_active,), device=device
+            )
 
         candidate_coords_active = current_nnf_active + torch.stack(
             [rand_offsets_x, rand_offsets_y], dim=-1
@@ -288,10 +355,8 @@ def random_search_step(
         y_v = y_coords[valid_indices_in_active]
         x_v = x_coords[valid_indices_in_active]
         cand_v = candidate_coords_active[valid_indices_in_active]
-        curr_nnf_v = current_nnf_active[valid_indices_in_active]
 
         # --- 4. Compute errors only for the valid active candidates ---
-        # Our modified cost functions can handle this flattened data directly
         target_style_p_v = target_style_patches[y_v, x_v]
         target_guide_p_v = (
             target_guide_patches[y_v, x_v]
@@ -300,6 +365,12 @@ def random_search_step(
         )
 
         if cost_function_mode == COST_FUNCTION_NCC:
+            # Slice target stats if available
+            target_stats_v = None
+            if target_stats is not None:
+                t_vals, t_mean, t_std = target_stats
+                target_stats_v = (t_vals[y_v, x_v], t_mean[y_v, x_v], t_std[y_v, x_v])
+
             cand_errors_v = compute_patch_ncc_vectorized(
                 source_style_patches,
                 target_style_p_v,
@@ -309,6 +380,8 @@ def random_search_step(
                 patch_size,
                 style_weights,
                 guide_weights,
+                source_stats,
+                target_stats_v,
             )
         else:  # SSD
             cand_errors_v = compute_patch_ssd_vectorized(
@@ -320,21 +393,17 @@ def random_search_step(
                 )
 
         # --- 5. Compare total error and update ---
-        patch_pixel_count = patch_size * patch_size
-
+        # OPTIMIZATION: Only compute omega for candidates, reuse pre-computed current omega
         cand_omega_v = compute_omega_scores(
             omega_map, cand_v.unsqueeze(0), patch_size
         ).squeeze()
-        curr_omega_v = compute_omega_scores(
-            omega_map, curr_nnf_v.unsqueeze(0), patch_size
-        ).squeeze()
 
-        cand_total_error = cand_errors_v + uniformity_weight * (
-            cand_omega_v / (patch_pixel_count * omega_best)
-        )
-        curr_total_error = error_map[y_v, x_v] + uniformity_weight * (
-            curr_omega_v / (patch_pixel_count * omega_best)
-        )
+        # OPTIMIZATION: Use pre-computed current omega (indexed from pre-computed active omega)
+        curr_omega_v = curr_omega_active[valid_indices_in_active]
+
+        # OPTIMIZATION: Use pre-computed uniformity factor
+        cand_total_error = cand_errors_v + uniformity_factor * cand_omega_v
+        curr_total_error = error_map[y_v, x_v] + uniformity_factor * curr_omega_v
 
         update_mask_v = cand_total_error < curr_total_error
 
@@ -349,7 +418,14 @@ def random_search_step(
 
             update_omega_map(omega_map, old_nnf_vals, new_nnf_vals, patch_size)
             nnf[final_y, final_x] = new_nnf_vals.to(nnf.dtype)
-
             error_map[final_y, final_x] = cand_errors_v[update_indices_in_v]
+
+            # OPTIMIZATION: Update cached current NNF and omega for updated pixels
+            # Map back from valid indices to active indices
+            active_update_indices = valid_indices_in_active[update_indices_in_v]
+            current_nnf_active[active_update_indices] = new_nnf_vals.to(
+                current_nnf_active.dtype
+            )
+            curr_omega_active[active_update_indices] = cand_omega_v[update_indices_in_v]
 
         radius //= 2

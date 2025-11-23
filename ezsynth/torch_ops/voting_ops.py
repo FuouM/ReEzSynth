@@ -9,41 +9,7 @@ that contribute to each target pixel according to the current NNF.
 import os
 
 import torch
-
-skip_metal = os.environ.get("EZSYNTH_SKIP_METAL", "").lower() in ("1", "true", "yes")
-skip_metal_verbose = os.environ.get("EZSYNTH_SKIP_METAL_VERBOSE", "").lower() in (
-    "1",
-    "true",
-    "yes",
-)
-
-# Import custom Metal operations if MPS is available and not skipped
-if torch.backends.mps.is_available() and not skip_metal:
-    try:
-        from .metal_ext.compiler import compiled_metal_ops
-
-        if compiled_metal_ops is not None:
-            if skip_metal_verbose:
-                print("Loaded custom Metal operations for voting_ops.")
-        else:
-            if skip_metal_verbose:
-                print("Custom Metal operations compiler returned None for voting_ops.")
-            compiled_metal_ops = None
-    except ImportError:
-        if skip_metal_verbose:
-            print("Failed to import custom Metal operations for voting_ops.")
-        compiled_metal_ops = None
-else:
-    if skip_metal:
-        if skip_metal_verbose:
-            print(
-            "Skipping custom Metal operations for voting_ops (EZSYNTH_SKIP_METAL set)."
-        )
-    compiled_metal_ops = None
-
-# Note: torch.compile disabled due to MPS compatibility issues with complex indexing
-# TODO: Re-enable torch.compile for CUDA when Triton kernels are available
-
+import torch.nn.functional as F
 
 def vote_plain(
     source_style: torch.Tensor,  # (H_s, W_s, C) uint8
@@ -53,9 +19,6 @@ def vote_plain(
     """
     Reconstruct target image by averaging overlapping patches.
 
-    ACCELERATED VERSION: Uses Metal kernels on Apple Silicon for maximum performance.
-    Falls back to optimized PyTorch implementation.
-
     Args:
         source_style: Source style image
         nnf: Nearest neighbor field mapping target->source
@@ -64,23 +27,6 @@ def vote_plain(
     Returns:
         target_style: Reconstructed target image (H_t, W_t, C) uint8
     """
-    # Try Metal-accelerated version first
-    if compiled_metal_ops is not None:
-        try:
-            accumulator, weight_sum = compiled_metal_ops.mps_vote_plain(
-                source_style, nnf, patch_size
-            )
-
-            # Average (avoid division by zero)
-            target_style = accumulator / weight_sum.unsqueeze(2).clamp(min=1e-6)
-
-            # Convert back to original dtype and clamp
-            target_style = target_style.clamp(0, 255).to(source_style.dtype)
-            return target_style
-        except Exception as e:
-            print(f"Metal vote_plain failed, falling back to PyTorch: {e}")
-
-    # Fallback: PyTorch implementation
     H_t, W_t = nnf.shape[:2]
     H_s, W_s, C = source_style.shape
     device = source_style.device
@@ -169,7 +115,7 @@ def vote_weighted(
     Weighted voting using patch errors.
 
     ACCELERATED VERSION: Uses Metal kernels on Apple Silicon for maximum performance.
-    Falls back to optimized PyTorch implementation.
+    Falls back to optimized PyTorch implementation using F.fold.
 
     Args:
         source_style: Source style image
@@ -180,23 +126,6 @@ def vote_weighted(
     Returns:
         target_style: Reconstructed target image with weighted averaging
     """
-    # Try Metal-accelerated version first
-    if compiled_metal_ops is not None:
-        try:
-            accumulator, weight_sum = compiled_metal_ops.mps_vote_weighted(
-                source_style, nnf, error_map, patch_size
-            )
-
-            # Weighted average (avoid division by zero)
-            target_style = accumulator / weight_sum.unsqueeze(2).clamp(min=1e-6)
-
-            # Convert back to original dtype and clamp
-            target_style = target_style.clamp(0, 255).to(source_style.dtype)
-            return target_style
-        except Exception as e:
-            print(f"Metal vote_weighted failed, falling back to PyTorch: {e}")
-
-    # Fallback: PyTorch implementation
     H_t, W_t = nnf.shape[:2]
     H_s, W_s, C = source_style.shape
     device = source_style.device

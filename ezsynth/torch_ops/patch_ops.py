@@ -7,40 +7,13 @@ operations that form the core of the PatchMatch algorithm.
 """
 
 import os
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 
-# Check if Metal operations should be skipped
-skip_metal = os.environ.get("EZSYNTH_SKIP_METAL", "").lower() in ("1", "true", "yes")
-skip_metal_verbose = os.environ.get("EZSYNTH_SKIP_METAL_VERBOSE", "").lower() in (
-    "1",
-    "true",
-    "yes",
-)
-# Import custom Metal operations if MPS is available and not skipped
-if torch.backends.mps.is_available() and not skip_metal:
-    try:
-        from .metal_ext.compiler import compiled_metal_ops
-
-        if compiled_metal_ops is not None:
-            if skip_metal_verbose:
-                print("Loaded custom Metal operations for patch_ops.")
-        else:
-            if skip_metal_verbose:
-                print("Custom Metal operations compiler returned None for patch_ops.")
-            compiled_metal_ops = None
-    except ImportError:
-        if skip_metal_verbose:
-            print("Failed to import custom Metal operations for patch_ops.")
-        compiled_metal_ops = None
-else:
-    if skip_metal:
-        if skip_metal_verbose:
-            print(
-                "Skipping custom Metal operations for patch_ops (EZSYNTH_SKIP_METAL set)."
-            )
-    compiled_metal_ops = None
+TORCH_CUDA_CLEAR_CACHE = False
+TORCH_MPS_CLEAR_CACHE = True
 
 
 def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:
@@ -67,7 +40,11 @@ def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:
     if is_uint8:
         image_nchw = image_nchw.float()
 
-    patches = F.unfold(image_nchw, kernel_size=patch_size, padding=padding)
+    # Use replicate padding to match CUDA implementation
+    image_padded = F.pad(
+        image_nchw, (padding, padding, padding, padding), mode="replicate"
+    )
+    patches = F.unfold(image_padded, kernel_size=patch_size, padding=0)
 
     if is_uint8:
         patches = patches.round().clamp(0, 255).to(torch.uint8)
@@ -75,7 +52,93 @@ def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:
     patches = patches.view(C * patch_size * patch_size, H * W)
     patches = patches.permute(1, 0).view(H, W, -1)
 
-    return patches.contiguous()
+    result = patches.contiguous()
+
+    if (
+        TORCH_CUDA_CLEAR_CACHE
+        and str(image.device).startswith("cuda")
+        and torch.cuda.is_available()
+    ):
+        torch.cuda.empty_cache()
+
+    return result
+
+
+def extract_patches_from_coords(
+    image: torch.Tensor, coords: torch.Tensor, patch_size: int
+) -> torch.Tensor:
+    """
+    Extract patches from specific coordinates using advanced indexing.
+    More memory efficient than unfolding the whole image when we only need a subset.
+
+    Args:
+        image: (H, W, C) tensor
+        coords: (N, 2) tensor of (x, y) top-left coordinates
+        patch_size: Size of patches
+
+    Returns:
+        patches: (N, C*ps*ps) flattened patches
+    """
+    H, W, C = image.shape
+    N = coords.shape[0]
+
+    # Ensure coords are long for indexing
+    coords = coords.long()
+
+    # Create grid of offsets
+    # (ps, ps)
+    ys = torch.arange(patch_size, device=image.device)
+    xs = torch.arange(patch_size, device=image.device)
+
+    # (ps*ps)
+    grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
+    grid_y = grid_y.flatten()
+    grid_x = grid_x.flatten()
+
+    # Compute all sampling coordinates
+    # coords: (N, 2) -> (N, 1)
+    # grid: (ps*ps) -> (1, ps*ps)
+    # sample_y: (N, ps*ps)
+    sample_y = coords[:, 1:2] + grid_y.unsqueeze(0)
+    sample_x = coords[:, 0:1] + grid_x.unsqueeze(0)
+
+    # Clamp to be safe (though input coords should be valid for top-left)
+    # We need to clamp the *bottom-right* of the patch too
+    # But assuming valid top-left coords that allow for a full patch:
+    # sample_y will range from y to y+ps-1.
+    # If y < H-ps+1, then y+ps-1 < H.
+    sample_y = sample_y.clamp(0, H - 1)
+    sample_x = sample_x.clamp(0, W - 1)
+
+    # Gather pixels
+    # image: (H, W, C)
+    # We want (N, ps*ps, C)
+
+    # Advanced indexing with broadcasting
+    # sample_y, sample_x are (N, ps*ps)
+    # We need to expand them to (N, ps*ps, C)? No, we can index directly if we handle C carefully.
+    # Actually, image[sample_y, sample_x] will give (N, ps*ps, C)
+
+    patches = image[sample_y, sample_x]  # (N, ps*ps, C)
+
+    # Flatten to (N, C*ps*ps) to match expected format for some ops,
+    # OR keep as (N, C, ps, ps) depending on usage.
+    # The existing extract_patches returns (H, W, patch_size*patch_size*C) -> flattened patches.
+    # Let's match that "flattened patch" structure: (N, C*ps*ps)
+    # But wait, existing extract_patches returns (H, W, -1) where -1 is C*ps*ps.
+    # Here we have N patches.
+
+    # patches is (N, ps*ps, C).
+    # We need to permute to (N, C, ps*ps) then flatten?
+    # Let's check how unfold does it.
+    # Unfold (1, C, H, W) -> (1, C*ps*ps, L).
+    # So the channel dimension comes first in the flattened vector.
+    # i.e. [R0, R1... G0, G1... B0, B1...]
+
+    patches = patches.permute(0, 2, 1)  # (N, C, ps*ps)
+    patches = patches.reshape(N, -1)  # (N, C*ps*ps)
+
+    return patches
 
 
 def compute_patch_ssd_vectorized(
@@ -111,6 +174,37 @@ def compute_patch_ssd_vectorized(
     return error
 
 
+def compute_patch_stats(
+    patches: torch.Tensor, patch_size: int, num_channels: int
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Precompute statistics for NCC: vals (grayscale), mean, std.
+
+    Args:
+        patches: (..., C*ps*ps) flattened patches
+        patch_size: int
+        num_channels: int
+
+    Returns:
+        vals: (..., ps*ps) - channel-averaged pixel values
+        mean: (..., 1) - mean of vals
+        std: (..., 1) - std of vals
+    """
+    ps_sq = patch_size * patch_size
+    epsilon = 1e-6
+
+    # Reshape to (..., C, ps*ps)
+    patches_reshaped = patches.view(*patches.shape[:-1], num_channels, ps_sq)
+
+    # Average over channels to get "grayscale" equivalent for NCC
+    vals = patches_reshaped.float().mean(dim=-2)  # (..., ps_sq)
+
+    mean = vals.mean(dim=-1, keepdim=True)  # (..., 1)
+    std = vals.std(dim=-1, keepdim=True, unbiased=False) + epsilon  # (..., 1)
+
+    return vals, mean, std
+
+
 def compute_patch_ncc_vectorized(
     source_style_patches: torch.Tensor,
     target_style_patches: torch.Tensor,
@@ -120,6 +214,8 @@ def compute_patch_ncc_vectorized(
     patch_size: int,
     style_weights: torch.Tensor,
     guide_weights: torch.Tensor,
+    source_stats: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+    target_stats: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
 ) -> torch.Tensor:
     """Computes NCC/SSD. Handles both 2D grid and 1D list of target patches."""
     H_s, W_s = source_style_patches.shape[:2]

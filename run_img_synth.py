@@ -22,38 +22,8 @@ parser.add_argument(
     action="store_true",
     help="Run with full synthesis parameters (default: fast parameters)",
 )
-parser.add_argument(
-    "--skip-metal",
-    action="store_true",
-    help="Skip loading Metal operations even if available",
-)
+
 args = parser.parse_args()
-
-# Set environment variable for torch_ops to skip Metal operations if requested
-if args.skip_metal:
-    os.environ["EZSYNTH_SKIP_METAL"] = "1"
-
-os.environ["EZSYNTH_SKIP_METAL_VERBOSE"] = "0"
-
-# Try to load custom Metal operations for verification
-_metal_ops_loaded = False
-if torch.backends.mps.is_available() and not args.skip_metal:
-    try:
-        from ezsynth.torch_ops.metal_ext.compiler import compiled_metal_ops
-
-        if compiled_metal_ops is not None:
-            _metal_ops_loaded = True
-            print("Verification: Custom Metal operations are loaded.")
-        else:
-            print(
-                "Verification: Custom Metal operations are NOT loaded (compiler returned None)."
-            )
-    except ImportError:
-        print("Verification: Custom Metal operations are NOT loaded (ImportError).")
-else:
-    print(
-        "Verification: MPS is not available or Metal operations skipped, custom Metal operations will not be used."
-    )
 
 print(f"Using backend: {args.backend}")
 print(f"Using full parameters: {args.full_params}")

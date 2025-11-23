@@ -6,43 +6,10 @@ The omega map tracks how many times each source pixel is used in the current
 NNF, enabling a uniformity penalty that discourages overuse of popular patches.
 """
 
-import os
 from typing import Tuple
 
 import torch
 import torch.nn.functional as F
-
-# Check if Metal operations should be skipped
-skip_metal = os.environ.get("EZSYNTH_SKIP_METAL", "").lower() in ("1", "true", "yes")
-skip_metal_verbose = os.environ.get("EZSYNTH_SKIP_METAL_VERBOSE", "").lower() in (
-    "1",
-    "true",
-    "yes",
-)
-
-# Import custom Metal operations if MPS is available and not skipped
-if torch.backends.mps.is_available() and not skip_metal:
-    try:
-        from .metal_ext.compiler import compiled_metal_ops
-
-        if compiled_metal_ops is not None:
-            if skip_metal_verbose:
-                print("Loaded custom Metal operations for omega_ops.")
-        else:
-            if skip_metal_verbose:
-                print("Custom Metal operations compiler returned None for omega_ops.")
-            compiled_metal_ops = None
-    except ImportError:
-        if skip_metal_verbose:
-            print("Failed to import custom Metal operations for omega_ops.")
-        compiled_metal_ops = None
-else:
-    if skip_metal:
-        if skip_metal_verbose:
-            print(
-                "Skipping custom Metal operations for omega_ops (EZSYNTH_SKIP_METAL set)."
-            )
-    compiled_metal_ops = None
 
 
 def populate_omega_map(
@@ -72,18 +39,7 @@ def populate_omega_map(
     - Use scatter_add to efficiently accumulate counts
     - Clamp coordinates to valid range
     """
-    # Try Metal-accelerated version first
-    if compiled_metal_ops is not None:
-        try:
-            H_s, W_s = source_shape
-            omega_map = compiled_metal_ops.mps_populate_omega_map(
-                nnf.to(torch.int32), H_s, W_s, patch_size
-            )
-            return omega_map
-        except Exception as e:
-            print(f"Metal populate_omega_map failed, falling back to PyTorch: {e}")
 
-    # Fallback: PyTorch implementation
     H_t, W_t = nnf.shape[:2]
     H_s, W_s = source_shape
     device = nnf.device
@@ -140,17 +96,7 @@ def compute_omega_scores(
     Returns:
         omega_scores: (H_t, W_t) float32 average omega values per patch
     """
-    # Try Metal-accelerated version first
-    if compiled_metal_ops is not None:
-        try:
-            omega_scores = compiled_metal_ops.mps_compute_omega_scores(
-                omega_map.float(), nnf.to(torch.int32), patch_size
-            )
-            return omega_scores
-        except Exception as e:
-            print(f"Metal compute_omega_scores failed, falling back to PyTorch: {e}")
 
-    # Fallback: PyTorch implementation
     H_t, W_t = nnf.shape[:2]
     H_s, W_s = omega_map.shape
 
