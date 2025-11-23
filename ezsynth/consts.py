@@ -36,34 +36,39 @@ def _load_cuda_extension():
     Dynamically load the CUDA extension and set CUDA_EXTENSION_AVAILABLE.
     This function is called at module import time.
     """
+    global CUDA_EXTENSION_AVAILABLE, ebsynth_torch
+
     if FORCE_EBSYNTH_JIT_LOADER:
         if JIT_VERBOSE:
             print("Forcing JIT loader for ebsynth_torch (direct import disabled).")
+
+    # Initialize variables
+    force_jit = FORCE_EBSYNTH_JIT_LOADER
 
     if not FORCE_EBSYNTH_JIT_LOADER:
         # First, try direct import of ebsynth_torch (if installed via pip)
         try:
             import ebsynth_torch
-
             CUDA_EXTENSION_AVAILABLE = True
             if JIT_VERBOSE:
                 print("CUDA extension loaded successfully (direct import).")
+            return  # Success, no need to continue
         except ImportError:
             force_jit = True  # Fall back to JIT if direct import fails
 
     if force_jit:
         # Try the JIT loader
         try:
-            from ebsynth_torch_loader import ebsynth_torch
-
-            CUDA_EXTENSION_AVAILABLE = ebsynth_torch is not None
+            from ebsynth_torch_loader import ebsynth_torch as jit_ebsynth_torch
+            CUDA_EXTENSION_AVAILABLE = jit_ebsynth_torch is not None
+            ebsynth_torch = jit_ebsynth_torch
             if CUDA_EXTENSION_AVAILABLE:
                 if JIT_VERBOSE:
                     print("CUDA extension loaded successfully (via JIT loader).")
             else:
                 print("JIT loader found but extension not available.")
-        except ImportError:
-            print("\nCould not find the JIT loader module.")
+        except ImportError as e:
+            print(f"\nCould not find the JIT loader module: {e}")
             ebsynth_torch = None
             CUDA_EXTENSION_AVAILABLE = False
 
