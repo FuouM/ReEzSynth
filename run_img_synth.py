@@ -22,6 +22,11 @@ parser.add_argument(
     action="store_true",
     help="Run with full synthesis parameters (default: fast parameters)",
 )
+parser.add_argument(
+    "--benchmark",
+    action="store_true",
+    help="Enable detailed benchmarking and timing output",
+)
 
 args = parser.parse_args()
 
@@ -54,7 +59,9 @@ st = time.time()
 
 # --- Setup Paths ---
 EXAMPLES_DIR = "examples"
-OUTPUT_DIR = "output_synth_api"
+OUTPUT_DIR = (
+    f"output_synth_api_{args.backend}_{'full' if args.full_params else 'minimal'}"
+)
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -80,7 +87,8 @@ result_img, result_err = ezsynner.run(
             f"{EXAMPLES_DIR}/texbynum/target_segment.png",
             weight=1.0,  # The weight is now explicit per-guide
         )
-    ]
+    ],
+    benchmark=args.benchmark,
 )
 save_synth_result(OUTPUT_DIR, "retarget", result_img, result_err)
 print(f"Segment Retargeting took: {time.time() - start_example_time:.4f} s")
@@ -113,7 +121,8 @@ result_img, result_err = ezsynner.run(
             f"{EXAMPLES_DIR}/stylit/target_indirb.png",
             weight=0.66,
         ),
-    ]
+    ],
+    benchmark=args.benchmark,
 )
 save_synth_result(OUTPUT_DIR, "stylit", result_img, result_err)
 print(f"Stylit took: {time.time() - start_example_time:.4f} s")
@@ -148,7 +157,8 @@ result_img, result_err = ezsynner.run(
             f"{EXAMPLES_DIR}/facestyle/target_Gpos.png",
             weight=1.5,
         ),
-    ]
+    ],
+    benchmark=args.benchmark,
 )
 save_synth_result(OUTPUT_DIR, "facestyle", result_img, result_err)
 print(f"Face Style took: {time.time() - start_example_time:.4f} s")

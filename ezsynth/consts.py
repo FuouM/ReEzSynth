@@ -49,6 +49,7 @@ def _load_cuda_extension():
         # First, try direct import of ebsynth_torch (if installed via pip)
         try:
             import ebsynth_torch
+
             CUDA_EXTENSION_AVAILABLE = True
             if JIT_VERBOSE:
                 print("CUDA extension loaded successfully (direct import).")
@@ -60,6 +61,7 @@ def _load_cuda_extension():
         # Try the JIT loader
         try:
             from ebsynth_torch_loader import ebsynth_torch as jit_ebsynth_torch
+
             CUDA_EXTENSION_AVAILABLE = jit_ebsynth_torch is not None
             ebsynth_torch = jit_ebsynth_torch
             if CUDA_EXTENSION_AVAILABLE:

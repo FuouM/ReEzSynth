@@ -38,6 +38,7 @@ class BaseSynthesisBackend(ABC):
         stop_threshold: float,
         rand_states: Optional[torch.Tensor],
         cost_function_mode: int,
+        benchmark: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Run a single level of the synthesis algorithm.

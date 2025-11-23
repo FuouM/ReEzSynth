@@ -270,7 +270,7 @@ class ImageSynth:
         print("\nImageSynth API initialized successfully.")
 
     def run(
-        self, guides: List[Tuple[Any, Any, float]]
+        self, guides: List[Tuple[Any, Any, float]], benchmark: bool = False
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Runs the synthesis for a single target image using the provided guides.
@@ -290,7 +290,9 @@ class ImageSynth:
         processed_guides = [load_guide(src, tgt, weight) for src, tgt, weight in guides]
 
         # EbsynthEngine handles the synthesis directly
-        stylized_image, error_map = self.engine.run(self.style, guides=processed_guides)
+        stylized_image, error_map = self.engine.run(
+            self.style, guides=processed_guides, benchmark=benchmark
+        )
 
         return stylized_image, error_map
 

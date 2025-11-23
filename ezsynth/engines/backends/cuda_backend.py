@@ -5,6 +5,7 @@ import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ...consts import CUDA_EXTENSION_AVAILABLE, ebsynth_torch
+from ...torch_ops import SynthesisTimer
 from .base import BaseSynthesisBackend
 
 
@@ -24,6 +25,14 @@ class CudaBackend(BaseSynthesisBackend):
                 "CUDA backend selected but ebsynth_torch extension is not available."
             )
         self.device = "cuda"
+        self.timer = SynthesisTimer()
+        self.benchmark_enabled = False
+
+    def enable_benchmarking(self, enabled: bool = True):
+        """Enable or disable detailed benchmarking."""
+        self.benchmark_enabled = enabled
+        if enabled:
+            self.timer.reset()
 
     def run_level(
         self,
@@ -42,25 +51,50 @@ class CudaBackend(BaseSynthesisBackend):
         stop_threshold: float,
         rand_states: Optional[torch.Tensor],
         cost_function_mode: int,
+        benchmark: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Run a single level using the CUDA extension.
         """
-        return ebsynth_torch.run_level(
-            style_tensor,
-            source_guide_tensor,
-            target_guide_tensor,
-            modulation_tensor,
-            nnf,
-            style_weights,
-            guide_weights,
-            uniformity_weight,
-            patch_size,
-            vote_mode,
-            search_vote_iters,
-            patch_match_iters,
-            stop_threshold,
-            rand_states,
-            self.ebsynth_config.search_pruning_threshold,
-            cost_function_mode,
-        )
+        if benchmark:
+            self.enable_benchmarking(True)
+
+        if self.benchmark_enabled:
+            with self.timer.time_operation("cuda_level_execution"):
+                return ebsynth_torch.run_level(
+                    style_tensor,
+                    source_guide_tensor,
+                    target_guide_tensor,
+                    modulation_tensor,
+                    nnf,
+                    style_weights,
+                    guide_weights,
+                    uniformity_weight,
+                    patch_size,
+                    vote_mode,
+                    search_vote_iters,
+                    patch_match_iters,
+                    stop_threshold,
+                    rand_states,
+                    self.ebsynth_config.search_pruning_threshold,
+                    cost_function_mode,
+                )
+        else:
+            return ebsynth_torch.run_level(
+                style_tensor,
+                source_guide_tensor,
+                target_guide_tensor,
+                modulation_tensor,
+                nnf,
+                style_weights,
+                guide_weights,
+                uniformity_weight,
+                patch_size,
+                vote_mode,
+                search_vote_iters,
+                patch_match_iters,
+                stop_threshold,
+                rand_states,
+                self.ebsynth_config.search_pruning_threshold,
+                cost_function_mode,
+            )
