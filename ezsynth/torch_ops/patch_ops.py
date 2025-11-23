@@ -12,8 +12,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-TORCH_CUDA_CLEAR_CACHE = False
-TORCH_MPS_CLEAR_CACHE = True
+from ..consts import TORCH_CUDA_CLEAR_CACHE, TORCH_MPS_CLEAR_CACHE
 
 
 def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:

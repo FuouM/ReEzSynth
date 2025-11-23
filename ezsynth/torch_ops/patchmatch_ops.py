@@ -12,12 +12,10 @@ from typing import Tuple
 
 import torch
 
+from ezsynth.consts import COST_FUNCTION_NCC, COST_FUNCTION_SSD
+
 from .omega_ops import compute_omega_scores, update_omega_map
 from .patch_ops import compute_patch_ncc_vectorized, compute_patch_ssd_vectorized
-
-# Cost function constants
-COST_FUNCTION_SSD = 0
-COST_FUNCTION_NCC = 1
 
 # OPTIMIZATION: Cache for small offset tensors to avoid repeated allocations
 _OFFSET_TENSOR_CACHE = {}
