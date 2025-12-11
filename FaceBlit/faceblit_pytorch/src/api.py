@@ -1,3 +1,4 @@
+import datetime
 from pathlib import Path
 from typing import Sequence, Tuple, Union
 
@@ -10,6 +11,53 @@ from PIL import Image
 from . import ops
 
 PathLike = Union[str, Path]
+
+# Global cache for FAN model to avoid reloading
+_fan_model_cache = {}
+
+
+def get_timestamp():
+    return datetime.datetime.now().strftime("%H:%M:%S")
+
+
+def _get_fan_model(device: str, model: str = "dlib"):
+    """Get cached FAN model or create new one for the specified device."""
+    if device in _fan_model_cache:
+        print(f"[{get_timestamp()}] [FAN] Using cached model for device: {device}")
+        return _fan_model_cache[device]
+
+    print(f"[{get_timestamp()}] [FAN] Loading model for device: {device}...")
+    import time
+
+    start_time = time.time()
+
+    try:
+        import face_alignment
+    except ImportError:
+        raise ImportError(
+            "face-alignment package is not installed. Please install it with `pip install face-alignment`."
+        )
+
+    # Determine landmarks type with version compatibility
+    landmarks_type = getattr(face_alignment.LandmarksType, "_2D", None)
+    if landmarks_type is None:
+        landmarks_type = getattr(face_alignment.LandmarksType, "TWO_D", None)
+    if landmarks_type is None:
+        raise AttributeError(
+            "face_alignment.LandmarksType is missing _2D/TWO_D; "
+            "please install a compatible face-alignment version."
+        )
+
+    fa = face_alignment.FaceAlignment(
+        landmarks_type, device=device, flip_input=True, face_detector=model
+    )
+
+    load_time = time.time() - start_time
+    print(
+        f"[{get_timestamp()}] [FAN] Model loaded for device: {device} with {model} in {load_time:.3f}s"
+    )
+    _fan_model_cache[device] = fa
+    return fa
 
 
 def _to_path(path: PathLike) -> str:
@@ -68,11 +116,29 @@ class FaceBlit:
         self,
         model_path: PathLike | None = None,
         device: str | torch.device | None = None,
+        precompute_device: str | torch.device | None = None,
+        stylize_device: str | torch.device | None = None,
     ):
         self.model_path = Path(model_path) if model_path is not None else None
-        self.device = (
-            torch.device(device) if device is not None else torch.device("cpu")
-        )
+
+        # Handle device assignment for backward compatibility and new functionality
+        if device is not None:
+            # If device is specified, use it for both operations (backward compatibility)
+            device_obj = torch.device(device)
+            self.precompute_device = device_obj
+            self.stylize_device = device_obj
+        else:
+            # Use separate devices if specified, otherwise default to CPU
+            self.precompute_device = (
+                torch.device(precompute_device)
+                if precompute_device is not None
+                else torch.device("cpu")
+            )
+            self.stylize_device = (
+                torch.device(stylize_device)
+                if stylize_device is not None
+                else torch.device("cpu")
+            )
 
         self.style_image: np.ndarray | None = None
         self.style_landmarks: list[Tuple[int, int]] | None = None
@@ -169,11 +235,15 @@ class FaceBlit:
             mls_target_landmarks.extend([(0, tgt_h), (tgt_w, tgt_h)])
 
         # MLS deformation of style position guide toward target landmarks
-        pos_tensor = ops._to_tensor(self.style_pos_guide).to(self.device)
+        pos_tensor = ops._to_tensor(self.style_pos_guide).to(self.stylize_device)
         warped = ops.warp_mls_similarity(
             pos_tensor,
-            torch.tensor(mls_style_landmarks, device=self.device, dtype=torch.float32),
-            torch.tensor(mls_target_landmarks, device=self.device, dtype=torch.float32),
+            torch.tensor(
+                mls_style_landmarks, device=self.stylize_device, dtype=torch.float32
+            ),
+            torch.tensor(
+                mls_target_landmarks, device=self.stylize_device, dtype=torch.float32
+            ),
             grid_size=10,
         )
         target_pos_guide = ops._to_numpy_image(warped)
@@ -199,7 +269,7 @@ class FaceBlit:
                 patch_size=patch_size,
                 lambda_pos=10,  # Same as C++
                 lambda_app=2,  # Same as C++
-                device=self.device,
+                device=self.stylize_device,
                 use_vectorized=use_vectorized,
                 dfs_mode=dfs_mode,
             )
@@ -228,7 +298,7 @@ class FaceBlit:
                 lambda_pos=10,
                 lambda_app=0,
                 threshold=10,
-                device=self.device,
+                device=self.stylize_device,
                 use_vectorized=use_vectorized,
                 dfs_mode=dfs_mode,
             )
@@ -332,7 +402,8 @@ class FaceBlit:
         input_path: PathLike,
         output_dir: PathLike,
         *,
-        predictor_path: PathLike | None,
+        predictor_path: PathLike | None = None,
+        landmark_model: str = "dlib",
         lut_path: PathLike | None = None,
         draw_grid: bool = False,
         stretch_hist: bool = True,
@@ -343,14 +414,16 @@ class FaceBlit:
             input_path=input_path,
             output_dir=output_dir,
             predictor_path=predictor_path,
+            landmark_model=landmark_model,
             lut_path=lut_path,
             draw_grid=draw_grid,
             stretch_hist=stretch_hist,
             lambda_pos=lambda_pos,
             lambda_app=lambda_app,
             reuse_precomputed=False,
-            device=self.device,
+            device=self.precompute_device,
         )
+
 
 # ----------------------------------------------------------------------
 # Module-level helpers mirroring the original API
@@ -424,8 +497,9 @@ def _load_precomputed(paths: dict[str, Path]) -> dict[str, str] | None:
 def compute_style_assets(
     input_path: PathLike,
     output_dir: PathLike,
-    predictor_path: PathLike | None,
+    predictor_path: PathLike | None = None,
     *,
+    landmark_model: str = "dlib",
     lut_path: PathLike | None = None,
     draw_grid: bool = False,
     stretch_hist: bool = True,
@@ -439,6 +513,9 @@ def compute_style_assets(
     if not style_path.exists():
         raise FileNotFoundError(f"Failed to read image: {input_path}")
 
+    # Load image once (BGR numpy array)
+    img = _read_image_pil(style_path)
+
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = style_path.stem
@@ -450,22 +527,45 @@ def compute_style_assets(
             cached["style_path"] = _to_path(style_path)
             return cached
 
-    if predictor_path is None:
-        raise ValueError(
-            "predictor_path (dlib shape predictor .dat) is required for landmark detection"
-        )
+    if landmark_model == "dlib":
+        if predictor_path is None:
+            raise ValueError(
+                "predictor_path (dlib shape predictor .dat) is required for dlib landmark detection"
+            )
+        detector = dlib.get_frontal_face_detector()
+        sp = dlib.shape_predictor(_to_path(predictor_path))
+        dets = detector(img, 1)
+        if len(dets) == 0:
+            raise RuntimeError("No face detected in style image")
+        shape = sp(img, dets[0])
+        landmarks = [(shape.part(i).x, shape.part(i).y) for i in range(shape.num_parts)]
 
-    img = _read_image_pil(style_path)
-    if img is None:
-        raise FileNotFoundError(f"Failed to read image: {input_path}")
+    elif landmark_model == "fan":
+        # Determine device for FA
+        fa_device = "cpu"
+        if device is not None:
+            d = torch.device(device)
+            if d.type == "cuda":
+                fa_device = "cuda"
+            elif d.type == "mps":
+                fa_device = "mps"
 
-    detector = dlib.get_frontal_face_detector()
-    sp = dlib.shape_predictor(_to_path(predictor_path))
-    dets = detector(img, 1)
-    if len(dets) == 0:
-        raise RuntimeError("No face detected in style image")
-    shape = sp(img, dets[0])
-    landmarks = [(shape.part(i).x, shape.part(i).y) for i in range(shape.num_parts)]
+        # Get cached FAN model
+        fa = _get_fan_model(fa_device)
+
+        # Convert BGR -> RGB for FAN
+        img_np = img[..., ::-1].copy()
+        preds = fa.get_landmarks(img_np)
+
+        if preds is None or len(preds) == 0:
+            raise RuntimeError("No face detected in style image (FAN)")
+
+        # Take the first face
+        shape = preds[0]
+        landmarks = [(int(p[0]), int(p[1])) for p in shape]
+
+    else:
+        raise ValueError(f"Unknown landmark_model: {landmark_model}")
 
     # Persist assets
     with paths["landmarks"].open("w") as f:

@@ -27,52 +27,121 @@ if str(ROOT) not in sys.path:
 
 import faceblit_pytorch as fb  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Config toggles (edit here instead of CLI args)
+# ---------------------------------------------------------------------------
+LANDMARK_BACKEND = "dlib"  # "dlib" or "fan"
+# dlib: very fast
+# fan: very slow, wider support
+FAN_MODEL = "dlib"
+# dlib: fast
+# sfd: best, slowest
+# blazeface: front camera (doesn't seem to download)
+PRECOMPUTE_DEVICE = "cuda"  # Device for style precompute operations
+STYLIZE_DEVICE = "cpu"  # Device for stylization operations
+DFS_MODE = "numba"  # "auto", "python", "numba"
+
 
 def log(msg: str) -> None:
-    print(f"[test] {msg}")
+    print(f"[{fb.get_timestamp()}] [test] {msg}")
+
+
+def detect_landmarks(
+    image_bgr, backend: str, predictor_path: Path, device: str
+) -> list[tuple[int, int]] | None:
+    """Detect landmarks on a BGR image with the selected backend."""
+    if backend == "dlib":
+        try:
+            import dlib  # type: ignore
+        except ImportError:
+            log("dlib not installed; cannot run dlib backend.")
+            return None
+
+        if not predictor_path.exists():
+            log(f"Missing required predictor for dlib: {predictor_path}")
+            return None
+
+        detector = dlib.get_frontal_face_detector()
+        sp = dlib.shape_predictor(str(predictor_path))
+        img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        faces = detector(img_rgb, 1)
+        if len(faces) == 0:
+            log("No face detected in target image.")
+            return None
+        shape = sp(img_rgb, faces[0])
+        return [(shape.part(i).x, shape.part(i).y) for i in range(shape.num_parts)]
+
+    # FAN backend
+    fa_device = "cpu"
+    d = None
+    try:
+        import torch
+
+        d = torch.device(device)
+    except Exception:
+        pass
+    if d is not None:
+        if d.type == "cuda":
+            fa_device = "cuda"
+        elif d.type == "mps":
+            fa_device = "mps"
+
+    # Use cached FAN model for better performance
+    fa = fb._get_fan_model(fa_device, FAN_MODEL)
+    img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    t_fan = time.perf_counter()
+    preds = fa.get_landmarks(img_rgb)
+    log(
+        f"FAN forward pass finished in {time.perf_counter() - t_fan:.3f}s on {fa_device}"
+    )
+    if preds is None or len(preds) == 0:
+        log("No face detected in target image (FAN).")
+        return None
+    shape = preds[0]
+    return [(int(p[0]), int(p[1])) for p in shape]
 
 
 def main() -> None:
     examples_dir = ROOT / "examples"
     models_dir = ROOT / "models"
-    output_dir = ROOT / "faceblit_pytorch" / "test_outputs"
+    output_dir = ROOT / "faceblit_pytorch" / "test_fan_outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = "cpu"
+    precompute_device = PRECOMPUTE_DEVICE
+    stylize_device = STYLIZE_DEVICE
+    dfs_mode = DFS_MODE
+    landmark_backend = LANDMARK_BACKEND
     # FB_DFS_MODE options:
     #   auto   -> prefer numba DFS when available; else python DFS
     #   python -> original deque DFS (deterministic)
     #   numba  -> JIT DFS if numba present (falls back to python on failure)
-    dfs_mode = "numba"
-    log(f"Using device: {device}, dfs_mode: {dfs_mode}")
+    log(
+        f"Using precompute_device: {precompute_device}, stylize_device: {stylize_device}, dfs_mode: {dfs_mode}, landmark_backend: {landmark_backend}"
+    )
 
     input_path = examples_dir / "target2.png"
     style_path = examples_dir / "style_watercolorgirl.png"
     predictor_path = models_dir / "shape_predictor_68_face_landmarks.dat"
 
-    for p in (input_path, style_path, predictor_path):
+    required_assets = [input_path, style_path]
+    if landmark_backend == "dlib":
+        required_assets.append(predictor_path)
+    for p in required_assets:
         if not p.exists():
             log(f"Missing required asset: {p}")
             return
-
-    # Try importing dlib for landmark detection
-    try:
-        import dlib  # type: ignore
-    except ImportError:
-        log("dlib not installed; skipping test.")
-        return
 
     log("Running style precompute (reuse if already cached)...")
     t0 = time.perf_counter()
     style_assets = fb.compute_style_assets(
         input_path=style_path,
         output_dir=output_dir,
-        predictor_path=predictor_path,
+        predictor_path=predictor_path if landmark_backend == "dlib" else None,
+        landmark_model=landmark_backend,
         draw_grid=False,
         stretch_hist=True,
         reuse_precomputed=True,
-        device=device,
+        device=precompute_device,
     )
     precomp_s = time.perf_counter() - t0
     log(f"Style precompute finished in {precomp_s:.3f}s")
@@ -105,7 +174,9 @@ def main() -> None:
         cv2.imwrite(str(target_app_path), target_app_matched)
 
     log("Loading FaceBlit engine (PyTorch port)...")
-    engine = fb.FaceBlit(device=device)
+    engine = fb.FaceBlit(
+        precompute_device=precompute_device, stylize_device=stylize_device
+    )
     engine.load_style_with_guides(
         str(style_path),
         str(landmarks_path),
@@ -114,18 +185,12 @@ def main() -> None:
         str(style_app_path),
     )
 
-    log("Running dlib landmark detection on target...")
-    detector = dlib.get_frontal_face_detector()
-    sp = dlib.shape_predictor(str(predictor_path))
-    target_img_rgb = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)
-    faces = detector(target_img_rgb, 1)
-    if len(faces) == 0:
-        log("No face detected in target image.")
+    log(f"Running {landmark_backend} landmark detection on target...")
+    target_landmarks = detect_landmarks(
+        target_img, landmark_backend, predictor_path, PRECOMPUTE_DEVICE
+    )
+    if target_landmarks is None:
         return
-    shape = sp(target_img_rgb, faces[0])
-    target_landmarks = [
-        (shape.part(i).x, shape.part(i).y) for i in range(shape.num_parts)
-    ]
 
     log("Stylizing...")
     t1 = time.perf_counter()
