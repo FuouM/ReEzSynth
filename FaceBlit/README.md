@@ -2,6 +2,12 @@
 
 Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) focused on face style transfer. This README covers the pure Python/PyTorch port used for research and integration into ReEzSynth.
 
+## Examples
+
+| Original | Style | Styled (CPU) | Styled (GPU) |
+|:-:|:-:|:-:|:-:|
+| <img src="examples/target2.png" height="250"> | <img src="examples/style_watercolorgirl.png" height="250"> | <img src="examples/output_refs/target2_stylized_pytorch_cpu.png" height="250"> | <img src="examples/output_refs/target2_stylized_pytorch_gpu.png" height="250"> |
+
 ## What's here
 
 - `faceblit_pytorch`: Pure Python/PyTorch implementation with image stylization and style-asset precomputation.
