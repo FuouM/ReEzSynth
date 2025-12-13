@@ -6,6 +6,10 @@ Included both CUDA and CuPy implementations (original).
 
 ## Example output
 
+https://github.com/user-attachments/assets/2f8fc26e-f715-42f4-ac39-b28e0f1341f2
+
+> Original, EbSynth output, FastBlend interpolation (every 10 frames), FastBlend full (clockwise, default configs)
+
 ## Usage
 
 ### Quick Start
