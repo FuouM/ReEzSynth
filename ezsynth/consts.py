@@ -22,7 +22,7 @@ ebsynth_torch = None  # Will be set if extension is available
 # --- Environment Variable Defaults ---
 # Instead of relying on env vars, we use these defaults
 # Can be overridden by setting environment variables before import
-FORCE_EBSYNTH_JIT_LOADER = False
+FORCE_EBSYNTH_JIT_LOADER = True
 JIT_VERBOSE = False
 
 # --- Torch Ops Cache Clearing ---
@@ -43,7 +43,7 @@ def _load_cuda_extension():
             print("Forcing JIT loader for ebsynth_torch (direct import disabled).")
 
     # Initialize variables
-    force_jit = FORCE_EBSYNTH_JIT_LOADER
+    force_jit = True
 
     if not FORCE_EBSYNTH_JIT_LOADER:
         # First, try direct import of ebsynth_torch (if installed via pip)

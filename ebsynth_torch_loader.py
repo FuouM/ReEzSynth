@@ -9,15 +9,16 @@ import torch.utils.cpp_extension
 MODULE_NAME = "ebsynth_torch_jit"
 
 # Find the directory where the C++/CUDA source files are located
-# This assumes this loader file is in the same directory as the 'engines' folder
-# or has a predictable relative path. Let's make it robust.
-_ext_dir = Path(__file__).parent.parent / Path(__file__).parent / "ebsynth_extension"
+_ext_dir = Path(__file__).parent / "ebsynth_extension"
 
 # List all the source files for the extension
+# IMPORTANT: Only compile the main entry points. The modular .cu files are
+# included via #include directives in kernels.cu, so they should NOT be
+# listed as separate source files to avoid duplicate compilation and slowdowns.
 _source_files = [
     _ext_dir / "ext.cpp",
     _ext_dir / "dispatch.cu",
-    _ext_dir / "kernels.cu",
+    _ext_dir / "kernels.cu",           # Includes all modular .cu files internally
     _ext_dir / "integral_image.cu",
 ]
 
@@ -30,11 +31,12 @@ _source_files_str = [str(p) for p in _source_files]
 try:
     if os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"):
         print(f"Attempting to JIT compile and load CUDA extension '{MODULE_NAME}'...")
+        print(f"Source files: {_source_files_str}")
     ebsynth_torch = torch.utils.cpp_extension.load(
         name=MODULE_NAME,
         sources=_source_files_str,
         # Use verbose=True to see the compiler commands and debug issues
-        verbose=True,
+        verbose=os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"),
     )
     if os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes"):
         print("CUDA extension loaded successfully via JIT compilation.")

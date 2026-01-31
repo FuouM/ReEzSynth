@@ -14,7 +14,8 @@ from ..consts import (
     ebsynth_torch,
 )
 from ..torch_ops import SynthesisTimer
-from .backends import CudaBackend, PyTorchBackend
+from .backends import PyTorchBackend
+from .backends import CudaBackend
 
 
 class EbsynthEngine:
@@ -41,6 +42,13 @@ class EbsynthEngine:
 
         # Create the appropriate backend
         if self.backend_type == "cuda":
+            if CudaBackend is None:
+                raise RuntimeError(
+                    "CUDA backend requested but ebsynth_torch extension is not available. "
+                    "The extension will be JIT compiled on first run. "
+                    "If you see this error, the JIT compilation may have failed. "
+                    "Check the error output above for compilation details."
+                )
             self.backend = CudaBackend(ebsynth_config, pipeline_config)
         elif self.backend_type == "torch":
             self.backend = PyTorchBackend(ebsynth_config, pipeline_config)
