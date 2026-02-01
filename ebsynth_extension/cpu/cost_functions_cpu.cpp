@@ -160,14 +160,14 @@ float compute_patch_ncc_sat_cpu(
     double std_s = std::sqrt(std::max(0.0, sum_sq_s / N - mean_s * mean_s));
     double std_t = std::sqrt(std::max(0.0, sum_sq_t / N - mean_t * mean_t));
 
-    // --- O(P^2) Cross-correlation and Guide SSD ---
-    double sum_st = 0.0;
-    float guide_error = 0.0f;
-
     const int source_h = source_style.size(0);
     const int source_w = source_style.size(1);
     const int target_h = target_style.size(0);
     const int target_w = target_style.size(1);
+
+    // --- O(P^2) Cross-correlation and Guide SSD ---
+    double sum_st = 0.0;
+    float guide_error = 0.0f;
 
     for (int py = -r; py <= r; ++py) {
         for (int px = -r; px <= r; ++px) {

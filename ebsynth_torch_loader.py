@@ -61,6 +61,10 @@ try:
     extra_cflags.append("/openmp")
     extra_cflags.append("/O2")
     extra_cflags.append("/fp:fast")
+    # Enable AVX2 and SSE4.2 for SIMD optimizations
+    extra_cflags.append("/arch:AVX2")
+    extra_cflags.append("/D__SSE4_2__")
+    extra_cflags.append("/D__AVX2__")
 
     ebsynth_torch = torch.utils.cpp_extension.load(
         name=MODULE_NAME,

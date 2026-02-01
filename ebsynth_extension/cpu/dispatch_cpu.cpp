@@ -22,6 +22,7 @@
 // ===================================================================
 //                MAIN CPU DISPATCH FUNCTION (SINGLE LEVEL)
 // ===================================================================
+
 void ebsynth_cpu_run_level(
     torch::Tensor output_image,
     torch::Tensor output_error,
@@ -47,6 +48,12 @@ void ebsynth_cpu_run_level(
     const int target_h = target_guide_level.size(0);
     const int target_w = target_guide_level.size(1);
 
+    // Ensure tensors are contiguous for optimal memory access
+    // This is a safe optimization that doesn't change correctness
+    style_level = style_level.contiguous();
+    target_guide_level = target_guide_level.contiguous();
+    nnf = nnf.contiguous();
+
     auto nnf_acc = nnf.packed_accessor32<int32_t, 3>();
     auto error_acc = output_error.packed_accessor32<float, 2>();
     auto source_style_acc = style_level.packed_accessor32<uint8_t, 3>();
@@ -54,6 +61,9 @@ void ebsynth_cpu_run_level(
     auto target_guide_acc = target_guide_level.packed_accessor32<uint8_t, 3>();
 
     bool use_modulation = target_modulation_level.numel() > 0;
+    if (use_modulation) {
+        target_modulation_level = target_modulation_level.contiguous();
+    }
     auto target_modulation_guide_acc = use_modulation ?
         target_modulation_level.packed_accessor32<uint8_t, 3>() : source_guide_acc;
 
@@ -65,11 +75,11 @@ void ebsynth_cpu_run_level(
     auto omega_acc = omega_map.packed_accessor32<int32_t, 2>();
     populate_initial_omega_cpu(omega_acc, nnf_acc, patch_size, target_h, target_w);
 
-    // Temporary tensors
-    torch::Tensor target_style_temp = torch::zeros_like(output_image);
-    torch::Tensor target_style_prev = torch::zeros_like(output_image);
-    torch::Tensor mask = torch::full({target_h, target_w}, 255, torch::kUInt8);
-    torch::Tensor mask2 = torch::empty_like(mask);
+    // Temporary tensors - ensure contiguous for faster access
+    torch::Tensor target_style_temp = torch::zeros_like(output_image).contiguous();
+    torch::Tensor target_style_prev = torch::zeros_like(output_image).contiguous();
+    torch::Tensor mask = torch::full({target_h, target_w}, 255, torch::kUInt8).contiguous();
+    torch::Tensor mask2 = torch::empty_like(mask).contiguous();
 
     auto target_style_temp_acc = target_style_temp.packed_accessor32<uint8_t, 3>();
     auto target_style_prev_acc = target_style_prev.packed_accessor32<uint8_t, 3>();
