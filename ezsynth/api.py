@@ -50,6 +50,7 @@ class RunConfig:
         final_pass_strength: float = 1.0,
         use_residual_transfer: bool = True,
         cost_function: str = "ssd",
+        device: str = None,
     ):
         # Ebsynth gen params
         self.uniformity = uniformity
@@ -80,6 +81,7 @@ class RunConfig:
         self.final_pass_strength = final_pass_strength
         self.use_residual_transfer = use_residual_transfer
         self.cost_function = cost_function
+        self.device = device
 
 
 class Ezsynth:
@@ -264,6 +266,7 @@ class ImageSynth:
             backend=config.backend,
             extra_pass_3x3=config.extra_pass_3x3,
             cost_function=config.cost_function,
+            device=config.device,
             # Weights are now passed directly to run()
         )
 

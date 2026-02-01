@@ -13,9 +13,9 @@ from ezsynth.utils.io_utils import write_image
 parser = ArgumentParser(description="Run EBSynth image synthesis examples")
 parser.add_argument(
     "--backend",
-    choices=["cuda", "torch"],
+    choices=["cuda", "torch", "cpu"],
     default="cuda",
-    help="Backend to use for synthesis (default: cuda)",
+    help="Backend to use for synthesis (default: cuda). 'cpu' uses the C++ extension on CPU.",
 )
 parser.add_argument(
     "--full-params",
@@ -74,22 +74,34 @@ print(f"Saving output to: {OUTPUT_DIR}")
 # --- Example 1: Segment Retargeting ---
 print("\n--- Running: Segment Retargeting ---")
 start_example_time = time.time()
+
+# Determine backend and device
+# For CPU, we use "cuda" backend (the C++ extension) with device="cpu"
+if args.backend == "cpu":
+    backend = "cuda"
+    device = "cpu"
+else:
+    backend = args.backend
+    device = None  # Auto-detect
+
 ezsynner = ImageSynth(
     style_image=f"{EXAMPLES_DIR}/texbynum/source_photo.png",
     config=RunConfig(
-        backend=args.backend,
+        backend=backend,
         image_weight=1.0,
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
+        device=device,
     )
     if args.full_params
     else RunConfig(
-        backend=args.backend,
+        backend=backend,
         image_weight=1.0,
         pyramid_levels=1,
         search_vote_iters=1,
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
+        device=device,
     ),
 )
 
@@ -114,17 +126,19 @@ start_example_time = time.time()
 ezsynner = ImageSynth(
     style_image=f"{EXAMPLES_DIR}/stylit/source_style.png",
     config=RunConfig(
-        backend=args.backend,
+        backend=backend,
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
+        device=device,
     )
     if args.full_params
     else RunConfig(
-        backend=args.backend,
+        backend=backend,
         pyramid_levels=1,
         search_vote_iters=1,
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
+        device=device,
     ),
 )
 
@@ -160,17 +174,19 @@ start_example_time = time.time()
 ezsynner = ImageSynth(
     style_image=f"{EXAMPLES_DIR}/facestyle/source_painting.png",
     config=RunConfig(
-        backend=args.backend,
+        backend=backend,
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
+        device=device,
     )
     if args.full_params
     else RunConfig(
-        backend=args.backend,
+        backend=backend,
         pyramid_levels=1,
         search_vote_iters=1,
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
+        device=device,
     ),
 )
 

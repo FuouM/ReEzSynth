@@ -1,7 +1,7 @@
 #include <torch/extension.h>
 #include <vector>
 
-#include "dispatch.h" // Include our new dispatch header
+#include "dispatch.h" // Include our unified dispatch header
 
 // Python-facing function to run a single pyramid level
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
@@ -22,13 +22,12 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
     float search_pruning_threshold,
     int cost_function_mode) // New parameter
 {
-    // Input validation
-    TORCH_CHECK(style_level.is_cuda(), "Style tensor must be a CUDA tensor");
+    // Input validation (removed CUDA-only checks to support CPU)
     TORCH_CHECK(style_level.is_contiguous(), "Style tensor must be contiguous");
     TORCH_CHECK(style_level.scalar_type() == torch::kUInt8, "Style tensor must be uint8");
-    TORCH_CHECK(nnf.is_cuda(), "NNF tensor must be a CUDA tensor");
+    TORCH_CHECK(style_level.device() == nnf.device(), "Style and NNF tensors must be on the same device");
 
-    // Prepare output tensors
+    // Prepare output tensors on the same device as input
     auto options = torch::TensorOptions().device(style_level.device()).dtype(torch::kUInt8);
     auto error_options = torch::TensorOptions().device(style_level.device()).dtype(torch::kFloat32);
 
@@ -39,8 +38,8 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
     torch::Tensor output_image = torch::zeros({target_h, target_w, num_style_channels}, options);
     torch::Tensor output_error = torch::zeros({target_h, target_w}, error_options);
 
-    // Dispatch to the single-level CUDA implementation
-    ebsynth_cuda_run_level(
+    // Dispatch to the appropriate implementation (CPU or CUDA)
+    ebsynth_run_level(
         output_image,
         output_error,
         nnf, // Pass NNF to be modified in-place
@@ -65,19 +64,19 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
 }
 
 // Python-facing function to initialize RNG states once
-void init_rand_states(torch::Tensor rand_states_tensor)
+void init_rand_states_wrapper(torch::Tensor rand_states_tensor)
 {
-    TORCH_CHECK(rand_states_tensor.is_cuda(), "Random states tensor must be CUDA");
-    init_rand_states_cuda(rand_states_tensor);
+    // Dispatch to appropriate implementation based on device
+    init_rand_states(rand_states_tensor);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
-    m.def("run_level", &run_level, "Run one level of Ebsynth on PyTorch CUDA Tensors",
+    m.def("run_level", &run_level, "Run one level of Ebsynth on PyTorch Tensors (CPU or CUDA)",
           py::arg("style_level"),
           py::arg("source_guide_level"),
           py::arg("target_guide_level"),
-          py::arg("target_modulation_level"), 
+          py::arg("target_modulation_level"),
           py::arg("nnf"),
           py::arg("style_weights"),
           py::arg("guide_weights"),
@@ -89,6 +88,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
           py::arg("stop_threshold"),
           py::arg("rand_states_tensor"),
           py::arg("search_pruning_threshold"),
-          py::arg("cost_function_mode")); // New argument exposed to Python
-    m.def("init_rand_states", &init_rand_states, "Initialize CUDA random number generator states");
+          py::arg("cost_function_mode"));
+    m.def("init_rand_states", &init_rand_states_wrapper, "Initialize random number generator states (CPU or CUDA)");
 }

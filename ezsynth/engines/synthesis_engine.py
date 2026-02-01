@@ -49,7 +49,9 @@ class EbsynthEngine:
                     "If you see this error, the JIT compilation may have failed. "
                     "Check the error output above for compilation details."
                 )
-            self.backend = CudaBackend(ebsynth_config, pipeline_config)
+            # Check if device is specified in config (for CPU mode with C++ extension)
+            device = getattr(ebsynth_config, 'device', None)
+            self.backend = CudaBackend(ebsynth_config, pipeline_config, device=device)
         elif self.backend_type == "torch":
             self.backend = PyTorchBackend(ebsynth_config, pipeline_config)
         else:
