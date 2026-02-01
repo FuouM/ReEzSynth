@@ -85,6 +85,8 @@ class EbsynthParamsConfig(BaseModel):
     cost_function: str = "ssd"  # "ssd" or "ncc"
     # New: Backend for synthesis operations.
     backend: str = "cuda"  # "cuda" or "torch"
+    # New: Device for synthesis (allows CPU with C++ extension)
+    device: Optional[str] = None  # None for auto-detect, or "cpu"/"cuda"
     extra_pass_3x3: bool = False
     edge_weight: float = 1.0
     image_weight: float = 6.0
