@@ -5,7 +5,7 @@ import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ...consts import EXTENSION_AVAILABLE, EXTENSION_CUDA_AVAILABLE, ebsynth_torch
-from ...torch_ops import SynthesisTimer
+from ...utils import SynthesisTimer
 from .base import BaseSynthesisBackend
 
 

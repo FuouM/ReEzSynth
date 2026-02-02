@@ -4,9 +4,18 @@ Wrapper around EbsynthEngine that handles tensor conversions
 and provides a clean interface for ComfyUI nodes.
 """
 
+import os
+import sys
 from typing import List, Optional, Tuple
 
 import torch
+
+# Add the local ezsynth directory to the path
+# The ezsynth folder is at the same level as comfyui_ezsynth, so we need to go up 3 levels
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_ezsynth_parent = os.path.normpath(os.path.join(_current_dir, "..", "..", ".."))
+if _ezsynth_parent not in sys.path:
+    sys.path.insert(0, _ezsynth_parent)
 
 from ..types import EbsynthParams
 
@@ -122,16 +131,62 @@ class EbsynthNodeEngine:
             stylized, error, nnf = result
             return (
                 numpy_to_tensor(stylized),
-                numpy_to_tensor(error),
+                self._normalize_error_map(numpy_to_tensor(error)),
                 numpy_to_tensor(nnf),
             )
         else:
             stylized, error = result
             return (
                 numpy_to_tensor(stylized),
-                numpy_to_tensor(error),
+                self._normalize_error_map(numpy_to_tensor(error)),
                 None,
             )
+
+    def _normalize_error_map(self, error_tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize error map for proper display.
+        Uses percentile-based normalization to handle outliers better than min/max.
+        Handles both 2D (H, W) and 3D (H, W, 1) error tensors.
+
+        Args:
+            error_tensor: Error map tensor
+
+        Returns:
+            Normalized error tensor with values in [0, 1]
+        """
+        print(f"DEBUG _normalize_error_map: input shape {error_tensor.shape}")
+        
+        # Store original shape info
+        is_2d = error_tensor.dim() == 2
+        is_single_channel = error_tensor.dim() == 3 and error_tensor.shape[-1] == 1
+        
+        # If 2D, add channel dimension for processing
+        if is_2d:
+            error_tensor = error_tensor.unsqueeze(-1)
+        
+        # Flatten for percentile computation
+        flat = error_tensor.flatten()
+        
+        # Use percentiles to handle outliers
+        p1 = torch.quantile(flat, 0.01)
+        p99 = torch.quantile(flat, 0.99)
+        
+        min_val = p1.item()
+        max_val = p99.item()
+        
+        print(f"DEBUG _normalize_error_map: p1={min_val:.6f}, p99={max_val:.6f}")
+        
+        # Avoid division by zero
+        if max_val - min_val > 1e-6:
+            # Clip to percentile range then normalize
+            normalized = torch.clamp(error_tensor - min_val, 0, None) / (max_val - min_val)
+            # Clip final result to [0, 1]
+            normalized = torch.clamp(normalized, 0, 1)
+        else:
+            normalized = torch.zeros_like(error_tensor)
+        
+        print(f"DEBUG _normalize_error_map: output shape {normalized.shape}")
+        return normalized
 
     def get_device(self) -> str:
         """Get the device being used by the engine."""
@@ -205,10 +260,56 @@ class ImageSynthNodeEngine:
 
         stylized_np, error_np = self._synth.run(guides=guides_np)
 
-        return numpy_to_tensor(stylized_np), numpy_to_tensor(error_np)
+        return numpy_to_tensor(stylized_np), self._normalize_error_map(numpy_to_tensor(error_np))
 
     def cleanup(self) -> None:
         """Clean up resources."""
         self._synth = None
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    def _normalize_error_map(self, error_tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize error map for proper display.
+        Uses percentile-based normalization to handle outliers better than min/max.
+        Handles both 2D (H, W) and 3D (H, W, 1) error tensors.
+
+        Args:
+            error_tensor: Error map tensor
+
+        Returns:
+            Normalized error tensor with values in [0, 1]
+        """
+        print(f"DEBUG _normalize_error_map: input shape {error_tensor.shape}")
+        
+        # Store original shape info
+        is_2d = error_tensor.dim() == 2
+        is_single_channel = error_tensor.dim() == 3 and error_tensor.shape[-1] == 1
+        
+        # If 2D, add channel dimension for processing
+        if is_2d:
+            error_tensor = error_tensor.unsqueeze(-1)
+        
+        # Flatten for percentile computation
+        flat = error_tensor.flatten()
+        
+        # Use percentiles to handle outliers
+        p1 = torch.quantile(flat, 0.01)
+        p99 = torch.quantile(flat, 0.99)
+        
+        min_val = p1.item()
+        max_val = p99.item()
+        
+        print(f"DEBUG _normalize_error_map: p1={min_val:.6f}, p99={max_val:.6f}")
+        
+        # Avoid division by zero
+        if max_val - min_val > 1e-6:
+            # Clip to percentile range then normalize
+            normalized = torch.clamp(error_tensor - min_val, 0, None) / (max_val - min_val)
+            # Clip final result to [0, 1]
+            normalized = torch.clamp(normalized, 0, 1)
+        else:
+            normalized = torch.zeros_like(error_tensor)
+        
+        print(f"DEBUG _normalize_error_map: output shape {normalized.shape}")
+        return normalized

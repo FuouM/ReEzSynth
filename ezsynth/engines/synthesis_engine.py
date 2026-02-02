@@ -13,7 +13,7 @@ from ..consts import (
     EBSYNTH_VOTEMODE_WEIGHTED,
     ebsynth_torch,
 )
-from ..torch_ops import SynthesisTimer
+from ..utils import SynthesisTimer
 from .backends import PyTorchBackend
 from .backends import CudaBackend
 

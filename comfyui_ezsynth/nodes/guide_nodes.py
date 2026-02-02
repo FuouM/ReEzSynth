@@ -138,14 +138,33 @@ class CombineGuidesNode(EZBaseNode):
         """
         Combine multiple guides into guide lists.
         """
+        def validate_guide_pair(src: torch.Tensor, tgt: torch.Tensor, name: str):
+            """Validate that source and target have matching dimensions."""
+            src_shape = src.shape if src.dim() >= 3 else tuple(src.shape)
+            tgt_shape = tgt.shape if tgt.dim() >= 3 else tuple(tgt.shape)
+            if len(src_shape) >= 3:
+                src_shape = src_shape[-3:]  # Get (H, W, C)
+            if len(tgt_shape) >= 3:
+                tgt_shape = tgt_shape[-3:]
+            if src_shape != tgt_shape:
+                raise ValueError(
+                    f"{name}: Source and target guide dimensions must match. "
+                    f"Got source: {src_shape}, target: {tgt_shape}"
+                )
+        
+        # Validate guide1
+        validate_guide_pair(guide1_source, guide1_target, "Guide 1")
+        
         source_guides = [(guide1_source, guide1_weight)]
         target_guides = [(guide1_target, guide1_weight)]
 
         if guide2_source is not None and guide2_target is not None:
+            validate_guide_pair(guide2_source, guide2_target, "Guide 2")
             source_guides.append((guide2_source, guide2_weight))
             target_guides.append((guide2_target, guide2_weight))
 
         if guide3_source is not None and guide3_target is not None:
+            validate_guide_pair(guide3_source, guide3_target, "Guide 3")
             source_guides.append((guide3_source, guide3_weight))
             target_guides.append((guide3_target, guide3_weight))
 

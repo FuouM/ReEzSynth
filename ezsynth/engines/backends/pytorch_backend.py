@@ -6,7 +6,6 @@ import torch
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ...consts import EBSYNTH_VOTEMODE_PLAIN, EBSYNTH_VOTEMODE_WEIGHTED
 from ...torch_ops import (
-    SynthesisTimer,
     populate_omega_map,
     propagation_step,
     random_search_step,
@@ -16,6 +15,7 @@ from ...torch_ops import (
 )
 from ...torch_ops.mask_ops import dilate_mask, evaluate_mask
 from ...torch_ops.patch_ops import extract_patches
+from ...utils import SynthesisTimer
 from .base import BaseSynthesisBackend
 
 

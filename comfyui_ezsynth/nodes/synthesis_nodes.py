@@ -24,7 +24,8 @@ class ImageSynthNode(EZBaseNode):
         return {
             "required": {
                 "style_image": ("IMAGE",),
-                "guides": ("GUIDE_LIST",),
+                "source_guides": ("GUIDE_LIST",),
+                "target_guides": ("GUIDE_LIST",),
             },
             "optional": {
                 "uniformity": (
@@ -48,7 +49,8 @@ class ImageSynthNode(EZBaseNode):
     def synthesize(
         self,
         style_image: torch.Tensor,
-        guides: List[Tuple[torch.Tensor, float]],
+        source_guides: List[Tuple[torch.Tensor, float]],
+        target_guides: List[Tuple[torch.Tensor, float]],
         uniformity: float = 3500.0,
         patch_size: int = 7,
         pyramid_levels: int = 6,
@@ -80,7 +82,33 @@ class ImageSynthNode(EZBaseNode):
         engine = ImageSynthNodeEngine(params)
 
         # Convert guides to proper format (source, target, weight)
-        guide_tuples = [(g[0], g[0], g[1]) for g in guides]
+        guide_tuples = []
+        for src, tgt in zip(source_guides, target_guides):
+            src_img = src[0]
+            tgt_img = tgt[0]
+            
+            # Debug: Log shapes
+            print(f"DEBUG: src_img shape: {src_img.shape if hasattr(src_img, 'shape') else 'no shape'}")
+            print(f"DEBUG: tgt_img shape: {tgt_img.shape if hasattr(tgt_img, 'shape') else 'no shape'}")
+            
+            # Validate guide dimensions - source and target must have same dimensions
+            src_shape = tuple(src_img.shape) if hasattr(src_img, 'shape') else src_img.size
+            tgt_shape = tuple(tgt_img.shape) if hasattr(tgt_img, 'shape') else tgt_img.size
+            
+            print(f"DEBUG: src_shape: {src_shape}, tgt_shape: {tgt_shape}")
+            
+            if src_shape != tgt_shape:
+                raise ValueError(
+                    f"Source and target guide dimensions must match. "
+                    f"Got source: {src_shape}, target: {tgt_shape}"
+                )
+            
+            guide_tuples.append((src_img, tgt_img, src[1] * tgt[1]))
+
+        print(f"DEBUG: Number of guides: {len(guide_tuples)}")
+        if guide_tuples:
+            print(f"DEBUG: First guide src shape: {guide_tuples[0][0].shape}")
+            print(f"DEBUG: First guide tgt shape: {guide_tuples[0][1].shape}")
 
         stylized, error_map = engine.synthesize(style_image, guide_tuples)
 
@@ -165,10 +193,23 @@ class EbsynthNode(EZBaseNode):
 
         engine = EbsynthNodeEngine(params)
 
-        # Build guide tuples (source, target, weight)
+        # Build guide tuples (source, target, weight) with validation
         guides = []
         for src, tgt in zip(source_guides, target_guides):
-            guides.append((src[0], tgt[0], src[1] * tgt[1]))
+            src_img = src[0]
+            tgt_img = tgt[0]
+            
+            # Validate guide dimensions
+            src_shape = src_img.shape if hasattr(src_img, 'shape') else src_img.size
+            tgt_shape = tgt_img.shape if hasattr(tgt_img, 'shape') else tgt_img.size
+            
+            if src_shape != tgt_shape:
+                raise ValueError(
+                    f"Source and target guide dimensions must match. "
+                    f"Got source: {src_shape}, target: {tgt_shape}"
+                )
+            
+            guides.append((src_img, tgt_img, src[1] * tgt[1]))
 
         stylized, error_map, nnf = engine.synthesize(
             style_image,

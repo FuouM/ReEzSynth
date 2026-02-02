@@ -19,12 +19,19 @@ def tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     Returns:
         NumPy array with shape (H, W, C), dtype uint8
     """
+    print(f"DEBUG tensor_to_numpy: input shape {tensor.shape}")
     if tensor.dim() == 4:
         tensor = tensor[0]  # Remove batch dim
+        print(f"DEBUG tensor_to_numpy: after removing batch dim: {tensor.shape}")
     elif tensor.dim() == 3:
         pass  # Already in HWC format
     elif tensor.dim() == 2:
         tensor = tensor.unsqueeze(-1)  # Add channel dim for grayscale
+
+    # Handle single-channel by expanding to 3-channel RGB
+    if tensor.shape[-1] == 1:
+        tensor = tensor.repeat(3, 1, 1)  # (H, W, 1) -> (H, W, 3)
+        print(f"DEBUG tensor_to_numpy: expanded single channel to RGB: {tensor.shape}")
 
     # Convert from float [0,1] to uint8 [0,255]
     np_array = tensor.cpu().numpy()
@@ -35,6 +42,7 @@ def tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     elif np_array.dtype == np.float16:
         np_array = (np_array.astype(np.float32) * 255).clip(0, 255).astype(np.uint8)
 
+    print(f"DEBUG tensor_to_numpy: output shape {np_array.shape}")
     return np_array
 
 
@@ -49,16 +57,20 @@ def numpy_to_tensor(array: np.ndarray, batch: bool = True) -> torch.Tensor:
     Returns:
         Tensor with shape (B, H, W, C) or (H, W, C) if batch=False
     """
+    print(f"DEBUG numpy_to_tensor: input shape {array.shape}")
     # Handle grayscale
     if array.ndim == 2:
         array = array[..., np.newaxis]
+        print(f"DEBUG numpy_to_tensor: after adding channel dim: {array.shape}")
 
     # Convert from uint8 [0,255] to float [0,1]
     tensor = torch.from_numpy(array.astype(np.float32) / 255.0)
 
     if batch:
         tensor = tensor.unsqueeze(0)  # Add batch dim
+        print(f"DEBUG numpy_to_tensor: after adding batch dim: {tensor.shape}")
 
+    print(f"DEBUG numpy_to_tensor: output shape {tensor.shape}")
     return tensor
 
 

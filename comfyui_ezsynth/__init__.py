@@ -6,6 +6,15 @@ This module provides ComfyUI custom nodes for the ReEzSynth video/image
 synthesis pipeline, including Ebsynth, FastBlend, and FaceBlit integrations.
 """
 
+import os
+import sys
+
+# Get the absolute path to the ezsynth directory (sibling of this directory)
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_ezsynth_parent = os.path.normpath(os.path.join(_current_dir, ".."))
+if _ezsynth_parent not in sys.path:
+    sys.path.insert(0, _ezsynth_parent)
+
 from .nodes.faceblit_nodes import (
     FaceBlitGuideNode,
     FaceBlitStyleNode,
