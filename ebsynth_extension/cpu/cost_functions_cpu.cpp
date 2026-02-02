@@ -28,7 +28,8 @@ float compute_patch_ssd_split_cpu(
     int sx, int sy, int tx, int ty, int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest) {
+    float ebest)
+{
 
     const int r = patch_size / 2;
     float error = 0.0f;
@@ -43,61 +44,76 @@ float compute_patch_ssd_split_cpu(
 
     // Use pointer arithmetic for faster access when within bounds
     const bool in_bounds = (sx - r >= 0 && sx + r < source_w && sy - r >= 0 && sy + r < source_h &&
-                           tx - r >= 0 && tx + r < target_w && ty - r >= 0 && ty + r < target_h);
+                            tx - r >= 0 && tx + r < target_w && ty - r >= 0 && ty + r < target_h);
 
-    if (in_bounds) {
+    if (in_bounds)
+    {
         // Fast path: all pixels are within bounds
-        for (int py = -r; py <= r; ++py) {
-            for (int px = -r; px <= r; ++px) {
+        for (int py = -r; py <= r; ++py)
+        {
+            for (int px = -r; px <= r; ++px)
+            {
                 int cur_sx = sx + px;
                 int cur_sy = sy + py;
                 int cur_tx = tx + px;
                 int cur_ty = ty + py;
 
                 // Style difference - unroll inner loop for common channel counts
-                for (int c = 0; c < num_style_channels; ++c) {
+                for (int c = 0; c < num_style_channels; ++c)
+                {
                     float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
                     error += style_weights[c] * diff * diff;
                 }
 
                 // Guide difference
-                for (int c = 0; c < num_guide_channels; ++c) {
+                for (int c = 0; c < num_guide_channels; ++c)
+                {
                     float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                     float modulation = 1.0f;
-                    if (use_modulation) {
+                    if (use_modulation)
+                    {
                         modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
                     }
                     error += guide_weights[c] * modulation * diff * diff;
                 }
             }
-            if (error > ebest) return error;
+            if (error > ebest)
+                return error;
         }
-    } else {
+    }
+    else
+    {
         // Slow path: need bounds checking
-        for (int py = -r; py <= r; ++py) {
-            for (int px = -r; px <= r; ++px) {
+        for (int py = -r; py <= r; ++py)
+        {
+            for (int px = -r; px <= r; ++px)
+            {
                 int cur_sx = std::min(std::max(sx + px, 0), source_w - 1);
                 int cur_sy = std::min(std::max(sy + py, 0), source_h - 1);
                 int cur_tx = std::min(std::max(tx + px, 0), target_w - 1);
                 int cur_ty = std::min(std::max(ty + py, 0), target_h - 1);
 
                 // Style difference
-                for (int c = 0; c < num_style_channels; ++c) {
+                for (int c = 0; c < num_style_channels; ++c)
+                {
                     float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
                     error += style_weights[c] * diff * diff;
                 }
 
                 // Guide difference
-                for (int c = 0; c < num_guide_channels; ++c) {
+                for (int c = 0; c < num_guide_channels; ++c)
+                {
                     float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                     float modulation = 1.0f;
-                    if (use_modulation) {
+                    if (use_modulation)
+                    {
                         modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
                     }
                     error += guide_weights[c] * modulation * diff * diff;
                 }
             }
-            if (error > ebest) return error;
+            if (error > ebest)
+                return error;
         }
     }
     return error;
@@ -109,7 +125,8 @@ float compute_patch_ssd_split_cpu(
 
 static double query_sat_cpu(
     torch::PackedTensorAccessor64<double, 2> sat,
-    int x1, int y1, int x2, int y2) {
+    int x1, int y1, int x2, int y2)
+{
 
     const int h = sat.size(0);
     const int w = sat.size(1);
@@ -140,7 +157,8 @@ float compute_patch_ncc_sat_cpu(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat) {
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat)
+{
 
     const int r = patch_size / 2;
     const float N = patch_size * patch_size;
@@ -169,8 +187,10 @@ float compute_patch_ncc_sat_cpu(
     double sum_st = 0.0;
     float guide_error = 0.0f;
 
-    for (int py = -r; py <= r; ++py) {
-        for (int px = -r; px <= r; ++px) {
+    for (int py = -r; py <= r; ++py)
+    {
+        for (int px = -r; px <= r; ++px)
+        {
             int cur_sx = std::min(std::max(sx + px, 0), source_w - 1);
             int cur_sy = std::min(std::max(sy + py, 0), source_h - 1);
             int cur_tx = std::min(std::max(tx + px, 0), target_w - 1);
@@ -178,14 +198,16 @@ float compute_patch_ncc_sat_cpu(
 
             // Cross-correlation term
             float s_val_g = 0.0f, t_val_g = 0.0f;
-            for (int c = 0; c < num_style_channels; ++c) {
+            for (int c = 0; c < num_style_channels; ++c)
+            {
                 s_val_g += (float)source_style[cur_sy][cur_sx][c];
                 t_val_g += (float)target_style[cur_ty][cur_tx][c];
             }
             sum_st += (s_val_g / num_style_channels) * (t_val_g / num_style_channels);
 
             // Guide difference (SSD)
-            for (int c = 0; c < num_guide_channels; ++c) {
+            for (int c = 0; c < num_guide_channels; ++c)
+            {
                 float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                 float modulation = use_modulation ? ((float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f) : 1.0f;
                 guide_error += guide_weights[c] * modulation * diff * diff;
@@ -210,7 +232,8 @@ float compute_patch_ncc_split_cpu(
     int sx, int sy, int tx, int ty, int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest) {
+    float ebest)
+{
 
     const int r = patch_size / 2;
     const float N = patch_size * patch_size;
@@ -228,15 +251,18 @@ float compute_patch_ncc_split_cpu(
     float sum_sq_s = 0.0f, sum_sq_t = 0.0f;
     float sum_st = 0.0f;
 
-    for (int py = -r; py <= r; ++py) {
-        for (int px = -r; px <= r; ++px) {
+    for (int py = -r; py <= r; ++py)
+    {
+        for (int px = -r; px <= r; ++px)
+        {
             int cur_sx = std::min(std::max(sx + px, 0), source_w - 1);
             int cur_sy = std::min(std::max(sy + py, 0), source_h - 1);
             int cur_tx = std::min(std::max(tx + px, 0), target_w - 1);
             int cur_ty = std::min(std::max(ty + py, 0), target_h - 1);
 
             float s_val = 0.0f, t_val = 0.0f;
-            for (int c = 0; c < num_style_channels; ++c) {
+            for (int c = 0; c < num_style_channels; ++c)
+            {
                 s_val += (float)source_style[cur_sy][cur_sx][c];
                 t_val += (float)target_style[cur_ty][cur_tx][c];
             }
@@ -262,17 +288,21 @@ float compute_patch_ncc_split_cpu(
 
     // --- SSD for Guides ---
     float guide_error = 0.0f;
-    for (int py = -r; py <= r; ++py) {
-        for (int px = -r; px <= r; ++px) {
+    for (int py = -r; py <= r; ++py)
+    {
+        for (int px = -r; px <= r; ++px)
+        {
             int cur_sx = std::min(std::max(sx + px, 0), source_w - 1);
             int cur_sy = std::min(std::max(sy + py, 0), source_h - 1);
             int cur_tx = std::min(std::max(tx + px, 0), target_w - 1);
             int cur_ty = std::min(std::max(ty + py, 0), target_h - 1);
 
-            for (int c = 0; c < num_guide_channels; ++c) {
+            for (int c = 0; c < num_guide_channels; ++c)
+            {
                 float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                 float modulation = 1.0f;
-                if (use_modulation) {
+                if (use_modulation)
+                {
                     modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
                 }
                 guide_error += guide_weights[c] * modulation * diff * diff;

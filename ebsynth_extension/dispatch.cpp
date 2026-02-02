@@ -26,10 +26,12 @@ void ebsynth_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode) {
+    int cost_function_mode)
+{
 
     // Auto-detect device type from input tensor
-    if (style_level.device().is_cpu()) {
+    if (style_level.device().is_cpu())
+    {
         // Route to CPU implementation
         ebsynth_cpu_run_level(
             output_image,
@@ -50,7 +52,9 @@ void ebsynth_run_level(
             rand_states_tensor,
             search_pruning_threshold,
             cost_function_mode);
-    } else {
+    }
+    else
+    {
         // Route to CUDA implementation
         ebsynth_cuda_run_level(
             output_image,
@@ -77,11 +81,15 @@ void ebsynth_run_level(
 // ===================================================================
 //                UNIFIED RNG INITIALIZER
 // ===================================================================
-void init_rand_states(torch::Tensor rand_states_tensor) {
-    if (rand_states_tensor.device().is_cpu()) {
+void init_rand_states(torch::Tensor rand_states_tensor)
+{
+    if (rand_states_tensor.device().is_cpu())
+    {
         // CPU RNG initialization (no-op for compatibility)
         init_rand_states_cpu(rand_states_tensor);
-    } else {
+    }
+    else
+    {
         init_rand_states_cuda(rand_states_tensor);
     }
 }

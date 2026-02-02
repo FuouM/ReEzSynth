@@ -18,45 +18,52 @@ __device__ float compute_patch_ssd_split(
     int sx, int sy, int tx, int ty, int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest) {
+    float ebest)
+{
 
-  const int r = patch_size / 2;
-  float error = 0.0f;
+    const int r = patch_size / 2;
+    float error = 0.0f;
 
-  const int num_style_channels = source_style.size(2);
-  const int num_guide_channels = source_guide.size(2);
+    const int num_style_channels = source_style.size(2);
+    const int num_guide_channels = source_guide.size(2);
 
-  const int source_h = source_style.size(0);
-  const int source_w = source_style.size(1);
-  const int target_h = target_style.size(0);
-  const int target_w = target_style.size(1);
+    const int source_h = source_style.size(0);
+    const int source_w = source_style.size(1);
+    const int target_h = target_style.size(0);
+    const int target_w = target_style.size(1);
 
-  for (int py = -r; py <= r; ++py) {
-    for (int px = -r; px <= r; ++px) {
-      int cur_sx = min(max(sx + px, 0), source_w - 1);
-      int cur_sy = min(max(sy + py, 0), source_h - 1);
-      int cur_tx = min(max(tx + px, 0), target_w - 1);
-      int cur_ty = min(max(ty + py, 0), target_h - 1);
+    for (int py = -r; py <= r; ++py)
+    {
+        for (int px = -r; px <= r; ++px)
+        {
+            int cur_sx = min(max(sx + px, 0), source_w - 1);
+            int cur_sy = min(max(sy + py, 0), source_h - 1);
+            int cur_tx = min(max(tx + px, 0), target_w - 1);
+            int cur_ty = min(max(ty + py, 0), target_h - 1);
 
-      // Style difference
-      for (int c = 0; c < num_style_channels; ++c) {
-        float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
-        error += style_weights[c] * diff * diff;
-      }
+            // Style difference
+            for (int c = 0; c < num_style_channels; ++c)
+            {
+                float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
+                error += style_weights[c] * diff * diff;
+            }
 
-      // Guide difference
-      for (int c = 0; c < num_guide_channels; ++c) {
-        float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
-        float modulation = 1.0f;
-        if (use_modulation) {
-            modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
+            // Guide difference
+            for (int c = 0; c < num_guide_channels; ++c)
+            {
+                float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
+                float modulation = 1.0f;
+                if (use_modulation)
+                {
+                    modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
+                }
+                error += guide_weights[c] * modulation * diff * diff;
+            }
         }
-        error += guide_weights[c] * modulation * diff * diff;
-      }
+        if (error > ebest)
+            return error;
     }
-    if(error > ebest) return error;
-  }
-  return error;
+    return error;
 }
 
 // ===================================================================
@@ -65,13 +72,16 @@ __device__ float compute_patch_ssd_split(
 
 __device__ double query_sat(
     torch::PackedTensorAccessor64<double, 2> sat,
-    int x1, int y1, int x2, int y2) {
+    int x1, int y1, int x2, int y2)
+{
 
     const int h = sat.size(0);
     const int w = sat.size(1);
 
-    x1 = max(x1, 0); y1 = max(y1, 0);
-    x2 = min(x2, w - 1); y2 = min(y2, h - 1);
+    x1 = max(x1, 0);
+    y1 = max(y1, 0);
+    x2 = min(x2, w - 1);
+    y2 = min(y2, h - 1);
 
     double br = sat[y2][x2];
     double bl = (x1 > 0) ? sat[y2][x1 - 1] : 0.0;
@@ -99,7 +109,8 @@ __device__ float compute_patch_ncc_sat(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat) {
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat)
+{
 
     const int r = patch_size / 2;
     const float N = patch_size * patch_size;
@@ -109,9 +120,9 @@ __device__ float compute_patch_ncc_sat(
     const int num_guide_channels = source_guide.size(2);
 
     // --- O(1) Style Stats using SATs ---
-    double sum_s    = query_sat(source_style_sat,    sx - r, sy - r, sx + r, sy + r);
+    double sum_s = query_sat(source_style_sat, sx - r, sy - r, sx + r, sy + r);
     double sum_sq_s = query_sat(source_style_sq_sat, sx - r, sy - r, sx + r, sy + r);
-    double sum_t    = query_sat(target_style_sat,    tx - r, ty - r, tx + r, ty + r);
+    double sum_t = query_sat(target_style_sat, tx - r, ty - r, tx + r, ty + r);
     double sum_sq_t = query_sat(target_style_sq_sat, tx - r, ty - r, tx + r, ty + r);
 
     double mean_s = sum_s / N;
@@ -122,21 +133,27 @@ __device__ float compute_patch_ncc_sat(
     // --- O(P^2) Cross-correlation and Guide SSD ---
     double sum_st = 0.0;
     float guide_error = 0.0f;
-    for (int py = -r; py <= r; ++py) {
-        for (int px = -r; px <= r; ++px) {
-            int cur_sx = sx + px; int cur_sy = sy + py;
-            int cur_tx = tx + px; int cur_ty = ty + py;
+    for (int py = -r; py <= r; ++py)
+    {
+        for (int px = -r; px <= r; ++px)
+        {
+            int cur_sx = sx + px;
+            int cur_sy = sy + py;
+            int cur_tx = tx + px;
+            int cur_ty = ty + py;
 
             // Cross-correlation term
             float s_val_g = 0.0f, t_val_g = 0.0f;
-            for(int c=0; c < num_style_channels; ++c) {
+            for (int c = 0; c < num_style_channels; ++c)
+            {
                 s_val_g += (float)source_style[cur_sy][cur_sx][c];
                 t_val_g += (float)target_style[cur_ty][cur_tx][c];
             }
             sum_st += (s_val_g / num_style_channels) * (t_val_g / num_style_channels);
 
             // Guide difference (SSD)
-            for (int c = 0; c < num_guide_channels; ++c) {
+            for (int c = 0; c < num_guide_channels; ++c)
+            {
                 float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                 float modulation = use_modulation ? ((float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f) : 1.0f;
                 guide_error += guide_weights[c] * modulation * diff * diff;
@@ -168,7 +185,8 @@ __device__ float compute_patch_ncc_split(
     int sx, int sy, int tx, int ty, int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest) {
+    float ebest)
+{
 
     const int r = patch_size / 2;
     const float N = patch_size * patch_size;
@@ -187,15 +205,18 @@ __device__ float compute_patch_ncc_split(
     float sum_st = 0.0f;
     float style_error = 0.0f;
 
-    for (int py = -r; py <= r; ++py) {
-        for (int px = -r; px <= r; ++px) {
+    for (int py = -r; py <= r; ++py)
+    {
+        for (int px = -r; px <= r; ++px)
+        {
             int cur_sx = min(max(sx + px, 0), source_w - 1);
             int cur_sy = min(max(sy + py, 0), source_h - 1);
             int cur_tx = min(max(tx + px, 0), target_w - 1);
             int cur_ty = min(max(ty + py, 0), target_h - 1);
 
             float s_val = 0.0f, t_val = 0.0f;
-            for (int c = 0; c < num_style_channels; ++c) {
+            for (int c = 0; c < num_style_channels; ++c)
+            {
                 s_val += (float)source_style[cur_sy][cur_sx][c];
                 t_val += (float)target_style[cur_ty][cur_tx][c];
             }
@@ -221,17 +242,21 @@ __device__ float compute_patch_ncc_split(
 
     // --- SSD for Guides ---
     float guide_error = 0.0f;
-    for (int py = -r; py <= r; ++py) {
-        for (int px = -r; px <= r; ++px) {
+    for (int py = -r; py <= r; ++py)
+    {
+        for (int px = -r; px <= r; ++px)
+        {
             int cur_sx = min(max(sx + px, 0), source_w - 1);
             int cur_sy = min(max(sy + py, 0), source_h - 1);
             int cur_tx = min(max(tx + px, 0), target_w - 1);
             int cur_ty = min(max(ty + py, 0), target_h - 1);
 
-            for (int c = 0; c < num_guide_channels; ++c) {
+            for (int c = 0; c < num_guide_channels; ++c)
+            {
                 float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                 float modulation = 1.0f;
-                if (use_modulation) {
+                if (use_modulation)
+                {
                     modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
                 }
                 guide_error += guide_weights[c] * modulation * diff * diff;

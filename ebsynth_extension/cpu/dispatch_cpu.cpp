@@ -41,7 +41,8 @@ void ebsynth_cpu_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode) {
+    int cost_function_mode)
+{
 
     const int source_h = style_level.size(0);
     const int source_w = style_level.size(1);
@@ -61,11 +62,11 @@ void ebsynth_cpu_run_level(
     auto target_guide_acc = target_guide_level.packed_accessor32<uint8_t, 3>();
 
     bool use_modulation = target_modulation_level.numel() > 0;
-    if (use_modulation) {
+    if (use_modulation)
+    {
         target_modulation_level = target_modulation_level.contiguous();
     }
-    auto target_modulation_guide_acc = use_modulation ?
-        target_modulation_level.packed_accessor32<uint8_t, 3>() : source_guide_acc;
+    auto target_modulation_guide_acc = use_modulation ? target_modulation_level.packed_accessor32<uint8_t, 3>() : source_guide_acc;
 
     auto style_weights_acc = style_weights.packed_accessor32<float, 1>();
     auto guide_weights_acc = guide_weights.packed_accessor32<float, 1>();
@@ -91,7 +92,8 @@ void ebsynth_cpu_run_level(
     torch::Tensor source_style_sat = torch::empty({source_h, source_w}, sat_options);
     torch::Tensor source_style_sq_sat = torch::empty({source_h, source_w}, sat_options);
 
-    if (cost_function_mode == COST_FUNCTION_NCC) {
+    if (cost_function_mode == COST_FUNCTION_NCC)
+    {
         compute_integral_image_cpu(source_style_sat, style_level, PREP_GRAY);
         compute_integral_image_cpu(source_style_sq_sat, style_level, PREP_GRAY_SQR);
     }
@@ -113,8 +115,10 @@ void ebsynth_cpu_run_level(
     std::mt19937 rng(1337);
 
     // Main iteration loop
-    for (int iter = 0; iter < num_search_vote_iters; ++iter) {
-        if (cost_function_mode == COST_FUNCTION_NCC) {
+    for (int iter = 0; iter < num_search_vote_iters; ++iter)
+    {
+        if (cost_function_mode == COST_FUNCTION_NCC)
+        {
             compute_integral_image_cpu(target_style_sat, target_style_prev, PREP_GRAY);
             compute_integral_image_cpu(target_style_sq_sat, target_style_prev, PREP_GRAY_SQR);
         }
@@ -125,7 +129,8 @@ void ebsynth_cpu_run_level(
                                   cost_function_mode, target_h, target_w);
 
         // Propagation steps
-        for (int i = 0; i < num_patch_match_iters; ++i) {
+        for (int i = 0; i < num_patch_match_iters; ++i)
+        {
             propagation_step_cpu(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc,
                                  source_guide_acc, target_guide_acc, target_modulation_guide_acc,
                                  use_modulation, style_weights_acc, guide_weights_acc, patch_size,
@@ -144,16 +149,20 @@ void ebsynth_cpu_run_level(
                                target_h, target_w);
 
         // Voting
-        if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED) {
+        if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED)
+        {
             krnlVoteWeighted_cpu(target_style_temp_acc, source_style_acc, nnf_acc, error_acc,
                                  patch_size, target_h, target_w);
-        } else {
+        }
+        else
+        {
             krnlVotePlain_cpu(target_style_temp_acc, source_style_acc, nnf_acc, patch_size,
                               target_h, target_w);
         }
 
         // Update mask for next iteration
-        if (iter < num_search_vote_iters - 1) {
+        if (iter < num_search_vote_iters - 1)
+        {
             eval_mask_cpu(mask_acc, target_style_temp_acc, target_style_prev_acc, stop_threshold,
                           target_h, target_w);
             dilate_mask_cpu(mask2_acc, mask_acc, patch_size, target_h, target_w);
@@ -176,7 +185,8 @@ void ebsynth_cpu_run_level(
 // ===================================================================
 //                RNG STATE INITIALIZER (CPU - no-op for compatibility)
 // ===================================================================
-void init_rand_states_cpu(torch::Tensor rand_states_tensor) {
+void init_rand_states_cpu(torch::Tensor rand_states_tensor)
+{
     // CPU implementation doesn't need explicit RNG state initialization
     // as we use std::mt19937 which is initialized per-thread
     // This function exists for API compatibility with CUDA version

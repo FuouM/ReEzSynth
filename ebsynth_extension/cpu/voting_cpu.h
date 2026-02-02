@@ -10,7 +10,8 @@
 
 // Helper for vector types
 template <int N, typename T>
-struct Vec {
+struct Vec
+{
     T v[N];
 };
 

@@ -8,4 +8,4 @@
 //                RNG STATE INITIALIZER KERNEL
 // ===================================================================
 
-__global__ void init_rand_states_kernel(curandState* states, int num_states);
+__global__ void init_rand_states_kernel(curandState *states, int num_states);

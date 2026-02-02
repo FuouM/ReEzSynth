@@ -25,7 +25,8 @@ void ebsynth_cuda_run_level(
     float uniformity_weight, int patch_size, int vote_mode,
     int num_search_vote_iters, int num_patch_match_iters,
     int stop_threshold, torch::Tensor rand_states_tensor,
-    float search_pruning_threshold, int cost_function_mode) {
+    float search_pruning_threshold, int cost_function_mode)
+{
 
     const int source_h = style_level.size(0);
     const int source_w = style_level.size(1);
@@ -68,7 +69,8 @@ void ebsynth_cuda_run_level(
     // Source SATs - computed once per level
     torch::Tensor source_style_sat = torch::empty({source_h, source_w}, sat_options);
     torch::Tensor source_style_sq_sat = torch::empty({source_h, source_w}, sat_options);
-    if (cost_function_mode == COST_FUNCTION_NCC) {
+    if (cost_function_mode == COST_FUNCTION_NCC)
+    {
         compute_integral_image_cuda(source_style_sat, style_level, PREP_GRAY);
         compute_integral_image_cuda(source_style_sq_sat, style_level, PREP_GRAY_SQR);
     }
@@ -85,10 +87,12 @@ void ebsynth_cuda_run_level(
     krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);
     target_style_prev.copy_(target_style_temp);
 
-    curandState* rand_states = (curandState*)rand_states_tensor.data_ptr();
+    curandState *rand_states = (curandState *)rand_states_tensor.data_ptr();
 
-    for (int iter = 0; iter < num_search_vote_iters; ++iter) {
-        if (cost_function_mode == COST_FUNCTION_NCC) {
+    for (int iter = 0; iter < num_search_vote_iters; ++iter)
+    {
+        if (cost_function_mode == COST_FUNCTION_NCC)
+        {
             // Recompute target-dependent SATs
             compute_integral_image_cuda(target_style_sat, target_style_prev, PREP_GRAY);
             compute_integral_image_cuda(target_style_sq_sat, target_style_prev, PREP_GRAY_SQR);
@@ -97,20 +101,25 @@ void ebsynth_cuda_run_level(
         compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc, cost_function_mode);
 
         // --- REVERTED PROPAGATION LOGIC ---
-        for (int i = 0; i < num_patch_match_iters; ++i) {
+        for (int i = 0; i < num_patch_match_iters; ++i)
+        {
             propagation_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, (i % 2 == 1), uniformity_weight, mask_acc, cost_function_mode, source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc);
         }
         // --- END REVERTED LOGIC ---
 
         random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc, search_pruning_threshold, cost_function_mode, source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc);
 
-        if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED) {
+        if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED)
+        {
             krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);
-        } else {
+        }
+        else
+        {
             krnlVotePlain<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, patch_size);
         }
 
-        if (iter < num_search_vote_iters - 1) {
+        if (iter < num_search_vote_iters - 1)
+        {
             eval_mask_kernel<<<blocks, threads>>>(mask_acc, target_style_temp_acc, target_style_prev_acc, stop_threshold);
             dilate_mask_kernel<<<blocks, threads>>>(mask2_acc, mask_acc, patch_size);
             std::swap(mask, mask2);
@@ -126,17 +135,19 @@ void ebsynth_cuda_run_level(
     compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_temp_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc, cost_function_mode);
 
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
+    if (err != cudaSuccess)
+        throw std::runtime_error(cudaGetErrorString(err));
     err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
+    if (err != cudaSuccess)
+        throw std::runtime_error(cudaGetErrorString(err));
 }
-
 
 // ===================================================================
 //                RNG STATE INITIALIZER
 // ===================================================================
-void init_rand_states_cuda(torch::Tensor rand_states_tensor) {
-    curandState* states_ptr = (curandState*)rand_states_tensor.data_ptr();
+void init_rand_states_cuda(torch::Tensor rand_states_tensor)
+{
+    curandState *states_ptr = (curandState *)rand_states_tensor.data_ptr();
     int num_states = rand_states_tensor.numel() * rand_states_tensor.element_size() / sizeof(curandState);
 
     const int threads_per_block = 256;
@@ -145,5 +156,6 @@ void init_rand_states_cuda(torch::Tensor rand_states_tensor) {
     init_rand_states_kernel<<<num_blocks, threads_per_block>>>(states_ptr, num_states);
 
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
+    if (err != cudaSuccess)
+        throw std::runtime_error(cudaGetErrorString(err));
 }
