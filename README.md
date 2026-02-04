@@ -285,6 +285,7 @@ ReEzSynth operates in several stages:
 - Normalized Cross-Correlation (NCC) cost function used for patch matching was adapted from the implementation in the **ACMH** project, which provides excellent robustness for challenging matching tasks. <https://github.com/GhiXu/ACMH>
 - **johnBuffer** for the Stable Index Vector implementation. <https://github.com/johnBuffer/StableIndexVector>
 - **Taichi Lang** <https://github.com/taichi-dev/taichi>
+- **RongxuanTan** for Bilateral weighting and Sparse Sampling. <https://github.com/RongxuanTan/MP-MVS>
 
 - **Gemini 2.5 Pro** (via Google AI Studio) for assistance with coding and documentation.
 
