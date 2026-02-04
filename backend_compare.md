@@ -15,6 +15,7 @@
 | CUDA C++ PyTorch JIT       | 0.3519 s  |  0.8217 s | 0.6548 s |  2.0702 s  |
 | CPU  C++ PyTorch JIT       | 0.7318 s  |  7.6034 s | 5.0442 s | 13.5924 s  |
 | CPU  C++ OPTS PyTorch JIT  | 0.7510 s  |  8.2012 s | 5.5895 s | 14.7557 s  |
+| CPU  - +SIMD               | 0.7375 s  |  5.1603 s | 3.7573 s |  9.9162 s  |
 | PyTorch CUDA               | 0.9603 s  |  6.5712 s | 4.6607 s | 12.5952 s  |
 | Taichi  CUDA               | 3.1430 s  |  1.6317 s | 1.3700 s |  6.3765 s  |
 
@@ -25,6 +26,7 @@
 | CUDA C++ PyTorch JIT       | 0.3840 s |  1.0661 s |  0.7403 s |  2.3945 s |
 | CPU  C++ PyTorch JIT       | 2.8844 s | 26.8920 s | 18.7526 s | 48.7577 s |
 | CPU  C++ OPTS PyTorch JIT  | 1.8046 s | 19.9784 s | 15.2228 s | 37.2326 s |
+| CPU  - +SIMD               | 1.8036 s | 11.4668 s |  8.8348 s | 22.3419 s |
 | PyTorch CUDA               | 8.4203 s | 48.2450 s | 37.0145 s | 94.0713 s |
 | Taichi  CUDA               | 5.8581 s |  6.0665 s |  5.1537 s | 17.3375 s |
 

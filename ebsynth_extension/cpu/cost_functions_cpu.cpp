@@ -10,6 +10,15 @@
 #include <omp.h>
 #endif
 
+// SIMD headers
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#define REEZ_SIMD_NEON
+#elif defined(__AVX2__) || defined(_M_AMD64) || defined(_M_X64)
+#include <immintrin.h>
+#define REEZ_SIMD_AVX2
+#endif
+
 // Cost function mode constants
 #define COST_FUNCTION_SSD 0
 #define COST_FUNCTION_NCC 1
@@ -17,6 +26,168 @@
 // ===================================================================
 //                        SSD COST FUNCTION
 // ===================================================================
+
+// ===================================================================
+//                        SIMD HELPERS
+// ===================================================================
+
+#ifdef REEZ_SIMD_NEON
+// Specialized NEON version for 3-channel (RGB) style data
+static inline float compute_ssd_row_3ch_neon(const uint8_t* s, const uint8_t* t, int pixels, const float* w) {
+    float32x4_t sum_vec = vdupq_n_f32(0);
+    float32x4_t w_vec = {w[0], w[1], w[2], 1.0f}; // 4th element unused but safe
+    
+    int i = 0;
+    // Process 1 pixel (3 channels) at a time using NEON
+    for (; i < pixels; ++i) {
+        uint8x8_t s8 = vld1_u8(s + i * 3);
+        uint8x8_t t8 = vld1_u8(t + i * 3);
+        
+        // Widen to 16-bit, then to 32-bit float
+        uint16x8_t s16 = vmovl_u8(s8);
+        uint16x8_t t16 = vmovl_u8(t8);
+        
+        float32x4_t sf = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s16)));
+        float32x4_t tf = vcvtq_f32_u32(vmovl_u16(vget_low_u16(t16)));
+        
+        float32x4_t diff = vsubq_f32(sf, tf);
+        float32x4_t sq_diff = vmulq_f32(diff, diff);
+        sum_vec = vmlaq_f32(sum_vec, sq_diff, w_vec);
+    }
+    
+    // Horizontal sum of the first 3 elements
+    float res[4];
+    vst1q_f32(res, sum_vec);
+    return res[0] + res[1] + res[2];
+}
+
+static inline float compute_ssd_row_gen_neon(const uint8_t* s, const uint8_t* t, int pixels, int channels, const float* w, const uint8_t* mod = nullptr) {
+    float total = 0;
+    
+    // Process pixel-by-pixel to keep channel-to-weight alignment simple
+    for (int p = 0; p < pixels; ++p) {
+        int base = p * channels;
+        float32x4_t p_sum = vdupq_n_f32(0);
+        
+        int c = 0;
+        // Process 4 channels at a time with NEON if available
+        for (; c <= channels - 4; c += 4) {
+            uint8x8_t s8 = vld1_u8(s + base + c);
+            uint8x8_t t8 = vld1_u8(t + base + c);
+            uint16x4_t s16 = vget_low_u16(vmovl_u8(s8));
+            uint16x4_t t16 = vget_low_u16(vmovl_u8(t8));
+            float32x4_t sf = vcvtq_f32_u32(vmovl_u16(s16));
+            float32x4_t tf = vcvtq_f32_u32(vmovl_u16(t16));
+            float32x4_t diff = vsubq_f32(sf, tf);
+            float32x4_t w_f = vld1q_f32(w + c);
+            
+            float32x4_t term = vmulq_f32(diff, diff);
+            if (mod) {
+                float32x4_t m_f = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(vld1_u8(mod + base + c))))), 1.0f/255.0f);
+                term = vmulq_f32(term, m_f);
+            }
+            p_sum = vmlaq_f32(p_sum, term, w_f);
+        }
+        
+        total += vaddvq_f32(p_sum);
+        
+        // Remainder
+        for (; c < channels; ++c) {
+            float d = (float)s[base + c] - (float)t[base + c];
+            float m = mod ? ((float)mod[base + c] / 255.0f) : 1.0f;
+            total += w[c] * m * d * d;
+        }
+    }
+    return total;
+}
+#endif
+
+#ifdef REEZ_SIMD_AVX2
+// AVX2 version for 3-channel (RGB) style data
+static inline float compute_ssd_row_3ch_avx2(const uint8_t* s, const uint8_t* t, int pixels, const float* w) {
+    __m128 sum_vec = _mm_setzero_ps();
+    __m128 w_vec = _mm_setr_ps(w[0], w[1], w[2], 0.0f);
+
+    for (int i = 0; i < pixels; ++i) {
+        // Load 3 bytes safely
+        uint32_t s32 = 0, t32 = 0;
+        memcpy(&s32, s + i * 3, 3);
+        memcpy(&t32, t + i * 3, 3);
+        
+        __m128i s_vec_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(s32));
+        __m128i t_vec_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(t32));
+        
+        __m128 sf = _mm_cvtepi32_ps(s_vec_i);
+        __m128 tf = _mm_cvtepi32_ps(t_vec_i);
+        
+        __m128 diff = _mm_sub_ps(sf, tf);
+        __m128 sq_diff = _mm_mul_ps(diff, diff);
+        sum_vec = _mm_add_ps(sum_vec, _mm_mul_ps(sq_diff, w_vec));
+    }
+    
+    // Horizontal sum
+    float res[4];
+    _mm_storeu_ps(res, sum_vec);
+    return res[0] + res[1] + res[2];
+}
+
+static inline float compute_ssd_row_gen_avx2(const uint8_t* s, const uint8_t* t, int pixels, int channels, const float* w, const uint8_t* mod = nullptr) {
+    float total = 0;
+
+    for (int p = 0; p < pixels; ++p) {
+        int base = p * channels;
+        __m256 p_sum_vec = _mm256_setzero_ps();
+        
+        int c = 0;
+        // Process 8 channels at a time with AVX2 if available
+        for (; c <= channels - 8; c += 8) {
+            // Load 8 uint8 bytes
+            __m128i s8 = _mm_loadl_epi64((const __m128i*)(s + base + c));
+            __m128i t8 = _mm_loadl_epi64((const __m128i*)(t + base + c));
+
+            // Convert to 32-bit integers (AVX2)
+            __m256i s32 = _mm256_cvtepu8_epi32(s8);
+            __m256i t32 = _mm256_cvtepu8_epi32(t8);
+
+            // Convert to 32-bit floats
+            __m256 sf = _mm256_cvtepi32_ps(s32);
+            __m256 tf = _mm256_cvtepi32_ps(t32);
+
+            __m256 diff = _mm256_sub_ps(sf, tf);
+            __m256 sq_diff = _mm256_mul_ps(diff, diff);
+            
+            // Weights
+            __m256 w_f = _mm256_loadu_ps(w + c);
+            
+            __m256 term = _mm256_mul_ps(sq_diff, w_f);
+            
+            if (mod) {
+                __m128i m8 = _mm_loadl_epi64((const __m128i*)(mod + base + c));
+                __m256i m32 = _mm256_cvtepu8_epi32(m8);
+                __m256 mf = _mm256_cvtepi32_ps(m32);
+                // Divide by 255.0f
+                mf = _mm256_mul_ps(mf, _mm256_set1_ps(1.0f/255.0f));
+                term = _mm256_mul_ps(term, mf);
+            }
+            
+            p_sum_vec = _mm256_add_ps(p_sum_vec, term);
+        }
+        
+        // Sum up the vector
+        float res[8];
+        _mm256_storeu_ps(res, p_sum_vec);
+        for(int k=0; k<8; ++k) total += res[k];
+        
+        // Remainder
+        for (; c < channels; ++c) {
+            float d = (float)s[base + c] - (float)t[base + c];
+            float m = mod ? ((float)mod[base + c] / 255.0f) : 1.0f;
+            total += w[c] * m * d * d;
+        }
+    }
+    return total;
+}
+#endif
 
 float compute_patch_ssd_split_cpu(
     torch::PackedTensorAccessor32<uint8_t, 3> source_style,
@@ -42,6 +213,29 @@ float compute_patch_ssd_split_cpu(
     const int target_h = target_style.size(0);
     const int target_w = target_style.size(1);
 
+    // Get raw pointers for faster access
+    const uint8_t* s_style_ptr = source_style.data();
+    const uint8_t* t_style_ptr = target_style.data();
+    const uint8_t* s_guide_ptr = source_guide.data();
+    const uint8_t* t_guide_ptr = target_guide.data();
+    const uint8_t* t_mod_ptr = use_modulation ? target_modulation_guide.data() : nullptr;
+    
+    // Strides
+    const int s_style_s0 = source_style.stride(0);
+    const int s_style_s1 = source_style.stride(1);
+    const int t_style_s0 = target_style.stride(0);
+    const int t_style_s1 = target_style.stride(1);
+    
+    const int s_guide_s0 = source_guide.stride(0);
+    const int s_guide_s1 = source_guide.stride(1);
+    const int t_guide_s0 = target_guide.stride(0);
+    const int t_guide_s1 = target_guide.stride(1);
+    const int t_mod_s0 = use_modulation ? target_modulation_guide.stride(0) : 0;
+    const int t_mod_s1 = use_modulation ? target_modulation_guide.stride(1) : 0;
+
+    const float* s_w = style_weights.data();
+    const float* g_w = guide_weights.data();
+
     // Use pointer arithmetic for faster access when within bounds
     const bool in_bounds = (sx - r >= 0 && sx + r < source_w && sy - r >= 0 && sy + r < source_h &&
                             tx - r >= 0 && tx + r < target_w && ty - r >= 0 && ty + r < target_h);
@@ -51,32 +245,62 @@ float compute_patch_ssd_split_cpu(
         // Fast path: all pixels are within bounds
         for (int py = -r; py <= r; ++py)
         {
-            for (int px = -r; px <= r; ++px)
-            {
-                int cur_sx = sx + px;
-                int cur_sy = sy + py;
-                int cur_tx = tx + px;
-                int cur_ty = ty + py;
+            const int cur_sy = sy + py;
+            const int cur_ty = ty + py;
+            const int cur_sx_start = sx - r;
+            const int cur_tx_start = tx - r;
 
-                // Style difference - unroll inner loop for common channel counts
+            const uint8_t* s_row = s_style_ptr + cur_sy * s_style_s0 + cur_sx_start * s_style_s1;
+            const uint8_t* t_row = t_style_ptr + cur_ty * t_style_s0 + cur_tx_start * t_style_s1;
+
+#if defined(REEZ_SIMD_NEON)
+            if (num_style_channels == 3) {
+                error += compute_ssd_row_3ch_neon(s_row, t_row, patch_size, s_w);
+            } else {
+                error += compute_ssd_row_gen_neon(s_row, t_row, patch_size, num_style_channels, s_w);
+            }
+#elif defined(REEZ_SIMD_AVX2)
+            if (num_style_channels == 3) {
+                error += compute_ssd_row_3ch_avx2(s_row, t_row, patch_size, s_w);
+            } else {
+                error += compute_ssd_row_gen_avx2(s_row, t_row, patch_size, num_style_channels, s_w);
+            }
+#else
+            for (int px = 0; px < patch_size; ++px)
+            {
                 for (int c = 0; c < num_style_channels; ++c)
                 {
-                    float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
-                    error += style_weights[c] * diff * diff;
+                    float diff = (float)s_row[px*num_style_channels+c] - (float)t_row[px*num_style_channels+c];
+                    error += s_w[c] * diff * diff;
                 }
+            }
+#endif
 
-                // Guide difference
+            // Guide difference
+            const uint8_t* sg_row = s_guide_ptr + cur_sy * s_guide_s0 + cur_sx_start * s_guide_s1;
+            const uint8_t* tg_row = t_guide_ptr + cur_ty * t_guide_s0 + cur_tx_start * t_guide_s1;
+            const uint8_t* tm_row = use_modulation ? (t_mod_ptr + cur_ty * t_mod_s0 + cur_tx_start * t_mod_s1) : nullptr;
+
+#if defined(REEZ_SIMD_NEON)
+            error += compute_ssd_row_gen_neon(sg_row, tg_row, patch_size, num_guide_channels, g_w, tm_row);
+#elif defined(REEZ_SIMD_AVX2)
+            error += compute_ssd_row_gen_avx2(sg_row, tg_row, patch_size, num_guide_channels, g_w, tm_row);
+#else
+            for (int px = 0; px < patch_size; ++px)
+            {
                 for (int c = 0; c < num_guide_channels; ++c)
                 {
-                    float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
+                    float diff = (float)sg_row[px*num_guide_channels+c] - (float)tg_row[px*num_guide_channels+c];
                     float modulation = 1.0f;
                     if (use_modulation)
                     {
-                        modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
+                        modulation = (float)tm_row[px*num_guide_channels+c] / 255.0f;
                     }
-                    error += guide_weights[c] * modulation * diff * diff;
+                    error += g_w[c] * modulation * diff * diff;
                 }
             }
+#endif
+
             if (error > ebest)
                 return error;
         }
