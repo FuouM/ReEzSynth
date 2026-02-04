@@ -113,8 +113,8 @@ class EbsynthParamsConfig(BaseModel):
 
     @validator("backend")
     def backend_must_be_valid(cls, v):
-        if v.lower() not in ["cuda", "torch"]:
-            raise ValueError("backend must be 'cuda' or 'torch'")
+        if v.lower() not in ["cuda", "torch", "taichi"]:
+            raise ValueError("backend must be 'cuda', 'torch', or 'taichi'")
         return v.lower()
 
 

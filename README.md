@@ -283,6 +283,8 @@ ReEzSynth operates in several stages:
 - **Zachary Teed & Jia Deng** for the RAFT optical flow model: <https://github.com/princeton-vl/RAFT>
 - **Zhiyong Zhang et al.** for the NeuFlow v2 optical flow model: <https://github.com/neufieldrobotics/NeuFlow_v2>
 - Normalized Cross-Correlation (NCC) cost function used for patch matching was adapted from the implementation in the **ACMH** project, which provides excellent robustness for challenging matching tasks. <https://github.com/GhiXu/ACMH>
+- **johnBuffer** for the Stable Index Vector implementation. <https://github.com/johnBuffer/StableIndexVector>
+- **Taichi Lang** <https://github.com/taichi-dev/taichi>
 
 - **Gemini 2.5 Pro** (via Google AI Studio) for assistance with coding and documentation.
 

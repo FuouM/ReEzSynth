@@ -14,8 +14,7 @@ from ..consts import (
     ebsynth_torch,
 )
 from ..torch_ops import SynthesisTimer
-from .backends import PyTorchBackend
-from .backends import CudaBackend
+from .backends import CudaBackend, PyTorchBackend, TaichiBackend
 
 
 class EbsynthEngine:
@@ -50,10 +49,17 @@ class EbsynthEngine:
                     "Check the error output above for compilation details."
                 )
             # Check if device is specified in config (for CPU mode with C++ extension)
-            device = getattr(ebsynth_config, 'device', None)
+            device = getattr(ebsynth_config, "device", None)
             self.backend = CudaBackend(ebsynth_config, pipeline_config, device=device)
         elif self.backend_type == "torch":
             self.backend = PyTorchBackend(ebsynth_config, pipeline_config)
+        elif self.backend_type == "taichi":
+            if TaichiBackend is None:
+                raise RuntimeError(
+                    "Taichi backend requested but Taichi is not available. "
+                    "Please install taichi: pip install taichi"
+                )
+            self.backend = TaichiBackend(ebsynth_config, pipeline_config)
         else:
             raise ValueError(f"Unsupported backend: {self.backend_type}")
 
@@ -378,7 +384,11 @@ class EbsynthEngine:
 
             if hasattr(self.backend, "timer"):
                 print("\n" + "=" * 60)
-                backend_name = "CUDA" if self.backend_type == "cuda" else "PyTorch"
+                backend_name = (
+                    "CUDA"
+                    if self.backend_type == "cuda"
+                    else ("Taichi" if self.backend_type == "taichi" else "PyTorch")
+                )
                 print(f"{backend_name.upper()} BACKEND TIMING SUMMARY")
                 print("=" * 60)
                 self.backend.timer.print_summary(f"{backend_name} Backend Operations")

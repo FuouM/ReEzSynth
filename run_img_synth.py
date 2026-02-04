@@ -12,9 +12,9 @@ from ezsynth.utils.io_utils import write_image
 parser = ArgumentParser(description="Run EBSynth image synthesis examples")
 parser.add_argument(
     "--backend",
-    choices=["cuda", "torch", "cpu"],
+    choices=["cuda", "torch", "cpu", "taichi"],
     default="cuda",
-    help="Backend to use for synthesis (default: cuda). 'cpu' uses the C++ extension on CPU.",
+    help="Backend to use for synthesis (default: cuda). 'cpu' uses the C++ extension on CPU. 'taichi' uses the Taichi backend.",
 )
 parser.add_argument(
     "--full-params",
@@ -99,9 +99,13 @@ start_example_time = time.time()
 
 # Determine backend and device
 # For CPU, we use "cuda" backend (the C++ extension) with device="cpu"
+# For taichi, we use "taichi" backend
 if args.backend == "cpu":
     backend = "cuda"
     device = "cpu"
+elif args.backend == "taichi":
+    backend = "taichi"
+    device = None
 else:
     backend = args.backend
     device = None  # Auto-detect
