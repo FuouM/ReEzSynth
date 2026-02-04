@@ -21,7 +21,8 @@ void ebsynth_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode);
+    int cost_function_mode,
+    bool use_optimization);
 
 // Unified RNG initialization - auto-detects device type
 void init_rand_states(torch::Tensor rand_states_tensor);
@@ -45,7 +46,8 @@ void ebsynth_cuda_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode);
+    int cost_function_mode,
+    bool use_optimization);
 
 // CUDA function to initialize random states
 void init_rand_states_cuda(torch::Tensor rand_states_tensor);
@@ -69,7 +71,8 @@ void ebsynth_cpu_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode);
+    int cost_function_mode,
+    bool use_optimization);
 
 // CPU function to initialize random states (no-op for compatibility)
 void init_rand_states_cpu(torch::Tensor rand_states_tensor);

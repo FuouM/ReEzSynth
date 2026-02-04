@@ -25,7 +25,8 @@ void ebsynth_cuda_run_level(
     float uniformity_weight, int patch_size, int vote_mode,
     int num_search_vote_iters, int num_patch_match_iters,
     int stop_threshold, torch::Tensor rand_states_tensor,
-    float search_pruning_threshold, int cost_function_mode)
+    float search_pruning_threshold, int cost_function_mode,
+    bool use_optimization)
 {
 
     const int source_h = style_level.size(0);

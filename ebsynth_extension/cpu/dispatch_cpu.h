@@ -22,7 +22,8 @@ void ebsynth_cpu_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode);
+    int cost_function_mode,
+    bool use_optimization);
 
 // CPU function to initialize random states (no-op for CPU, but kept for API compatibility)
 void init_rand_states_cpu(torch::Tensor rand_states_tensor);

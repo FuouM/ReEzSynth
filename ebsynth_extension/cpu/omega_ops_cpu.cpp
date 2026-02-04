@@ -72,7 +72,7 @@ void populate_initial_omega_cpu(
     const int omega_h = omega_map.size(0);
     const int omega_w = omega_map.size(1);
 
-// Parallelize initialization
+    // Parallelize initialization
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static)
 #endif
@@ -84,11 +84,9 @@ void populate_initial_omega_cpu(
         }
     }
 
-// Populate from NNF - this has write contention, so we use atomic updates
-// or process in a way that avoids conflicts
-// For now, use a simple approach with critical sections for updates
+    // Accumulate omega values from NNF
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic, 16)
+#pragma omp parallel for schedule(dynamic, 256)
 #endif
     for (int ty = 0; ty < target_h; ++ty)
     {
@@ -98,8 +96,6 @@ void populate_initial_omega_cpu(
             int sy = nnf[ty][tx][1];
 
             const int r = patch_size / 2;
-
-            // Update omega map with atomic operations to avoid race conditions
             for (int py = -r; py <= r; ++py)
             {
                 for (int px = -r; px <= r; ++px)
@@ -108,9 +104,6 @@ void populate_initial_omega_cpu(
                     int cur_sy = sy + py;
                     if (cur_sx >= 0 && cur_sx < omega_w && cur_sy >= 0 && cur_sy < omega_h)
                     {
-#ifdef _OPENMP
-#pragma omp atomic
-#endif
                         omega_map[cur_sy][cur_sx] += 1;
                     }
                 }

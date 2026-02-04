@@ -51,6 +51,9 @@ class RunConfig:
         use_residual_transfer: bool = True,
         cost_function: str = "ssd",
         device: str = None,
+        use_optimization: bool = True,
+        gnp_stiffness: float = 0.0,
+        gnp_iterations: int = 1,
     ):
         # Ebsynth gen params
         self.uniformity = uniformity
@@ -82,6 +85,9 @@ class RunConfig:
         self.use_residual_transfer = use_residual_transfer
         self.cost_function = cost_function
         self.device = device
+        self.use_optimization = use_optimization
+        self.gnp_stiffness = gnp_stiffness
+        self.gnp_iterations = gnp_iterations
 
 
 class Ezsynth:
@@ -267,6 +273,9 @@ class ImageSynth:
             extra_pass_3x3=config.extra_pass_3x3,
             cost_function=config.cost_function,
             device=config.device,
+            use_optimization=config.use_optimization,
+            gnp_stiffness=config.gnp_stiffness,
+            gnp_iterations=config.gnp_iterations,
             # Weights are now passed directly to run()
         )
 

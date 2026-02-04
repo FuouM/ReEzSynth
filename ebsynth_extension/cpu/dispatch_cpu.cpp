@@ -7,9 +7,11 @@
 #include "mask_ops_cpu.h"
 #include "patchmatch_cpu.h"
 #include "integral_image_cpu.h"
+#include "patch_tracker.hpp"
 
 #include <random>
 #include <algorithm>
+#include <memory>
 
 // Vote mode constants
 #define EBSYNTH_VOTEMODE_PLAIN 0x0001
@@ -41,7 +43,8 @@ void ebsynth_cpu_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode)
+    int cost_function_mode,
+    bool use_optimization)
 {
 
     const int source_h = style_level.size(0);
@@ -106,6 +109,25 @@ void ebsynth_cpu_run_level(
     auto target_style_sat_acc = target_style_sat.packed_accessor64<double, 2>();
     auto target_style_sq_sat_acc = target_style_sq_sat.packed_accessor64<double, 2>();
 
+    // Optimizations: only create when use_optimization is true
+    std::unique_ptr<ebsynth::PatchTracker> tracker_ptr;
+    torch::Tensor accumulators;
+    torch::PackedTensorAccessor32<float, 3>* acc_acc_ptr = nullptr;
+    bool is_first_vote = true;
+    torch::Tensor nnf_prev;
+    torch::PackedTensorAccessor32<int32_t, 3>* nnf_prev_acc_ptr = nullptr;
+
+    if (use_optimization)
+    {
+        tracker_ptr = std::make_unique<ebsynth::PatchTracker>(target_w, target_h);
+        const int num_style_channels = source_style_acc.size(2);
+        auto acc_options = torch::TensorOptions().dtype(torch::kFloat32);
+        accumulators = torch::zeros({target_h, target_w, num_style_channels + 1}, acc_options);
+        nnf_prev = nnf.clone();
+        acc_acc_ptr = new torch::PackedTensorAccessor32<float, 3>(accumulators.packed_accessor32<float, 3>());
+        nnf_prev_acc_ptr = new torch::PackedTensorAccessor32<int32_t, 3>(nnf_prev.packed_accessor32<int32_t, 3>());
+    }
+
     // Initial voting
     krnlVoteWeighted_cpu(target_style_temp_acc, source_style_acc, nnf_acc, error_acc,
                          patch_size, target_h, target_w);
@@ -131,33 +153,104 @@ void ebsynth_cpu_run_level(
         // Propagation steps
         for (int i = 0; i < num_patch_match_iters; ++i)
         {
-            propagation_step_cpu(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc,
-                                 source_guide_acc, target_guide_acc, target_modulation_guide_acc,
-                                 use_modulation, style_weights_acc, guide_weights_acc, patch_size,
-                                 (i % 2 == 1), uniformity_weight, mask_acc, cost_function_mode,
-                                 source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc,
-                                 target_style_sq_sat_acc, target_h, target_w);
+            if (use_optimization)
+            {
+                propagation_step_cpu(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc,
+                                     source_guide_acc, target_guide_acc, target_modulation_guide_acc,
+                                     use_modulation, style_weights_acc, guide_weights_acc, patch_size,
+                                     (i % 2 != 0), uniformity_weight, mask_acc, cost_function_mode,
+                                     source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc,
+                                     target_style_sq_sat_acc, target_h, target_w, tracker_ptr->getActivePatches());
+            }
+            else
+            {
+                propagation_step_cpu(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc,
+                                     source_guide_acc, target_guide_acc, target_modulation_guide_acc,
+                                     use_modulation, style_weights_acc, guide_weights_acc, patch_size,
+                                     (i % 2 != 0), uniformity_weight, mask_acc, cost_function_mode,
+                                     source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc,
+                                     target_style_sq_sat_acc, target_h, target_w);
+            }
         }
 
         // Random search
-        random_search_step_cpu(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc,
-                               source_guide_acc, target_guide_acc, target_modulation_guide_acc,
-                               use_modulation, style_weights_acc, guide_weights_acc, patch_size,
-                               std::max(source_w, source_h) / 2, uniformity_weight, rng, mask_acc,
-                               search_pruning_threshold, cost_function_mode, source_style_sat_acc,
-                               source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc,
-                               target_h, target_w);
+        if (use_optimization)
+        {
+            random_search_step_cpu(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc,
+                                   source_guide_acc, target_guide_acc, target_modulation_guide_acc,
+                                   use_modulation, style_weights_acc, guide_weights_acc, patch_size,
+                                   std::max(source_w, source_h) / 2, uniformity_weight, rng, mask_acc,
+                                   search_pruning_threshold, cost_function_mode, source_style_sat_acc,
+                                   source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc,
+                                   target_h, target_w, tracker_ptr->getActivePatches());
+        }
+        else
+        {
+            random_search_step_cpu(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc,
+                                   source_guide_acc, target_guide_acc, target_modulation_guide_acc,
+                                   use_modulation, style_weights_acc, guide_weights_acc, patch_size,
+                                   std::max(source_w, source_h) / 2, uniformity_weight, rng, mask_acc,
+                                   search_pruning_threshold, cost_function_mode, source_style_sat_acc,
+                                   source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc,
+                                   target_h, target_w);
+        }
+
+        if (use_optimization)
+        {
+            // Update tracker state based on error improvement
+            auto &active_patches = tracker_ptr->getActivePatches();
+            for (auto &p : active_patches)
+            {
+                float new_error = error_acc[p.y][p.x];
+                if (std::abs(new_error - p.last_error) < 1e-4f)
+                {
+                    p.stable_iters++;
+                }
+                else
+                {
+                    p.stable_iters = 0;
+                }
+                p.last_error = new_error;
+            }
+
+            // Prune converged patches after each main iteration
+            tracker_ptr->prune(2); // Remove if stable for 2 iterations
+        }
 
         // Voting
         if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED)
         {
-            krnlVoteWeighted_cpu(target_style_temp_acc, source_style_acc, nnf_acc, error_acc,
-                                 patch_size, target_h, target_w);
+            if (use_optimization)
+            {
+                if (is_first_vote)
+                {
+                    krnlVoteWeighted_cpu(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size, target_h, target_w);
+                    // Initialize accumulators for next (incremental) iterations
+                    krnlVotePopulate_cpu(source_style_acc, nnf_acc, error_acc, *acc_acc_ptr, patch_size, target_h, target_w);
+                    is_first_vote = false;
+                }
+                else
+                {
+                    krnlVoteIncremental_cpu(target_style_temp_acc, source_style_acc, nnf_acc, *nnf_prev_acc_ptr, error_acc, *acc_acc_ptr, patch_size, target_h, target_w);
+                }
+            }
+            else
+            {
+                krnlVoteWeighted_cpu(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size, target_h, target_w);
+            }
         }
         else
         {
-            krnlVotePlain_cpu(target_style_temp_acc, source_style_acc, nnf_acc, patch_size,
-                              target_h, target_w);
+            krnlVotePlain_cpu(target_style_temp_acc, source_style_acc, nnf_acc, patch_size, target_h, target_w);
+        }
+
+        // Save current NNF as prev for next incremental update (only when optimization is enabled)
+        if (use_optimization)
+        {
+            nnf_prev.copy_(nnf);
+            // Update the accessor pointer
+            delete nnf_prev_acc_ptr;
+            nnf_prev_acc_ptr = new torch::PackedTensorAccessor32<int32_t, 3>(nnf_prev.packed_accessor32<int32_t, 3>());
         }
 
         // Update mask for next iteration
@@ -180,6 +273,13 @@ void ebsynth_cpu_run_level(
                               source_guide_acc, target_guide_acc, target_modulation_guide_acc,
                               use_modulation, patch_size, style_weights_acc, guide_weights_acc,
                               cost_function_mode, target_h, target_w);
+
+    // Clean up allocated accessors
+    if (use_optimization)
+    {
+        delete acc_acc_ptr;
+        delete nnf_prev_acc_ptr;
+    }
 }
 
 // ===================================================================

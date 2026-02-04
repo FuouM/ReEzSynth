@@ -5,7 +5,6 @@ from argparse import ArgumentParser
 
 import numpy as np
 import torch
-
 from ezsynth.api import ImageSynth, RunConfig, load_guide
 from ezsynth.utils.io_utils import write_image
 
@@ -26,6 +25,30 @@ parser.add_argument(
     "--benchmark",
     action="store_true",
     help="Enable detailed benchmarking and timing output",
+)
+parser.add_argument(
+    "--optimize",
+    action="store_true",
+    default=True,
+    help="Use optimized CPU backend (default: True)",
+)
+parser.add_argument(
+    "--no-optimize",
+    action="store_false",
+    dest="optimize",
+    help="Disable optimized CPU backend",
+)
+parser.add_argument(
+    "--gnp-stiffness",
+    type=float,
+    default=0.0,
+    help="GNP stiffness (0.0 to 1.0, default: 0.0)",
+)
+parser.add_argument(
+    "--gnp-iterations",
+    type=int,
+    default=1,
+    help="GNP iterations (default: 1)",
 )
 
 args = parser.parse_args()
@@ -60,12 +83,11 @@ st = time.time()
 # Constants for synthesis parameters
 USE_RESIDUAL_TRANSFER = True
 COST_FUNCTION = "ssd"
+# COST_FUNCTION = "swd"
 
 # --- Setup Paths ---
 EXAMPLES_DIR = "examples"
-OUTPUT_DIR = (
-    f"output_synth_api_{args.backend}_{'full' if args.full_params else 'minimal'}_{COST_FUNCTION}"
-)
+OUTPUT_DIR = f"output_synth_api_{args.backend}_{'full' if args.full_params else 'minimal'}_{COST_FUNCTION}"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -92,6 +114,9 @@ ezsynner = ImageSynth(
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
         device=device,
+        use_optimization=args.optimize,
+        gnp_stiffness=args.gnp_stiffness,
+        gnp_iterations=args.gnp_iterations,
     )
     if args.full_params
     else RunConfig(
@@ -102,6 +127,9 @@ ezsynner = ImageSynth(
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
         device=device,
+        use_optimization=args.optimize,
+        gnp_stiffness=args.gnp_stiffness,
+        gnp_iterations=args.gnp_iterations,
     ),
 )
 
@@ -130,6 +158,9 @@ ezsynner = ImageSynth(
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
         device=device,
+        use_optimization=args.optimize,
+        gnp_stiffness=args.gnp_stiffness,
+        gnp_iterations=args.gnp_iterations,
     )
     if args.full_params
     else RunConfig(
@@ -139,6 +170,9 @@ ezsynner = ImageSynth(
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
         device=device,
+        use_optimization=args.optimize,
+        gnp_stiffness=args.gnp_stiffness,
+        gnp_iterations=args.gnp_iterations,
     ),
 )
 
@@ -178,6 +212,9 @@ ezsynner = ImageSynth(
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
         device=device,
+        use_optimization=args.optimize,
+        gnp_stiffness=args.gnp_stiffness,
+        gnp_iterations=args.gnp_iterations,
     )
     if args.full_params
     else RunConfig(
@@ -187,6 +224,9 @@ ezsynner = ImageSynth(
         use_residual_transfer=USE_RESIDUAL_TRANSFER,
         cost_function=COST_FUNCTION,
         device=device,
+        use_optimization=args.optimize,
+        gnp_stiffness=args.gnp_stiffness,
+        gnp_iterations=args.gnp_iterations,
     ),
 )
 

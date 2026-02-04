@@ -72,8 +72,9 @@ if ebsynth_torch is None:
 
         if system == "Darwin":
             cflags.append("-std=c++17")
+            cflags.append("-ffast-math")
             if machine == "arm64":
-                cflags.extend(["-arch", "arm64"])
+                cflags.extend(["-arch", "arm64", "-mcpu=apple-m4"])  # Optimize for M4
             elif machine == "x86_64":
                 cflags.extend(["-arch", "x86_64"])
             cflags.extend(["-Xpreprocessor", "-fopenmp"])

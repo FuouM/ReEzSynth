@@ -13,6 +13,7 @@ EBSYNTH_VOTEMODE_WEIGHTED = 0x0002
 # --- Cost Function Constants ---
 COST_FUNCTION_SSD = 0
 COST_FUNCTION_NCC = 1
+COST_FUNCTION_SWD = 2
 
 # --- Extension Availability ---
 # This is determined dynamically at import time

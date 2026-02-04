@@ -26,7 +26,8 @@ void ebsynth_run_level(
     int stop_threshold,
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
-    int cost_function_mode)
+    int cost_function_mode,
+    bool use_optimization)
 {
 
     // Auto-detect device type from input tensor
@@ -51,11 +52,14 @@ void ebsynth_run_level(
             stop_threshold,
             rand_states_tensor,
             search_pruning_threshold,
-            cost_function_mode);
+            cost_function_mode,
+            use_optimization);
     }
     else
     {
+#ifndef CPU_ONLY
         // Route to CUDA implementation
+        // ebsynth_cuda_run_level is declared in dispatch.h usually
         ebsynth_cuda_run_level(
             output_image,
             output_error,
@@ -74,7 +78,11 @@ void ebsynth_run_level(
             stop_threshold,
             rand_states_tensor,
             search_pruning_threshold,
-            cost_function_mode);
+            cost_function_mode,
+            use_optimization);
+#else
+        throw std::runtime_error("ebsynth_extension was compiled without CUDA support.");
+#endif
     }
 }
 
@@ -90,6 +98,10 @@ void init_rand_states(torch::Tensor rand_states_tensor)
     }
     else
     {
+#ifndef CPU_ONLY
         init_rand_states_cuda(rand_states_tensor);
+#else
+        throw std::runtime_error("ebsynth_extension was compiled without CUDA support.");
+#endif
     }
 }

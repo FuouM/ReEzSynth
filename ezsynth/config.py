@@ -93,6 +93,11 @@ class EbsynthParamsConfig(BaseModel):
     pos_weight: float = 2.0
     warp_weight: float = 0.5
     sparse_anchor_weight: float = 10.0
+    # New: Use optimized index_vector CPU backend (if available)
+    use_optimization: bool = True
+    # New: GNP (Graph-Neural-PatchMatch) stiffness
+    gnp_stiffness: float = 0.0
+    gnp_iterations: int = 1
 
     @validator("vote_mode")
     def vote_mode_must_be_valid(cls, v):
@@ -102,8 +107,8 @@ class EbsynthParamsConfig(BaseModel):
 
     @validator("cost_function")
     def cost_function_must_be_valid(cls, v):
-        if v.lower() not in ["ssd", "ncc"]:
-            raise ValueError("cost_function must be 'ssd' or 'ncc'")
+        if v.lower() not in ["ssd", "ncc", "swd"]:
+            raise ValueError("cost_function must be 'ssd', 'ncc' or 'swd'")
         return v.lower()
 
     @validator("backend")
