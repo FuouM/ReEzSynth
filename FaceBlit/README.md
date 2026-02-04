@@ -1,5 +1,8 @@
 # FaceBlit (PyTorch)
 
+<!-- markdownlint-disable MD033 -->
+<!-- markdownlint-disable MD045 -->
+
 Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) focused on face style transfer. This README covers the pure Python/PyTorch port used for research and integration into ReEzSynth.
 
 ## Examples
@@ -28,6 +31,8 @@ Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) focus
 ## Quickstart (PyTorch)
 
 The port mirrors the FaceBlit flow: precompute style assets, prepare target guides, detect landmarks, then stylize. Try it out by running `python faceblit_pytorch/test_faceblit_pytorch.py`
+
+To test the Taichi implementation, run `python faceblit_taichi\demo.py`
 
 ## References
 
