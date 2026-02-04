@@ -21,9 +21,13 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
     int cost_function_mode,
-    bool use_optimization) // New parameter
+    bool use_optimization,
+    bool use_bilateral,
+    float sigma_spatial,
+    float sigma_color,
+    int n_size_step)
 {
-    // Input validation (removed CUDA-only checks to support CPU)
+    // Input validation
     TORCH_CHECK(style_level.is_contiguous(), "Style tensor must be contiguous");
     TORCH_CHECK(style_level.scalar_type() == torch::kUInt8, "Style tensor must be uint8");
     TORCH_CHECK(style_level.device() == nnf.device(), "Style and NNF tensors must be on the same device");
@@ -59,7 +63,11 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> run_level(
         rand_states_tensor,
         search_pruning_threshold,
         cost_function_mode,
-        use_optimization); // Pass new parameter
+        use_optimization,
+        use_bilateral,
+        sigma_spatial,
+        sigma_color,
+        n_size_step);
 
     // Return the results including the modified NNF
     return {output_image, output_error, nnf};
@@ -91,6 +99,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
           py::arg("rand_states_tensor"),
           py::arg("search_pruning_threshold"),
           py::arg("cost_function_mode"),
-          py::arg("use_optimization"));
+          py::arg("use_optimization"),
+          py::arg("use_bilateral") = false,
+          py::arg("sigma_spatial") = 4.0f,
+          py::arg("sigma_color") = 10.0f,
+          py::arg("n_size_step") = 1);
     m.def("init_rand_states", &init_rand_states_wrapper, "Initialize random number generator states (CPU or CUDA)");
 }

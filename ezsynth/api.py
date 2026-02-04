@@ -54,6 +54,10 @@ class RunConfig:
         use_optimization: bool = True,
         gnp_stiffness: float = 0.0,
         gnp_iterations: int = 1,
+        use_bilateral: bool = False,
+        sigma_spatial: float = 4.0,
+        sigma_color: float = 10.0,
+        n_size_step: int = 1,
     ):
         # Ebsynth gen params
         self.uniformity = uniformity
@@ -88,6 +92,10 @@ class RunConfig:
         self.use_optimization = use_optimization
         self.gnp_stiffness = gnp_stiffness
         self.gnp_iterations = gnp_iterations
+        self.use_bilateral = use_bilateral
+        self.sigma_spatial = sigma_spatial
+        self.sigma_color = sigma_color
+        self.n_size_step = n_size_step
 
 
 class Ezsynth:
@@ -276,6 +284,10 @@ class ImageSynth:
             use_optimization=config.use_optimization,
             gnp_stiffness=config.gnp_stiffness,
             gnp_iterations=config.gnp_iterations,
+            use_bilateral=config.use_bilateral,
+            sigma_spatial=config.sigma_spatial,
+            sigma_color=config.sigma_color,
+            n_size_step=config.n_size_step,
             # Weights are now passed directly to run()
         )
 

@@ -14,33 +14,6 @@ __device__ float patch_omega(
     torch::PackedTensorAccessor32<int32_t, 2> omega_map,
     int sx, int sy, int patch_size);
 
-__device__ float compute_patch_ssd_split(
-    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
-    bool use_modulation,
-    int sx, int sy, int tx, int ty, int patch_size,
-    const torch::PackedTensorAccessor32<float, 1> style_weights,
-    const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest);
-
-__device__ float compute_patch_ncc_sat(
-    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
-    bool use_modulation,
-    int sx, int sy, int tx, int ty, int patch_size,
-    const torch::PackedTensorAccessor32<float, 1> style_weights,
-    const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    torch::PackedTensorAccessor64<double, 2> source_style_sat,
-    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
-
 // ===================================================================
 //                        PATCHMATCH KERNELS
 // ===================================================================
@@ -64,7 +37,8 @@ __device__ void try_patch(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step);
 
 // Compute initial error for all patches
 __global__ void compute_initial_error_kernel(
@@ -79,7 +53,8 @@ __global__ void compute_initial_error_kernel(
     int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    int cost_function_mode);
+    int cost_function_mode,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step);
 
 // Propagation step - spatial coherence
 __global__ void propagation_step_kernel(
@@ -100,7 +75,8 @@ __global__ void propagation_step_kernel(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step);
 
 // Random search step - global exploration
 __global__ void random_search_step_kernel(
@@ -122,4 +98,5 @@ __global__ void random_search_step_kernel(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step);

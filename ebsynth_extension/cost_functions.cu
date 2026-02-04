@@ -18,7 +18,8 @@ __device__ float compute_patch_ssd_split(
     int sx, int sy, int tx, int ty, int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest)
+    float ebest,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 
     const int r = patch_size / 2;
@@ -32,20 +33,36 @@ __device__ float compute_patch_ssd_split(
     const int target_h = target_style.size(0);
     const int target_w = target_style.size(1);
 
-    for (int py = -r; py <= r; ++py)
+    float weight_sum = 0.0f;
+
+    for (int py = -r; py <= r; py += n_size_step)
     {
-        for (int px = -r; px <= r; ++px)
+        for (int px = -r; px <= r; px += n_size_step)
         {
             int cur_sx = min(max(sx + px, 0), source_w - 1);
             int cur_sy = min(max(sy + py, 0), source_h - 1);
             int cur_tx = min(max(tx + px, 0), target_w - 1);
             int cur_ty = min(max(ty + py, 0), target_h - 1);
 
+            float weight = 1.0f;
+            if (use_bilateral)
+            {
+                float spatial_dist_sq = (float)(px * px + py * py);
+                float color_dist_sq = 0.0f;
+                for (int c = 0; c < num_style_channels; ++c)
+                {
+                    float d = (float)source_style[cur_sy][cur_sx][c] - (float)source_style[sy][sx][c];
+                    color_dist_sq += d * d;
+                }
+                weight = expf(-spatial_dist_sq / (2.0f * sigma_spatial * sigma_spatial) - color_dist_sq / (2.0f * sigma_color * sigma_color));
+            }
+            weight_sum += weight;
+
             // Style difference
             for (int c = 0; c < num_style_channels; ++c)
             {
                 float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
-                error += style_weights[c] * diff * diff;
+                error += weight * style_weights[c] * diff * diff;
             }
 
             // Guide difference
@@ -57,13 +74,13 @@ __device__ float compute_patch_ssd_split(
                 {
                     modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
                 }
-                error += guide_weights[c] * modulation * diff * diff;
+                error += weight * guide_weights[c] * modulation * diff * diff;
             }
         }
-        if (error > ebest)
+        if (ebest > 0 && error > ebest)
             return error;
     }
-    return error;
+    return (weight_sum > 0) ? (error / weight_sum * (patch_size * patch_size)) : error;
 }
 
 // ===================================================================
@@ -109,7 +126,8 @@ __device__ float compute_patch_ncc_sat(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat)
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 
     const int r = patch_size / 2;
@@ -133,9 +151,10 @@ __device__ float compute_patch_ncc_sat(
     // --- O(P^2) Cross-correlation and Guide SSD ---
     double sum_st = 0.0;
     float guide_error = 0.0f;
-    for (int py = -r; py <= r; ++py)
+    float weight_sum = 0.0f;
+    for (int py = -r; py <= r; py += n_size_step)
     {
-        for (int px = -r; px <= r; ++px)
+        for (int px = -r; px <= r; px += n_size_step)
         {
             int cur_sx = sx + px;
             int cur_sy = sy + py;
@@ -143,29 +162,43 @@ __device__ float compute_patch_ncc_sat(
             int cur_ty = ty + py;
 
             // Cross-correlation term
+            float weight = 1.0f;
+            if (use_bilateral)
+            {
+                float spatial_dist_sq = (float)(px * px + py * py);
+                float color_dist_sq = 0.0f;
+                for (int c = 0; c < num_style_channels; ++c)
+                {
+                    float d = (float)source_style[cur_sy][cur_sx][c] - (float)source_style[sy][sx][c];
+                    color_dist_sq += d * d;
+                }
+                weight = expf(-spatial_dist_sq / (2.0f * sigma_spatial * sigma_spatial) - color_dist_sq / (2.0f * sigma_color * sigma_color));
+            }
+            weight_sum += weight;
+
             float s_val_g = 0.0f, t_val_g = 0.0f;
             for (int c = 0; c < num_style_channels; ++c)
             {
                 s_val_g += (float)source_style[cur_sy][cur_sx][c];
                 t_val_g += (float)target_style[cur_ty][cur_tx][c];
             }
-            sum_st += (s_val_g / num_style_channels) * (t_val_g / num_style_channels);
+            sum_st += weight * (s_val_g / num_style_channels) * (t_val_g / num_style_channels);
 
             // Guide difference (SSD)
             for (int c = 0; c < num_guide_channels; ++c)
             {
                 float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                 float modulation = use_modulation ? ((float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f) : 1.0f;
-                guide_error += guide_weights[c] * modulation * diff * diff;
+                guide_error += weight * guide_weights[c] * modulation * diff * diff;
             }
         }
     }
 
-    double cov = sum_st / N - mean_s * mean_t;
+    double cov = (weight_sum > 0) ? (sum_st / weight_sum - mean_s * mean_t) : 0.0;
     float ncc = (std_s > epsilon && std_t > epsilon) ? cov / (std_s * std_t) : 0.0f;
     float style_error = (1.0f - ncc) * style_weights[0] * N;
 
-    return style_error + guide_error;
+    return style_error + ((weight_sum > 0) ? (guide_error / weight_sum * N) : guide_error);
 }
 
 /*
@@ -185,7 +218,8 @@ __device__ float compute_patch_ncc_split(
     int sx, int sy, int tx, int ty, int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest)
+    float ebest,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 
     const int r = patch_size / 2;
@@ -204,10 +238,11 @@ __device__ float compute_patch_ncc_split(
     float sum_sq_s = 0.0f, sum_sq_t = 0.0f;
     float sum_st = 0.0f;
     float style_error = 0.0f;
+    float weight_sum = 0.0f;
 
-    for (int py = -r; py <= r; ++py)
+    for (int py = -r; py <= r; py += n_size_step)
     {
-        for (int px = -r; px <= r; ++px)
+        for (int px = -r; px <= r; px += n_size_step)
         {
             int cur_sx = min(max(sx + px, 0), source_w - 1);
             int cur_sy = min(max(sy + py, 0), source_h - 1);
@@ -223,33 +258,62 @@ __device__ float compute_patch_ncc_split(
             s_val /= num_style_channels;
             t_val /= num_style_channels;
 
-            sum_s += s_val;
-            sum_t += t_val;
-            sum_sq_s += s_val * s_val;
-            sum_sq_t += t_val * t_val;
-            sum_st += s_val * t_val;
+            float weight = 1.0f;
+            if (use_bilateral)
+            {
+                float spatial_dist_sq = (float)(px * px + py * py);
+                float color_dist_sq = 0.0f;
+                for (int c = 0; c < num_style_channels; ++c)
+                {
+                    float d = (float)source_style[cur_sy][cur_sx][c] - (float)source_style[sy][sx][c];
+                    color_dist_sq += d * d;
+                }
+                weight = expf(-spatial_dist_sq / (2.0f * sigma_spatial * sigma_spatial) - color_dist_sq / (2.0f * sigma_color * sigma_color));
+            }
+            weight_sum += weight;
+
+            sum_s += weight * s_val;
+            sum_t += weight * t_val;
+            sum_sq_s += weight * s_val * s_val;
+            sum_sq_t += weight * t_val * t_val;
+            sum_st += weight * s_val * t_val;
         }
     }
 
-    float mean_s = sum_s / N;
-    float mean_t = sum_t / N;
-    float std_s = sqrtf(fmaxf(0.0f, sum_sq_s / N - mean_s * mean_s));
-    float std_t = sqrtf(fmaxf(0.0f, sum_sq_t / N - mean_t * mean_t));
-    float cov = sum_st / N - mean_s * mean_t;
+    float mean_s = (weight_sum > 0) ? (sum_s / weight_sum) : 0;
+    float mean_t = (weight_sum > 0) ? (sum_t / weight_sum) : 0;
+    float var_s = (weight_sum > 0) ? (sum_sq_s / weight_sum - mean_s * mean_s) : 0;
+    float var_t = (weight_sum > 0) ? (sum_sq_t / weight_sum - mean_t * mean_t) : 0;
+    float std_s = sqrtf(fmaxf(0.0f, var_s));
+    float std_t = sqrtf(fmaxf(0.0f, var_t));
+    float cov = (weight_sum > 0) ? (sum_st / weight_sum - mean_s * mean_t) : 0;
 
     float ncc = (std_s > epsilon && std_t > epsilon) ? cov / (std_s * std_t) : 0.0f;
     style_error = (1.0f - ncc) * style_weights[0] * N; // NCC cost, scaled like SSD for compatibility with weights
 
     // --- SSD for Guides ---
     float guide_error = 0.0f;
-    for (int py = -r; py <= r; ++py)
+    for (int py = -r; py <= r; py += n_size_step)
     {
-        for (int px = -r; px <= r; ++px)
+        for (int px = -r; px <= r; px += n_size_step)
         {
             int cur_sx = min(max(sx + px, 0), source_w - 1);
             int cur_sy = min(max(sy + py, 0), source_h - 1);
             int cur_tx = min(max(tx + px, 0), target_w - 1);
             int cur_ty = min(max(ty + py, 0), target_h - 1);
+
+            float weight = 1.0f;
+            if (use_bilateral)
+            {
+                float spatial_dist_sq = (float)(px * px + py * py);
+                float color_dist_sq = 0.0f;
+                for (int c = 0; c < num_style_channels; ++c)
+                {
+                    float d = (float)source_style[cur_sy][cur_sx][c] - (float)source_style[sy][sx][c];
+                    color_dist_sq += d * d;
+                }
+                weight = expf(-spatial_dist_sq / (2.0f * sigma_spatial * sigma_spatial) - color_dist_sq / (2.0f * sigma_color * sigma_color));
+            }
 
             for (int c = 0; c < num_guide_channels; ++c)
             {
@@ -259,10 +323,10 @@ __device__ float compute_patch_ncc_split(
                 {
                     modulation = (float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f;
                 }
-                guide_error += guide_weights[c] * modulation * diff * diff;
+                guide_error += weight * guide_weights[c] * modulation * diff * diff;
             }
         }
     }
 
-    return style_error + guide_error;
+    return style_error + ((weight_sum > 0) ? (guide_error / weight_sum * N) : guide_error);
 }

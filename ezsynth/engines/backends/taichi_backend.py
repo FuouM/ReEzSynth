@@ -128,59 +128,160 @@ class TaichiBackend(BaseSynthesisBackend):
         th: int,
         NSC: int,
         NGC: int,
+        use_bilateral: int,
+        sigma_spatial: float,
+        sigma_color: float,
+        n_size_step: int,
     ):
         r = patch_size // 2
-        N = float(patch_size * patch_size)
         epsilon = 1e-6
+        final_error = 0.0
 
-        # SAT-based stats for style
-        sum_s = self.query_sat(source_style_sat, sx - r, sy - r, sx + r, sy + r, sw, sh)
-        sum_sq_s = self.query_sat(
-            source_style_sq_sat, sx - r, sy - r, sx + r, sy + r, sw, sh
-        )
-        sum_t = self.query_sat(target_style_sat, tx - r, ty - r, tx + r, ty + r, tw, th)
-        sum_sq_t = self.query_sat(
-            target_style_sq_sat, tx - r, ty - r, tx + r, ty + r, tw, th
-        )
-
-        mean_s = sum_s / N
-        mean_t = sum_t / N
-        std_s = ti.sqrt(ti.max(0.0, sum_sq_s / N - mean_s * mean_s))
-        std_t = ti.sqrt(ti.max(0.0, sum_sq_t / N - mean_t * mean_t))
-
-        sum_st = 0.0
-        guide_error = 0.0
-        for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
-            idx_sx, idx_sy = (
-                ti.max(0, ti.min(sx + px, sw - 1)),
-                ti.max(0, ti.min(sy + py, sh - 1)),
+        if use_bilateral == 0 and n_size_step == 1:
+            # Optimized non-bilateral path using SAT
+            N = float(patch_size * patch_size)
+            sum_s = self.query_sat(
+                source_style_sat, sx - r, sy - r, sx + r, sy + r, sw, sh
             )
-            idx_tx, idx_ty = (
-                ti.max(0, ti.min(tx + px, tw - 1)),
-                ti.max(0, ti.min(ty + py, th - 1)),
+            sum_sq_s = self.query_sat(
+                source_style_sq_sat, sx - r, sy - r, sx + r, sy + r, sw, sh
+            )
+            sum_t = self.query_sat(
+                target_style_sat, tx - r, ty - r, tx + r, ty + r, tw, th
+            )
+            sum_sq_t = self.query_sat(
+                target_style_sq_sat, tx - r, ty - r, tx + r, ty + r, tw, th
             )
 
-            s_val_g, t_val_g = 0.0, 0.0
-            for c in range(NSC):
-                s_val_g += float(source_style[idx_sy, idx_sx, c])
-                t_val_g += float(target_style[idx_ty, idx_tx, c])
-            sum_st += (s_val_g / NSC) * (t_val_g / NSC)
+            mean_s = sum_s / N
+            mean_t = sum_t / N
+            std_s = ti.sqrt(ti.max(0.0, sum_sq_s / N - mean_s * mean_s))
+            std_t = ti.sqrt(ti.max(0.0, sum_sq_t / N - mean_t * mean_t))
 
-            for c in range(NGC):
-                diff = float(source_guide[idx_sy, idx_sx, c]) - float(
-                    target_guide[idx_ty, idx_tx, c]
+            sum_st = 0.0
+            guide_error = 0.0
+            for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
+                idx_sx, idx_sy = (
+                    ti.max(0, ti.min(sx + px, sw - 1)),
+                    ti.max(0, ti.min(sy + py, sh - 1)),
                 )
-                mod = (
-                    float(modulation_guide[idx_ty, idx_tx, c]) / 255.0
-                    if use_modulation
-                    else 1.0
+                idx_tx, idx_ty = (
+                    ti.max(0, ti.min(tx + px, tw - 1)),
+                    ti.max(0, ti.min(ty + py, th - 1)),
                 )
-                guide_error += guide_weights[c] * mod * diff * diff
 
-        cov = sum_st / N - mean_s * mean_t
-        ncc = cov / (std_s * std_t) if (std_s > epsilon and std_t > epsilon) else 0.0
-        style_error = (1.0 - ncc) * style_weights[0] * N
-        return float(style_error + guide_error)
+                s_val_g, t_val_g = 0.0, 0.0
+                for c in range(NSC):
+                    s_val_g += float(source_style[idx_sy, idx_sx, c])
+                    t_val_g += float(target_style[idx_ty, idx_tx, c])
+                sum_st += (s_val_g / NSC) * (t_val_g / NSC)
+
+                for c in range(NGC):
+                    diff = float(source_guide[idx_sy, idx_sx, c]) - float(
+                        target_guide[idx_ty, idx_tx, c]
+                    )
+                    mod = (
+                        float(modulation_guide[idx_ty, idx_tx, c]) / 255.0
+                        if use_modulation
+                        else 1.0
+                    )
+                    guide_error += guide_weights[c] * mod * diff * diff
+
+            cov = sum_st / N - mean_s * mean_t
+            ncc = (
+                cov / (std_s * std_t) if (std_s > epsilon and std_t > epsilon) else 0.0
+            )
+            final_error = (1.0 - ncc) * style_weights[0] * N + guide_error
+
+        else:
+            # Bilateral or multi-scale path (no SAT optimization)
+            inv_2_sigma_spatial_sq = -1.0 / (2.0 * sigma_spatial * sigma_spatial)
+            inv_2_sigma_color_sq = -1.0 / (2.0 * sigma_color * sigma_color)
+
+            sum_s = 0.0
+            sum_sq_s = 0.0
+            sum_t = 0.0
+            sum_sq_t = 0.0
+            sum_st = 0.0
+            sum_weight = 0.0
+            guide_error = 0.0
+
+            # Step manually because Ti.range doesn't support 3 args
+            steps = (2 * r) // n_size_step + 1
+            for i, j in ti.ndrange(steps, steps):
+                px = -r + i * n_size_step
+                py = -r + j * n_size_step
+                if px <= r and py <= r:
+                    idx_sx, idx_sy = (
+                        ti.max(0, ti.min(sx + px, sw - 1)),
+                        ti.max(0, ti.min(sy + py, sh - 1)),
+                    )
+                    idx_tx, idx_ty = (
+                        ti.max(0, ti.min(tx + px, tw - 1)),
+                        ti.max(0, ti.min(ty + py, th - 1)),
+                    )
+
+                    weight = 1.0
+                    if use_bilateral:
+                        s_val_c, t_val_c = 0.0, 0.0
+                        for c in range(NSC):
+                            s_val_c += float(source_style[sy, sx, c])
+                            t_val_c += float(target_style[ty, tx, c])
+                        s_val_c /= NSC
+                        t_val_c /= NSC
+
+                        dist_sq = float(px * px + py * py)
+                        color_diff = s_val_c - t_val_c
+                        color_diff_sq = color_diff * color_diff
+                        weight = ti.exp(
+                            dist_sq * inv_2_sigma_spatial_sq
+                            + color_diff_sq * inv_2_sigma_color_sq
+                        )
+
+                    s_val, t_val = 0.0, 0.0
+                    for c in range(NSC):
+                        sv = float(source_style[idx_sy, idx_sx, c])
+                        tv = float(target_style[idx_ty, idx_tx, c])
+                        s_val += sv
+                        t_val += tv
+                    s_val /= NSC
+                    t_val /= NSC
+
+                    sum_s += s_val * weight
+                    sum_sq_s += s_val * s_val * weight
+                    sum_t += t_val * weight
+                    sum_sq_t += t_val * t_val * weight
+                    sum_st += s_val * t_val * weight
+                    sum_weight += weight
+
+                    for c in range(NGC):
+                        diff = float(source_guide[idx_sy, idx_sx, c]) - float(
+                            target_guide[idx_ty, idx_tx, c]
+                        )
+                        mod = (
+                            float(modulation_guide[idx_ty, idx_tx, c]) / 255.0
+                            if use_modulation
+                            else 1.0
+                        )
+                        guide_error += weight * guide_weights[c] * mod * diff * diff
+
+            if sum_weight > epsilon:
+                mean_s = sum_s / sum_weight
+                mean_t = sum_t / sum_weight
+                std_s = ti.sqrt(ti.max(0.0, sum_sq_s / sum_weight - mean_s * mean_s))
+                std_t = ti.sqrt(ti.max(0.0, sum_sq_t / sum_weight - mean_t * mean_t))
+
+                cov = sum_st / sum_weight - mean_s * mean_t
+                ncc = (
+                    cov / (std_s * std_t)
+                    if (std_s > epsilon and std_t > epsilon)
+                    else 0.0
+                )
+                final_error = (1.0 - ncc) * style_weights[0] * sum_weight + guide_error
+            else:
+                final_error = guide_error
+
+        return float(final_error)
 
     @ti.func
     def compute_patch_ssd(
@@ -205,33 +306,85 @@ class TaichiBackend(BaseSynthesisBackend):
         th: int,
         NSC: int,
         NGC: int,
+        use_bilateral: int,
+        sigma_spatial: float,
+        sigma_color: float,
+        n_size_step: int,
     ):
         r = patch_size // 2
         error = 0.0
-        for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
-            idx_sx, idx_sy = (
-                ti.max(0, ti.min(sx + px, sw - 1)),
-                ti.max(0, ti.min(sy + py, sh - 1)),
-            )
-            idx_tx, idx_ty = (
-                ti.max(0, ti.min(tx + px, tw - 1)),
-                ti.max(0, ti.min(ty + py, th - 1)),
-            )
+
+        inv_2_sigma_spatial_sq = -1.0 / (2.0 * sigma_spatial * sigma_spatial)
+        inv_2_sigma_color_sq = -1.0 / (2.0 * sigma_color * sigma_color)
+
+        # Center colors for bilateral
+        s_val_center, t_val_center = 0.0, 0.0
+        if use_bilateral:
             for c in range(NSC):
-                diff = float(source_style[idx_sy, idx_sx, c]) - float(
-                    target_style[idx_ty, idx_tx, c]
+                s_val_center += float(source_style[sy, sx, c])
+                t_val_center += float(target_style[ty, tx, c])
+            s_val_center /= NSC
+            t_val_center /= NSC
+
+        steps = (2 * r) // n_size_step + 1
+        for i, j in ti.ndrange(steps, steps):
+            px = -r + i * n_size_step
+            py = -r + j * n_size_step
+            if px <= r and py <= r:
+                idx_sx, idx_sy = (
+                    ti.max(0, ti.min(sx + px, sw - 1)),
+                    ti.max(0, ti.min(sy + py, sh - 1)),
                 )
-                error += style_weights[c] * diff * diff
-            for c in range(NGC):
-                diff = float(source_guide[idx_sy, idx_sx, c]) - float(
-                    target_guide[idx_ty, idx_tx, c]
+                idx_tx, idx_ty = (
+                    ti.max(0, ti.min(tx + px, tw - 1)),
+                    ti.max(0, ti.min(ty + py, th - 1)),
                 )
-                mod = (
-                    float(modulation_guide[idx_ty, idx_tx, c]) / 255.0
-                    if use_modulation
-                    else 1.0
-                )
-                error += guide_weights[c] * mod * diff * diff
+
+                weight = 1.0
+                if use_bilateral:
+                    s_val_c, t_val_c = 0.0, 0.0
+                    for c in range(NSC):
+                        s_val_c += float(source_style[idx_sy, idx_sx, c])
+                        t_val_c += float(target_style[idx_ty, idx_tx, c])
+                    s_val_c /= NSC
+                    t_val_c /= NSC
+
+                    dist_sq = float(px * px + py * py)
+                    color_diff_sq = (s_val_c - s_val_center) ** 2 + (
+                        t_val_c - t_val_center
+                    ) ** 2
+                    weight = ti.exp(
+                        dist_sq * inv_2_sigma_spatial_sq
+                        + color_diff_sq * inv_2_sigma_color_sq
+                    )
+
+                inner_break = 0
+                for c in range(NSC):
+                    diff = float(source_style[idx_sy, idx_sx, c]) - float(
+                        target_style[idx_ty, idx_tx, c]
+                    )
+                    error += weight * style_weights[c] * diff * diff
+                    if error > ebest:
+                        inner_break = 1
+                        break
+                if inner_break:
+                    break
+
+                for c in range(NGC):
+                    diff = float(source_guide[idx_sy, idx_sx, c]) - float(
+                        target_guide[idx_ty, idx_tx, c]
+                    )
+                    mod = (
+                        float(modulation_guide[idx_ty, idx_tx, c]) / 255.0
+                        if use_modulation
+                        else 1.0
+                    )
+                    error += weight * guide_weights[c] * mod * diff * diff
+                    if error > ebest:
+                        inner_break = 1
+                        break
+                if inner_break:
+                    break
             if error > ebest:
                 break
         return error
@@ -285,6 +438,10 @@ class TaichiBackend(BaseSynthesisBackend):
         s_sq_sat: ti.types.ndarray(),
         t_sat: ti.types.ndarray(),
         t_sq_sat: ti.types.ndarray(),
+        use_bilateral: int,
+        sigma_spatial: float,
+        sigma_color: float,
+        n_size_step: int,
     ):
         th, tw = error_map.shape[0], error_map.shape[1]
         sh, sw = source_style.shape[0], source_style.shape[1]
@@ -316,6 +473,10 @@ class TaichiBackend(BaseSynthesisBackend):
                     th,
                     NSC,
                     NGC,
+                    use_bilateral,
+                    sigma_spatial,
+                    sigma_color,
+                    n_size_step,
                 )
             else:
                 error_map[ty, tx] = self.compute_patch_ssd(
@@ -339,6 +500,10 @@ class TaichiBackend(BaseSynthesisBackend):
                     th,
                     NSC,
                     NGC,
+                    use_bilateral,
+                    sigma_spatial,
+                    sigma_color,
+                    n_size_step,
                 )
 
     @ti.kernel
@@ -365,13 +530,15 @@ class TaichiBackend(BaseSynthesisBackend):
         s_sq_sat: ti.types.ndarray(),
         t_sat: ti.types.ndarray(),
         t_sq_sat: ti.types.ndarray(),
+        use_bilateral: int,
+        sigma_spatial: float,
+        sigma_color: float,
+        n_size_step: int,
     ):
         th, tw = error_map.shape[0], error_map.shape[1]
         sh, sw = source_style.shape[0], source_style.shape[1]
         NSC, NGC = source_style.shape[2], source_guide.shape[2]
         pixel_count = float(patch_size * patch_size)
-        # Corrected step to match CUDA: is_odd=0 (Backward) => step=1 (Right/Bottom)
-        #                             is_odd=1 (Forward) => step=-1 (Left/Top)
         step = 1 if is_odd == 0 else -1
 
         for y_it, x_it in ti.ndrange(th, tw):
@@ -421,6 +588,10 @@ class TaichiBackend(BaseSynthesisBackend):
                                 th,
                                 NSC,
                                 NGC,
+                                use_bilateral,
+                                sigma_spatial,
+                                sigma_color,
+                                n_size_step,
                             )
                         else:
                             new_err = self.compute_patch_ssd(
@@ -444,6 +615,10 @@ class TaichiBackend(BaseSynthesisBackend):
                                 th,
                                 NSC,
                                 NGC,
+                                use_bilateral,
+                                sigma_spatial,
+                                sigma_color,
+                                n_size_step,
                             )
 
                         new_total_err = new_err + uniformity_weight * (
@@ -489,6 +664,10 @@ class TaichiBackend(BaseSynthesisBackend):
         s_sq_sat: ti.types.ndarray(),
         t_sat: ti.types.ndarray(),
         t_sq_sat: ti.types.ndarray(),
+        use_bilateral: int,
+        sigma_spatial: float,
+        sigma_color: float,
+        n_size_step: int,
     ):
         th, tw = error_map.shape[0], error_map.shape[1]
         sh, sw = source_style.shape[0], source_style.shape[1]
@@ -510,7 +689,6 @@ class TaichiBackend(BaseSynthesisBackend):
 
             r = radius
             while r >= 1:
-                # Uniform random offset in [-r, r] matching CUDA logic
                 off_x = int(ti.floor(ti.random() * (2 * r + 1))) - r
                 off_y = int(ti.floor(ti.random() * (2 * r + 1))) - r
                 cand_sx, cand_sy = best_sx + off_x, best_sy + off_y
@@ -543,6 +721,10 @@ class TaichiBackend(BaseSynthesisBackend):
                             th,
                             NSC,
                             NGC,
+                            use_bilateral,
+                            sigma_spatial,
+                            sigma_color,
+                            n_size_step,
                         )
                     else:
                         new_err = self.compute_patch_ssd(
@@ -566,6 +748,10 @@ class TaichiBackend(BaseSynthesisBackend):
                             th,
                             NSC,
                             NGC,
+                            use_bilateral,
+                            sigma_spatial,
+                            sigma_color,
+                            n_size_step,
                         )
 
                     new_total_err = new_err + uniformity_weight * (
@@ -590,10 +776,15 @@ class TaichiBackend(BaseSynthesisBackend):
         self,
         output_image: ti.types.ndarray(),
         source_style: ti.types.ndarray(),
+        target_style: ti.types.ndarray(),
         nnf: ti.types.ndarray(),
         error_map: ti.types.ndarray(),
         patch_size: int,
         mode: int,
+        use_bilateral: int,
+        sigma_spatial: float,
+        sigma_color: float,
+        n_size_step: int,
     ):
         th, tw, NSC = (
             output_image.shape[0],
@@ -602,9 +793,24 @@ class TaichiBackend(BaseSynthesisBackend):
         )
         sh, sw = source_style.shape[0], source_style.shape[1]
         r = patch_size // 2
+
+        inv_2_sigma_spatial_sq = -1.0 / (2.0 * sigma_spatial * sigma_spatial)
+        inv_2_sigma_color_sq = -1.0 / (2.0 * sigma_color * sigma_color)
+
         for ty, tx in ti.ndrange(th, tw):
             sum_color = ti.Vector([0.0, 0.0, 0.0, 0.0])
             sum_weight = 0.0
+
+            # Bilateral center colors
+            s_val_center, t_val_center = 0.0, 0.0
+            if use_bilateral:
+                sx_c, sy_c = nnf[ty, tx, 0], nnf[ty, tx, 1]
+                for c in range(NSC):
+                    s_val_center += float(source_style[sy_c, sx_c, c])
+                    t_val_center += float(target_style[ty, tx, c])
+                s_val_center /= NSC
+                t_val_center /= NSC
+
             for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
                 oy, ox = ty + py, tx + px
                 if 0 <= ox < tw and 0 <= oy < th:
@@ -615,6 +821,24 @@ class TaichiBackend(BaseSynthesisBackend):
                             if mode == EBSYNTH_VOTEMODE_WEIGHTED
                             else 1.0
                         )
+
+                        if use_bilateral:
+                            s_val_c, t_val_c = 0.0, 0.0
+                            for c in range(NSC):
+                                s_val_c += float(source_style[sy, sx, c])
+                                t_val_c += float(target_style[ty, tx, c])
+                            s_val_c /= NSC
+                            t_val_c /= NSC
+
+                            dist_sq = float(px * px + py * py)
+                            color_diff_sq = (s_val_c - s_val_center) ** 2 + (
+                                t_val_c - t_val_center
+                            ) ** 2
+                            weight *= ti.exp(
+                                dist_sq * inv_2_sigma_spatial_sq
+                                + color_diff_sq * inv_2_sigma_color_sq
+                            )
+
                         for c in range(NSC):
                             if c < 4:
                                 sum_color[c] += float(source_style[sy, sx, c]) * weight
@@ -626,7 +850,6 @@ class TaichiBackend(BaseSynthesisBackend):
                             ti.max(0, ti.min(255, sum_color[c] / sum_weight))
                         )
             else:
-                # Fallback to center mapping if no patches cover it
                 sx, sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
                 for c in range(NSC):
                     if c < 4:
@@ -717,11 +940,15 @@ class TaichiBackend(BaseSynthesisBackend):
             torch.zeros((target_h, target_w, style_tensor.shape[2]), dtype=torch.uint8),
         )
         use_mod = 1 if modulation_tensor.numel() > 0 else 0
-        # Match CUDA definition: omega_best = avg_patch_omega_sum = (Th*Tw)/(Sh*Sw) * P^2
         omega_best = max(
             1e-6,
             (target_h * target_w) / (source_h * source_w) * (patch_size * patch_size),
         )
+
+        use_bilateral = 1 if self.ebsynth_config.use_bilateral else 0
+        sigma_spatial = self.ebsynth_config.sigma_spatial
+        sigma_color = self.ebsynth_config.sigma_color
+        n_size_step = self.ebsynth_config.n_size_step
 
         s_sat, s_sq_sat = (
             torch.zeros((source_h, source_w), dtype=torch.float32),
@@ -748,10 +975,15 @@ class TaichiBackend(BaseSynthesisBackend):
             lambda: self.voting_kernel(
                 target_style_prev,
                 style_ti,
+                target_style_prev,  # Dummy target style for center
                 nnf_ti,
                 error_map,
                 patch_size,
                 EBSYNTH_VOTEMODE_PLAIN,
+                use_bilateral,
+                sigma_spatial,
+                sigma_color,
+                n_size_step,
             ),
         )
 
@@ -783,6 +1015,10 @@ class TaichiBackend(BaseSynthesisBackend):
                     s_sq_sat,
                     t_sat,
                     t_sq_sat,
+                    use_bilateral,
+                    sigma_spatial,
+                    sigma_color,
+                    n_size_step,
                 ),
             )
             for pm_idx in range(patch_match_iters):
@@ -798,10 +1034,8 @@ class TaichiBackend(BaseSynthesisBackend):
                         t_guide_ti,
                         modulation_ti,
                         use_mod,
-                        s_weights_ti,
-                        g_weights_ti,
                         patch_size,
-                        (1 if pm_idx % 2 == 1 else 0),
+                        pm_idx % 2,
                         uniformity_weight,
                         mask,
                         cost_function_mode,
@@ -810,10 +1044,15 @@ class TaichiBackend(BaseSynthesisBackend):
                         s_sq_sat,
                         t_sat,
                         t_sq_sat,
+                        use_bilateral,
+                        sigma_spatial,
+                        sigma_color,
+                        n_size_step,
                     ),
                 )
+
             self._timed_operation(
-                f"rs_step_{iter_idx}",
+                f"random_search_{iter_idx}",
                 lambda: self.random_search_kernel(
                     nnf_ti,
                     error_map,
@@ -824,8 +1063,6 @@ class TaichiBackend(BaseSynthesisBackend):
                     t_guide_ti,
                     modulation_ti,
                     use_mod,
-                    s_weights_ti,
-                    g_weights_ti,
                     patch_size,
                     max(source_w, source_h) // 2,
                     uniformity_weight,
@@ -837,42 +1074,40 @@ class TaichiBackend(BaseSynthesisBackend):
                     s_sq_sat,
                     t_sat,
                     t_sq_sat,
+                    use_bilateral,
+                    sigma_spatial,
+                    sigma_color,
+                    n_size_step,
                 ),
             )
+
             self._timed_operation(
                 f"vote_{iter_idx}",
                 lambda: self.voting_kernel(
-                    output_image, style_ti, nnf_ti, error_map, patch_size, vote_mode
+                    output_image,
+                    style_ti,
+                    target_style_prev,
+                    nnf_ti,
+                    error_map,
+                    patch_size,
+                    vote_mode,
+                    use_bilateral,
+                    sigma_spatial,
+                    sigma_color,
+                    n_size_step,
                 ),
             )
+
             if iter_idx < search_vote_iters - 1:
-                self.eval_mask_kernel(
-                    mask, output_image, target_style_prev, int(stop_threshold)
-                )
+                self.eval_mask_kernel(mask, output_image, target_style_prev, int(stop_threshold))
                 self.dilate_mask_kernel(mask2, mask, patch_size)
                 mask.copy_(mask2)
             target_style_prev.copy_(output_image)
 
-        self.compute_error_map_kernel(
-            nnf_ti,
-            error_map,
-            style_ti,
-            output_image,
-            s_guide_ti,
-            t_guide_ti,
-            modulation_ti,
-            use_mod,
-            patch_size,
-            s_weights_ti,
-            g_weights_ti,
-            cost_function_mode,
-            s_sat,
-            s_sq_sat,
-            t_sat,
-            t_sq_sat,
-        )
-        return (
-            output_image.to(orig_device),
-            error_map.to(orig_device),
-            nnf_ti.to(orig_device),
-        )
+        if orig_device.type == "cuda":
+            return (
+                output_image.to("cuda"),
+                error_map.to("cuda"),
+                nnf_ti.to("cuda"),
+            )
+        return output_image, error_map, nnf_ti

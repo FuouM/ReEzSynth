@@ -1,6 +1,5 @@
 // ReEzSynth/ebsynth_extension/cpu/dispatch_cpu.h
 #pragma once
-
 #include <torch/extension.h>
 
 // CPU function for a single synthesis level
@@ -23,7 +22,11 @@ void ebsynth_cpu_run_level(
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
     int cost_function_mode,
-    bool use_optimization);
+    bool use_optimization,
+    bool use_bilateral,
+    float sigma_spatial,
+    float sigma_color,
+    int n_size_step);
 
-// CPU function to initialize random states (no-op for CPU, but kept for API compatibility)
+// CPU function to initialize random states (no-op for compatibility)
 void init_rand_states_cpu(torch::Tensor rand_states_tensor);

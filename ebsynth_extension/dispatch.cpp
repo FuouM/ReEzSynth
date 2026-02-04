@@ -27,7 +27,11 @@ void ebsynth_run_level(
     torch::Tensor rand_states_tensor,
     float search_pruning_threshold,
     int cost_function_mode,
-    bool use_optimization)
+    bool use_optimization,
+    bool use_bilateral,
+    float sigma_spatial,
+    float sigma_color,
+    int n_size_step)
 {
 
     // Auto-detect device type from input tensor
@@ -53,7 +57,11 @@ void ebsynth_run_level(
             rand_states_tensor,
             search_pruning_threshold,
             cost_function_mode,
-            use_optimization);
+            use_optimization,
+            use_bilateral,
+            sigma_spatial,
+            sigma_color,
+            n_size_step);
     }
     else
     {
@@ -79,7 +87,11 @@ void ebsynth_run_level(
             rand_states_tensor,
             search_pruning_threshold,
             cost_function_mode,
-            use_optimization);
+            use_optimization,
+            use_bilateral,
+            sigma_spatial,
+            sigma_color,
+            n_size_step);
 #else
         throw std::runtime_error("ebsynth_extension was compiled without CUDA support.");
 #endif

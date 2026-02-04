@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import torch
+
 from ezsynth.api import ImageSynth, RunConfig, load_guide
 from ezsynth.utils.io_utils import write_image
 
@@ -49,6 +50,29 @@ parser.add_argument(
     type=int,
     default=1,
     help="GNP iterations (default: 1)",
+)
+parser.add_argument(
+    "--use-bilateral",
+    action="store_true",
+    help="Enable bilateral weighting (edge-aware matching)",
+)
+parser.add_argument(
+    "--sigma-spatial",
+    type=float,
+    default=4.0,
+    help="Bilateral spatial sigma (default: 4.0)",
+)
+parser.add_argument(
+    "--sigma-color",
+    type=float,
+    default=10.0,
+    help="Bilateral color sigma (default: 10.0)",
+)
+parser.add_argument(
+    "--n-size-step",
+    type=int,
+    default=1,
+    help="Patch comparison step size (default: 1, >1 for sparse/faster matching)",
 )
 
 args = parser.parse_args()
@@ -121,6 +145,10 @@ ezsynner = ImageSynth(
         use_optimization=args.optimize,
         gnp_stiffness=args.gnp_stiffness,
         gnp_iterations=args.gnp_iterations,
+        use_bilateral=args.use_bilateral,
+        sigma_spatial=args.sigma_spatial,
+        sigma_color=args.sigma_color,
+        n_size_step=args.n_size_step,
     )
     if args.full_params
     else RunConfig(
@@ -134,6 +162,10 @@ ezsynner = ImageSynth(
         use_optimization=args.optimize,
         gnp_stiffness=args.gnp_stiffness,
         gnp_iterations=args.gnp_iterations,
+        use_bilateral=args.use_bilateral,
+        sigma_spatial=args.sigma_spatial,
+        sigma_color=args.sigma_color,
+        n_size_step=args.n_size_step,
     ),
 )
 
@@ -165,6 +197,10 @@ ezsynner = ImageSynth(
         use_optimization=args.optimize,
         gnp_stiffness=args.gnp_stiffness,
         gnp_iterations=args.gnp_iterations,
+        use_bilateral=args.use_bilateral,
+        sigma_spatial=args.sigma_spatial,
+        sigma_color=args.sigma_color,
+        n_size_step=args.n_size_step,
     )
     if args.full_params
     else RunConfig(
@@ -177,6 +213,10 @@ ezsynner = ImageSynth(
         use_optimization=args.optimize,
         gnp_stiffness=args.gnp_stiffness,
         gnp_iterations=args.gnp_iterations,
+        use_bilateral=args.use_bilateral,
+        sigma_spatial=args.sigma_spatial,
+        sigma_color=args.sigma_color,
+        n_size_step=args.n_size_step,
     ),
 )
 
@@ -219,6 +259,10 @@ ezsynner = ImageSynth(
         use_optimization=args.optimize,
         gnp_stiffness=args.gnp_stiffness,
         gnp_iterations=args.gnp_iterations,
+        use_bilateral=args.use_bilateral,
+        sigma_spatial=args.sigma_spatial,
+        sigma_color=args.sigma_color,
+        n_size_step=args.n_size_step,
     )
     if args.full_params
     else RunConfig(
@@ -231,6 +275,10 @@ ezsynner = ImageSynth(
         use_optimization=args.optimize,
         gnp_stiffness=args.gnp_stiffness,
         gnp_iterations=args.gnp_iterations,
+        use_bilateral=args.use_bilateral,
+        sigma_spatial=args.sigma_spatial,
+        sigma_color=args.sigma_color,
+        n_size_step=args.n_size_step,
     ),
 )
 

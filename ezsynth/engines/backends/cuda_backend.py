@@ -94,6 +94,10 @@ class CudaBackend(BaseSynthesisBackend):
                     self.ebsynth_config.search_pruning_threshold,
                     cost_function_mode,
                     self.ebsynth_config.use_optimization,
+                    self.ebsynth_config.use_bilateral,
+                    self.ebsynth_config.sigma_spatial,
+                    self.ebsynth_config.sigma_color,
+                    self.ebsynth_config.n_size_step,
                 )
         else:
             return ebsynth_torch.run_level(
@@ -114,4 +118,8 @@ class CudaBackend(BaseSynthesisBackend):
                 self.ebsynth_config.search_pruning_threshold,
                 cost_function_mode,
                 self.ebsynth_config.use_optimization,
+                self.ebsynth_config.use_bilateral,
+                self.ebsynth_config.sigma_spatial,
+                self.ebsynth_config.sigma_color,
+                self.ebsynth_config.n_size_step,
             )

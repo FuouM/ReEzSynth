@@ -22,7 +22,8 @@ __device__ float compute_patch_ssd_split(
     int sx, int sy, int tx, int ty, int patch_size,
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    float ebest);
+    float ebest,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step);
 
 // ===================================================================
 //                        NCC COST FUNCTIONS
@@ -42,7 +43,8 @@ __device__ float compute_patch_ncc_sat(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat);
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step);
 
 // NCC computed directly (O(P^2) for all operations)
 __device__ float compute_patch_ncc_split(

@@ -40,7 +40,8 @@ void try_patch_cpu(
     torch::PackedTensorAccessor64<double, 2> source_style_sat,
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat)
+    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 
     const int source_w = source_style.size(1);
@@ -70,13 +71,15 @@ void try_patch_cpu(
         new_ssd = compute_patch_ncc_sat_cpu(source_style, target_style, source_guide, target_guide,
                                             target_modulation_guide, use_modulation, candidate_sx, candidate_sy,
                                             tx, ty, patch_size, style_weights, guide_weights,
-                                            source_style_sat, source_style_sq_sat, target_style_sat, target_style_sq_sat);
+                                            source_style_sat, source_style_sq_sat, target_style_sat, target_style_sq_sat,
+                                            use_bilateral, sigma_spatial, sigma_color, n_size_step);
     }
     else
     {
         new_ssd = compute_patch_ssd_split_cpu(source_style, target_style, source_guide, target_guide,
                                               target_modulation_guide, use_modulation, candidate_sx, candidate_sy,
-                                              tx, ty, patch_size, style_weights, guide_weights, current_total_error);
+                                              tx, ty, patch_size, style_weights, guide_weights, current_total_error,
+                                              use_bilateral, sigma_spatial, sigma_color, n_size_step);
     }
 
     float new_omega_score = patch_omega_cpu(omega_map, candidate_sx, candidate_sy, patch_size) / patch_pixel_count / omega_best;
@@ -105,7 +108,8 @@ void compute_initial_error_cpu(
     const torch::PackedTensorAccessor32<float, 1> style_weights,
     const torch::PackedTensorAccessor32<float, 1> guide_weights,
     int cost_function_mode,
-    int target_h, int target_w)
+    int target_h, int target_w,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 
 #ifdef _OPENMP
@@ -123,14 +127,16 @@ void compute_initial_error_cpu(
                 error_map[y][x] = compute_patch_ncc_split_cpu(source_style, target_style, source_guide, target_guide,
                                                               target_modulation_guide, use_modulation, sx, sy, x, y,
                                                               patch_size, style_weights, guide_weights,
-                                                              std::numeric_limits<float>::max());
+                                                              std::numeric_limits<float>::max(),
+                                                              use_bilateral, sigma_spatial, sigma_color, n_size_step);
             }
             else
             {
                 error_map[y][x] = compute_patch_ssd_split_cpu(source_style, target_style, source_guide, target_guide,
                                                               target_modulation_guide, use_modulation, sx, sy, x, y,
                                                               patch_size, style_weights, guide_weights,
-                                                              std::numeric_limits<float>::max());
+                                                              std::numeric_limits<float>::max(),
+                                                              use_bilateral, sigma_spatial, sigma_color, n_size_step);
             }
         }
     }
@@ -156,7 +162,8 @@ void propagation_step_cpu(
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
     int target_h, int target_w,
-    std::vector<ebsynth::PatchCoord> &active_patches)
+    std::vector<ebsynth::PatchCoord> &active_patches,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
     const int step = is_odd ? -1 : 1;
 
@@ -181,7 +188,7 @@ void propagation_step_cpu(
                               nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                               target_modulation_guide, use_modulation, style_weights, guide_weights,
                               uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                              target_style_sat, target_style_sq_sat);
+                              target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
             }
 
             const int ny2 = y + step;
@@ -191,7 +198,7 @@ void propagation_step_cpu(
                               nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                               target_modulation_guide, use_modulation, style_weights, guide_weights,
                               uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                              target_style_sat, target_style_sq_sat);
+                              target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
             }
         }
     }
@@ -216,7 +223,7 @@ void propagation_step_cpu(
                               nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                               target_modulation_guide, use_modulation, style_weights, guide_weights,
                               uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                              target_style_sat, target_style_sq_sat);
+                              target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
             }
 
             const int ny2 = y + step;
@@ -226,7 +233,7 @@ void propagation_step_cpu(
                               nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                               target_modulation_guide, use_modulation, style_weights, guide_weights,
                               uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                              target_style_sat, target_style_sq_sat);
+                              target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
             }
         }
     }
@@ -254,7 +261,8 @@ void random_search_step_cpu(
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
     int target_h, int target_w,
-    std::vector<ebsynth::PatchCoord> &active_patches)
+    std::vector<ebsynth::PatchCoord> &active_patches,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 
 #ifdef _OPENMP
@@ -290,10 +298,10 @@ void random_search_step_cpu(
                 int candidate_sy = current_sy + static_cast<int>(rand_val2 % (2 * r + 1)) - r;
 
                 try_patch_cpu(candidate_sx, candidate_sy, x, y, patch_size,
-                              nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
-                              target_modulation_guide, use_modulation, style_weights, guide_weights,
-                              uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                              target_style_sat, target_style_sq_sat);
+                               nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
+                               target_modulation_guide, use_modulation, style_weights, guide_weights,
+                               uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
+                               target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
                 r /= 2;
             }
         }
@@ -328,7 +336,7 @@ void random_search_step_cpu(
                           nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                           target_modulation_guide, use_modulation, style_weights, guide_weights,
                           uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                          target_style_sat, target_style_sq_sat);
+                          target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
             r /= 2;
         }
     }
@@ -354,7 +362,8 @@ void propagation_step_cpu(
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
-    int target_h, int target_w)
+    int target_h, int target_w,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
     const int step = is_odd ? -1 : 1;
 
@@ -379,7 +388,7 @@ void propagation_step_cpu(
                                   nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                                   target_modulation_guide, use_modulation, style_weights, guide_weights,
                                   uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                                  target_style_sat, target_style_sq_sat);
+                                  target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
                 }
 
                 int ny = y + 1;
@@ -389,7 +398,7 @@ void propagation_step_cpu(
                                   nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                                   target_modulation_guide, use_modulation, style_weights, guide_weights,
                                   uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                                  target_style_sat, target_style_sq_sat);
+                                  target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
                 }
             }
         }
@@ -414,7 +423,7 @@ void propagation_step_cpu(
                                   nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                                   target_modulation_guide, use_modulation, style_weights, guide_weights,
                                   uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                                  target_style_sat, target_style_sq_sat);
+                                  target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
                 }
 
                 int ny = y - 1;
@@ -424,7 +433,7 @@ void propagation_step_cpu(
                                   nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                                   target_modulation_guide, use_modulation, style_weights, guide_weights,
                                   uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                                  target_style_sat, target_style_sq_sat);
+                                  target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
                 }
             }
         }
@@ -452,7 +461,8 @@ void random_search_step_cpu(
     torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sat,
     torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
-    int target_h, int target_w)
+    int target_h, int target_w,
+    bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 // Full grid random search (Original baseline)
 #ifdef _OPENMP
@@ -485,7 +495,7 @@ void random_search_step_cpu(
                                   nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                                   target_modulation_guide, use_modulation, style_weights, guide_weights,
                                   uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                                  target_style_sat, target_style_sq_sat);
+                                  target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
                     r /= 2;
                 }
             }
@@ -517,7 +527,7 @@ void random_search_step_cpu(
                               nnf, error_map, omega_map, source_style, target_style, source_guide, target_guide,
                               target_modulation_guide, use_modulation, style_weights, guide_weights,
                               uniformity_weight, cost_function_mode, source_style_sat, source_style_sq_sat,
-                              target_style_sat, target_style_sq_sat);
+                              target_style_sat, target_style_sq_sat, use_bilateral, sigma_spatial, sigma_color, n_size_step);
                 r /= 2;
             }
         }
