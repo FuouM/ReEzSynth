@@ -11,6 +11,9 @@ import os
 import torch
 import torch.nn.functional as F
 
+from ..consts import TORCH_MPS_CLEAR_CACHE
+
+
 def vote_plain(
     source_style: torch.Tensor,  # (H_s, W_s, C) uint8
     nnf: torch.Tensor,  # (H_t, W_t, 2) int32
@@ -101,6 +104,10 @@ def vote_plain(
 
     # Convert back to original dtype and clamp
     target_style = target_style.clamp(0, 255).to(dtype)
+
+    # Clear MPS cache if applicable
+    if TORCH_MPS_CLEAR_CACHE and str(device).startswith("mps"):
+        torch.mps.empty_cache()
 
     return target_style
 
@@ -199,5 +206,9 @@ def vote_weighted(
     # Weighted average
     target_style = accumulator / weight_sum.unsqueeze(2).clamp(min=1e-6)
     target_style = target_style.clamp(0, 255).to(dtype)
+
+    # Clear MPS cache if applicable
+    if TORCH_MPS_CLEAR_CACHE and str(device).startswith("mps"):
+        torch.mps.empty_cache()
 
     return target_style

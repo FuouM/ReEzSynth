@@ -53,12 +53,20 @@ def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:
 
     result = patches.contiguous()
 
+    # Clear device-specific cache to reduce memory usage
     if (
         TORCH_CUDA_CLEAR_CACHE
         and str(image.device).startswith("cuda")
         and torch.cuda.is_available()
     ):
         torch.cuda.empty_cache()
+
+    if (
+        TORCH_MPS_CLEAR_CACHE
+        and str(image.device).startswith("mps")
+        and torch.backends.mps.is_available()
+    ):
+        torch.mps.empty_cache()
 
     return result
 

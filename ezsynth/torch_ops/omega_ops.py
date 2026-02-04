@@ -11,6 +11,8 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 
+from ..consts import TORCH_MPS_CLEAR_CACHE
+
 
 def populate_omega_map(
     nnf: torch.Tensor,  # (H_t, W_t, 2) int32
@@ -74,6 +76,10 @@ def populate_omega_map(
     counts = torch.bincount(linear_indices, minlength=H_s * W_s)
     omega_map = counts.view(H_s, W_s).to(torch.int32)
 
+    # Clear MPS cache for large operations
+    if TORCH_MPS_CLEAR_CACHE and str(device).startswith("mps"):
+        torch.mps.empty_cache()
+
     return omega_map
 
 
@@ -99,6 +105,7 @@ def compute_omega_scores(
 
     H_t, W_t = nnf.shape[:2]
     H_s, W_s = omega_map.shape
+    device = nnf.device
 
     r = patch_size // 2
 
@@ -120,6 +127,10 @@ def compute_omega_scores(
 
     # Average over patch pixels
     omega_scores = matched_omega.mean(dim=2)  # (H_t, W_t)
+
+    # Clear MPS cache for large operations
+    if TORCH_MPS_CLEAR_CACHE and str(device).startswith("mps"):
+        torch.mps.empty_cache()
 
     return omega_scores
 
@@ -184,3 +195,7 @@ def update_omega_map(
         0, new_linear, torch.full_like(new_linear, 1, dtype=omega_flat.dtype)
     )
     omega_map.copy_(omega_flat.view(H_s, W_s))
+
+    # Clear MPS cache for scatter operations
+    if TORCH_MPS_CLEAR_CACHE and str(device).startswith("mps"):
+        torch.mps.empty_cache()

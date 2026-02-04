@@ -4,7 +4,11 @@ from typing import Optional, Tuple
 import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
-from ...consts import EBSYNTH_VOTEMODE_PLAIN, EBSYNTH_VOTEMODE_WEIGHTED
+from ...consts import (
+    EBSYNTH_VOTEMODE_PLAIN,
+    EBSYNTH_VOTEMODE_WEIGHTED,
+    TORCH_MPS_CLEAR_CACHE,
+)
 from ...torch_ops import (
     SynthesisTimer,
     populate_omega_map,
@@ -28,7 +32,17 @@ class PyTorchBackend(BaseSynthesisBackend):
         self, ebsynth_config: EbsynthParamsConfig, pipeline_config: PipelineConfig
     ):
         super().__init__(ebsynth_config, pipeline_config)
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Auto-detect and use the best available device
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
+
+        # Memory optimization: track if we're on MPS
+        self._is_mps = self.device == "mps"
+
         self.timer = SynthesisTimer()
         self.benchmark_enabled = False
 
@@ -167,24 +181,42 @@ class PyTorchBackend(BaseSynthesisBackend):
         self._timed_operation("omega_initialization", _init_omega_and_error)
 
         def _init_nnf():
-            # Initialize with current NNF
-            try_patch_batch(
-                nnf.clone(),
-                nnf,
-                error_map,
-                omega_map,
-                # MODIFIED: Pass pre-computed patches
-                source_style_patches,
-                target_style_patches,
-                source_guide_patches,
-                target_guide_patches,
-                style_weights,
-                guide_weights,
-                uniformity_weight,
-                patch_size,
-                cost_function_mode,
-                omega_best,
-            )
+            # Initialize with current NNF (avoid clone when possible on MPS)
+            if self._is_mps:
+                # On MPS, avoid clone() to reduce memory pressure
+                try_patch_batch(
+                    nnf,
+                    nnf,
+                    error_map,
+                    omega_map,
+                    source_style_patches,
+                    target_style_patches,
+                    source_guide_patches,
+                    target_guide_patches,
+                    style_weights,
+                    guide_weights,
+                    uniformity_weight,
+                    patch_size,
+                    cost_function_mode,
+                    omega_best,
+                )
+            else:
+                try_patch_batch(
+                    nnf.clone(),
+                    nnf,
+                    error_map,
+                    omega_map,
+                    source_style_patches,
+                    target_style_patches,
+                    source_guide_patches,
+                    target_guide_patches,
+                    style_weights,
+                    guide_weights,
+                    uniformity_weight,
+                    patch_size,
+                    cost_function_mode,
+                    omega_best,
+                )
 
         self._timed_operation("nnf_initialization", _init_nnf)
 
@@ -282,9 +314,25 @@ class PyTorchBackend(BaseSynthesisBackend):
             else:
                 output_image = vote_plain(style_tensor, nnf, patch_size)
 
+            # Clear MPS cache after voting to free memory
+            if TORCH_MPS_CLEAR_CACHE and self._is_mps:
+                torch.mps.empty_cache()
+
         self._timed_operation("voting", _perform_voting)
 
         output_error = error_map
+
+        # Free up large intermediate tensors on MPS
+        if self._is_mps:
+            del (
+                source_style_patches,
+                target_style_patches,
+                source_guide_patches,
+                target_guide_patches,
+            )
+            if TORCH_MPS_CLEAR_CACHE:
+                torch.mps.empty_cache()
+
         return output_image, output_error, nnf
 
     def _run_level_pytorch_iterative(
@@ -362,13 +410,16 @@ class PyTorchBackend(BaseSynthesisBackend):
                 source_guide_patches,
                 target_guide_patches,
                 style_weights,
-                guide_weights,  # Use pre-computed target_guide_patches
+                guide_weights,
                 uniformity_weight,
                 patch_size,
                 cost_function_mode,
                 omega_best,
             )[1]
+            # Free initial_target_patches immediately after use
             del initial_target_patches
+            if TORCH_MPS_CLEAR_CACHE and self._is_mps:
+                torch.mps.empty_cache()
 
         self._timed_operation("nnf_initialization", _init_nnf_iterative)
 
@@ -473,8 +524,13 @@ class PyTorchBackend(BaseSynthesisBackend):
                     )
 
                 self._timed_operation("random_search_step", _final_random_search)
+
+                # Free target_style_patches_current immediately
                 del target_style_patches_current
                 target_style_patches_current = None
+
+                if TORCH_MPS_CLEAR_CACHE and self._is_mps:
+                    torch.mps.empty_cache()
 
                 def _vote():
                     nonlocal target_style_temp
@@ -498,7 +554,11 @@ class PyTorchBackend(BaseSynthesisBackend):
 
                     self._timed_operation("mask_evaluation", _evaluate_mask)
 
-                target_style_prev = target_style_temp.clone()
+                # On MPS, avoid clone() - use in-place copy
+                if self._is_mps:
+                    target_style_prev.copy_(target_style_temp)
+                else:
+                    target_style_prev = target_style_temp.clone()
 
         self._timed_operation("iterative_refinement", _run_iterative_refinement)
 
@@ -526,6 +586,10 @@ class PyTorchBackend(BaseSynthesisBackend):
                 cost_function_mode,
                 omega_best,
             )[1]
+            # Free final_target_patches immediately
+            del final_target_patches
+            if TORCH_MPS_CLEAR_CACHE and self._is_mps:
+                torch.mps.empty_cache()
 
         self._timed_operation("final_output", _generate_final_output)
 

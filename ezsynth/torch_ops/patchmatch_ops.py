@@ -11,8 +11,7 @@ This module implements the core PatchMatch operations:
 from typing import Tuple
 
 import torch
-
-from ezsynth.consts import COST_FUNCTION_NCC, COST_FUNCTION_SSD
+from ezsynth.consts import COST_FUNCTION_NCC, COST_FUNCTION_SSD, TORCH_MPS_CLEAR_CACHE
 
 from .omega_ops import compute_omega_scores, update_omega_map
 from .patch_ops import compute_patch_ncc_vectorized, compute_patch_ssd_vectorized
@@ -258,6 +257,10 @@ def propagation_step(
         # nnf_original now holds the state before vertical update (because we updated it above)
         # nnf now holds the state after vertical update
         update_omega_map(omega_map, nnf_original[y_v, x_v], nnf[y_v, x_v], patch_size)
+
+    # Clear MPS cache after propagation
+    if TORCH_MPS_CLEAR_CACHE and str(device).startswith("mps"):
+        torch.mps.empty_cache()
 
 
 def random_search_step(
