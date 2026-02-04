@@ -134,7 +134,7 @@ def main():
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["auto", "cuda", "cupy"],
+        choices=["auto", "cuda", "cupy", "taichi"],
         default="auto",
         help="Backend to use for FastBlend processing: auto=prefer CUDA, fallback to cupy; cuda=CUDA only; cupy=CuPy only",
     )

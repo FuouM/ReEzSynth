@@ -4,6 +4,10 @@ import cv2
 import numpy as np
 import torch
 
+cuda_available = False
+cupy_available = False
+taichi_available = False
+
 try:
     from .fastblend_extension import (
         is_available,
@@ -11,40 +15,39 @@ try:
         patch_error,
         remap,
     )
+
+    cuda_available = is_available()
 except ImportError:
-    # Try cupy-based implementation as fallback
-    try:
-        from .cupy_patch_match import PatchMatcherCupy, PyramidPatchMatcherCupy
+    # Define placeholder functions if CUDA not available
+    def is_available():
+        return False
 
-        cupy_available = True
-    except ImportError:
-        cupy_available = False
+    remap = None
+    patch_error = None
+    pairwise_patch_error = None
 
-    if cupy_available:
+try:
+    from .cupy_patch_match import PatchMatcherCupy, PyramidPatchMatcherCupy
 
-        def is_available():
-            return True
+    cupy_available = True
+except ImportError:
+    cupy_available = False
 
-        # Create wrapper functions that delegate to cupy implementation
-        def remap(source, nnf, patch_size, pad_size):
-            # This would need to be implemented as a wrapper around the cupy patch matcher
-            # For now, we'll mark cupy as available but the actual functions will need
-            # to be called through the patch matcher classes
-            raise NotImplementedError("Use cupy patch matcher classes directly")
+try:
+    from .taichi_backend import PatchMatcherTaichi, PyramidPatchMatcherTaichi
 
-        def patch_error(source, nnf, target, patch_size, pad_size):
-            raise NotImplementedError("Use cupy patch matcher classes directly")
+    taichi_available = True
+except ImportError:
+    taichi_available = False
 
-        def pairwise_patch_error(
-            source_a, nnf_a, source_b, nnf_b, patch_size, pad_size
-        ):
-            raise NotImplementedError("Use cupy patch matcher classes directly")
-    else:
-        # Fallback if neither CUDA extension nor cupy available
-        is_available = lambda: False
-        remap = None
-        patch_error = None
-        pairwise_patch_error = None
+if cupy_available and not cuda_available:
+
+    def is_available():
+        return True
+
+    # Note: remap, patch_error, pairwise_patch_error remain None as they are
+    # expected to be called via the matcher classes when using non-CUDA backends.
+    # This maintains compatibility with the existing logic in this file.
 
 
 # Factory functions for different backends
@@ -121,6 +124,44 @@ def create_patch_matcher_cupy(
         raise RuntimeError("CuPy not available for FastBlend")
 
 
+def create_patch_matcher_taichi(
+    height,
+    width,
+    channel,
+    minimum_patch_size,
+    threads_per_block=16,
+    num_iter=5,
+    gpu_id=0,
+    guide_weight=10.0,
+    random_search_steps=3,
+    random_search_range=4,
+    use_mean_target_style=False,
+    use_pairwise_patch_error=False,
+    tracking_window_size=0,
+):
+    """Create Taichi patch matcher"""
+    try:
+        from .taichi_backend import PatchMatcherTaichi
+
+        return PatchMatcherTaichi(
+            height,
+            width,
+            channel,
+            minimum_patch_size,
+            threads_per_block,
+            num_iter,
+            gpu_id,
+            guide_weight,
+            random_search_steps,
+            random_search_range,
+            use_mean_target_style,
+            use_pairwise_patch_error,
+            tracking_window_size,
+        )
+    except ImportError:
+        raise RuntimeError("Taichi backend not available for FastBlend")
+
+
 def create_pyramid_patch_matcher_cuda(
     image_height,
     image_width,
@@ -190,6 +231,42 @@ def create_pyramid_patch_matcher_cupy(
         raise RuntimeError("CuPy not available for FastBlend")
 
 
+def create_pyramid_patch_matcher_taichi(
+    image_height,
+    image_width,
+    channel,
+    minimum_patch_size,
+    threads_per_block=16,
+    num_iter=5,
+    gpu_id=0,
+    guide_weight=10.0,
+    use_mean_target_style=False,
+    use_pairwise_patch_error=False,
+    tracking_window_size=0,
+    initialize="identity",
+):
+    """Create Taichi pyramid patch matcher"""
+    try:
+        from .taichi_backend import PyramidPatchMatcherTaichi
+
+        return PyramidPatchMatcherTaichi(
+            image_height,
+            image_width,
+            channel,
+            minimum_patch_size,
+            threads_per_block,
+            num_iter,
+            gpu_id,
+            guide_weight,
+            use_mean_target_style,
+            use_pairwise_patch_error,
+            tracking_window_size,
+            initialize,
+        )
+    except ImportError:
+        raise RuntimeError("Taichi backend not available for FastBlend")
+
+
 # Unified factory function
 def create_patch_matcher(
     height,
@@ -240,7 +317,45 @@ def create_patch_matcher(
             use_pairwise_patch_error,
             tracking_window_size,
         )
+    elif backend == "taichi":
+        return create_patch_matcher_taichi(
+            height,
+            width,
+            channel,
+            minimum_patch_size,
+            threads_per_block,
+            num_iter,
+            gpu_id,
+            guide_weight,
+            random_search_steps,
+            random_search_range,
+            use_mean_target_style,
+            use_pairwise_patch_error,
+            tracking_window_size,
+        )
     elif backend == "auto":
+        import platform
+
+        if platform.system() == "Darwin" and platform.machine() == "arm64":
+            try:
+                return create_patch_matcher_taichi(
+                    height,
+                    width,
+                    channel,
+                    minimum_patch_size,
+                    threads_per_block,
+                    num_iter,
+                    gpu_id,
+                    guide_weight,
+                    random_search_steps,
+                    random_search_range,
+                    use_mean_target_style,
+                    use_pairwise_patch_error,
+                    tracking_window_size,
+                )
+            except Exception:
+                pass
+
         try:
             return create_patch_matcher_cuda(
                 height,
@@ -323,7 +438,43 @@ def create_pyramid_patch_matcher(
             tracking_window_size,
             initialize,
         )
+    elif backend == "taichi":
+        return create_pyramid_patch_matcher_taichi(
+            image_height,
+            image_width,
+            channel,
+            minimum_patch_size,
+            threads_per_block,
+            num_iter,
+            gpu_id,
+            guide_weight,
+            use_mean_target_style,
+            use_pairwise_patch_error,
+            tracking_window_size,
+            initialize,
+        )
     elif backend == "auto":
+        import platform
+
+        if platform.system() == "Darwin" and platform.machine() == "arm64":
+            try:
+                return create_pyramid_patch_matcher_taichi(
+                    image_height,
+                    image_width,
+                    channel,
+                    minimum_patch_size,
+                    threads_per_block,
+                    num_iter,
+                    gpu_id,
+                    guide_weight,
+                    use_mean_target_style,
+                    use_pairwise_patch_error,
+                    tracking_window_size,
+                    initialize,
+                )
+            except Exception:
+                pass
+
         try:
             return create_pyramid_patch_matcher_cuda(
                 image_height,

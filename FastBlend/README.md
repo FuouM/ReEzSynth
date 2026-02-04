@@ -6,7 +6,7 @@ Included both CUDA and CuPy implementations (original).
 
 ## Example output
 
-https://github.com/user-attachments/assets/2f8fc26e-f715-42f4-ac39-b28e0f1341f2
+<https://github.com/user-attachments/assets/2f8fc26e-f715-42f4-ac39-b28e0f1341f2>
 
 > Original, EbSynth output, FastBlend interpolation (every 10 frames), FastBlend full (clockwise, default configs)
 
@@ -15,6 +15,7 @@ https://github.com/user-attachments/assets/2f8fc26e-f715-42f4-ac39-b28e0f1341f2
 ### Quick Start
 
 #### Frame-by-Frame Blending
+
 ```bash
 python fastblend_standalone.py
     --content_dir <content_dir> # original content frames
@@ -23,6 +24,7 @@ python fastblend_standalone.py
 ```
 
 #### Keyframe Interpolation
+
 ```bash
 python fastblend_standalone_interpolate.py
     --frames_dir <frames_dir> # all original frames
@@ -164,6 +166,7 @@ Create a FastBlend configuration with custom parameters.
 Interpolate frames between keyframes using FastBlend.
 
 **Parameters:**
+
 - `frames_guide`: List of all guide frames (content frames) as numpy arrays (H, W, 3) uint8
 - `keyframes_style`: List of stylized keyframe frames as numpy arrays (H, W, 3) uint8
 - `keyframe_indices`: Indices in frames_guide that correspond to keyframes
@@ -181,6 +184,7 @@ Interpolate frames between keyframes using FastBlend.
 Check compatibility of guide and style frames.
 
 **Parameters:**
+
 - `frames_guide`: Guide frames
 - `frames_style`: Style frames
 

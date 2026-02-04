@@ -186,14 +186,26 @@ class BalancedModeRunner:
         except ImportError:
             cupy_available = False
 
+        taichi_available = False
+        try:
+            from .patch_match import taichi_available as taichi_is_avail
+
+            taichi_available = taichi_is_avail
+        except ImportError:
+            taichi_available = False
+
         # Select backend based on preference
         if backend == "cuda" and cuda_available:
             print("FastBlend: Using CUDA backend")
         elif backend == "cupy" and cupy_available:
             print("FastBlend: Using CuPy backend")
+        elif backend == "taichi" and taichi_available:
+            print("FastBlend: Using Taichi backend")
         elif backend == "auto":
             if cuda_available:
                 print("FastBlend: Using CUDA backend (auto-selected)")
+            elif taichi_available:
+                print("FastBlend: Using Taichi backend (auto-selected)")
             elif cupy_available:
                 print("FastBlend: Using CuPy backend (fallback)")
             else:
@@ -202,6 +214,8 @@ class BalancedModeRunner:
             available_backends = []
             if cuda_available:
                 available_backends.append("cuda")
+            if taichi_available:
+                available_backends.append("taichi")
             if cupy_available:
                 available_backends.append("cupy")
             raise ImportError(
