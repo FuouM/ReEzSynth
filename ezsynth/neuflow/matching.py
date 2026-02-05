@@ -18,9 +18,15 @@ class Matching:
         feature0 = feature0.flatten(-2).permute(0, 2, 1)
         feature1 = feature1.flatten(-2).permute(0, 2, 1)
 
-        correspondence = F.scaled_dot_product_attention(
-            feature0, feature1, self.flatten_grid
-        )
+        if feature0.device.type == "mps":
+            # Manual attention to avoid MPS SDPA shape bug
+            scale = c**-0.5
+            attn = (feature0 @ feature1.transpose(-2, -1) * scale).softmax(dim=-1)
+            correspondence = attn @ self.flatten_grid
+        else:
+            correspondence = F.scaled_dot_product_attention(
+                feature0, feature1, self.flatten_grid
+            )
 
         correspondence = correspondence.view(b, h, w, 2).permute(
             0, 3, 1, 2

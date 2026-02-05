@@ -15,7 +15,11 @@ def bilinear_sample(img, coords):
 
     grid = torch.cat([xgrid, ygrid], dim=-1)
 
-    with torch.backends.cudnn.flags(enabled=False):
+    # Only apply cudnn flags on CUDA devices
+    if img.device.type == "cuda":
+        with torch.backends.cudnn.flags(enabled=False):
+            img = F.grid_sample(img, grid, align_corners=True)
+    else:
         img = F.grid_sample(img, grid, align_corners=True)
 
     return img

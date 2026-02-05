@@ -42,7 +42,15 @@ class TransformerLayer(torch.nn.Module):
         key = self.k_proj(key)  # [B, L, C]
         value = self.v_proj(value)  # [B, L, C]
 
-        message = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0)
+        if query.device.type == "mps":
+            # Manual attention to avoid MPS SDPA bugs/inconsistencies
+            c_dim = query.shape[-1]
+            scale = c_dim**-0.5
+            attn = torch.matmul(query, key.transpose(-2, -1)) * scale
+            attn = F.softmax(attn, dim=-1)
+            message = torch.matmul(attn, value)
+        else:
+            message = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0)
 
         message = self.merge(message)
 
@@ -62,14 +70,10 @@ class FeatureAttention(torch.nn.Module):
     ):
         super(FeatureAttention, self).__init__()
 
-        self.layers = torch.nn.ModuleList(
-            [
-                TransformerLayer(
-                    feature_dim, ffn=ffn, ffn_dim_expansion=ffn_dim_expansion
-                )
-                for i in range(num_layers)
-            ]
-        )
+        self.layers = torch.nn.ModuleList([
+            TransformerLayer(feature_dim, ffn=ffn, ffn_dim_expansion=ffn_dim_expansion)
+            for i in range(num_layers)
+        ])
 
         self.post_norm = post_norm
 
@@ -124,7 +128,13 @@ class FlowAttention(torch.nn.Module):
         query = self.q_proj(feature)  # [B, H*W, C]
         key = self.k_proj(feature)  # [B, H*W, C]
 
-        flow = F.scaled_dot_product_attention(query, key, flow)
+        if query.device.type == "mps":
+            # Manual attention to avoid MPS SDPA shape bug (V dim = 2)
+            scale = c**-0.5
+            attn = (query @ key.transpose(-2, -1) * scale).softmax(dim=-1)
+            flow = attn @ flow
+        else:
+            flow = F.scaled_dot_product_attention(query, key, flow, dropout_p=0.0)
 
         flow = flow.view(b, h, w, 2).permute(0, 3, 1, 2)
 
