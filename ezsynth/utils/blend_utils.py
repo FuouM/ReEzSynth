@@ -17,8 +17,10 @@ class Blender:
         poisson_maxiter=None,
         poisson_grad_weight_l=2.5,
         poisson_grad_weight_ab=0.5,
+        use_taichi_ops=False,
     ):
-        self.warp = Warp(height, width)
+        self.warp = Warp(height, width, use_taichi=use_taichi_ops)
+        self.use_taichi_ops = use_taichi_ops
         self.reconstructor = Reconstructor(
             solver=poisson_solver,
             poisson_maxiter=poisson_maxiter,

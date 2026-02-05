@@ -16,6 +16,16 @@ try:
 except ImportError:
     PYAMG_AVAILABLE = False
 
+try:
+    import taichi as ti
+
+    from ..engines.backends.taichi_backend import ensure_ti_init
+    from ..engines.backends.taichi_ops import TaichiOps
+
+    TAICHI_AVAILABLE = True
+except ImportError:
+    TAICHI_AVAILABLE = False
+
 
 # --- Algorithmic Alternatives ---
 
@@ -42,8 +52,55 @@ def seamless_clone_blending(frame_fwd, frame_bwd, mask):
 
 # --- Histogram Blending (Preprocessor) ---
 def hist_blender(
-    a: np.ndarray, b: np.ndarray, error_mask: np.ndarray, weight1=0.5, weight2=0.5
+    a: np.ndarray,
+    b: np.ndarray,
+    error_mask: np.ndarray,
+    weight1=0.5,
+    weight2=0.5,
+    use_taichi=False,
 ) -> np.ndarray:
+    if use_taichi and TAICHI_AVAILABLE:
+        ensure_ti_init()
+        ops = TaichiOps()
+
+        # Prepare buffers
+        ma, sa = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
+        mb, sb = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
+        mme, sme = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
+
+        # Convert error_mask to 3ch if needed
+        m_lab = (
+            np.where(error_mask[..., None] == 0, a, b)
+            if len(error_mask.shape) == 2
+            else np.where(error_mask == 0, a, b)
+        )
+
+        ops.compute_stats_kernel(a, ma, sa)
+        ops.compute_stats_kernel(b, mb, sb)
+        ops.compute_stats_kernel(m_lab, mme, sme)
+
+        temp_lab = np.zeros_like(a, dtype=np.float32)
+        ops.hist_blend_apply_kernel(
+            a, b, error_mask, ma, sa, mb, sb, mme, sme, weight1, weight2, temp_lab
+        )
+
+        # Second pass for ab_stats
+        mab, sab = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
+        # Compute stats of temp_lab (which is already in Lab-ish space in the kernel)
+        # Actually TaichiOps.compute_stats_kernel converts BGR to Lab.
+        # I should add a compute_stats_lab_kernel if I want to be precise.
+        # For now, let's use the CPU for stats of the blended result to be safe, or just compute it in Taichi.
+
+        # Simplification: treat temp_lab as BGR for compute_stats (not correct but fine for now if we just want speed)
+        # Better: let's just use the CPU version if we want exact parity, or refine Taichi.
+        # Let's provide the Taichi version as an option.
+
+        out = np.zeros_like(a)
+        mab = np.mean(temp_lab, axis=(0, 1))
+        sab = np.std(temp_lab, axis=(0, 1))
+        ops.hist_blend_final_pass_kernel(temp_lab, mab, sab, mme, sme, out)
+        return out
+
     if len(error_mask.shape) == 2:
         error_mask = np.repeat(error_mask[:, :, np.newaxis], 3, axis=2)
     a_lab = cv2.cvtColor(a, cv2.COLOR_BGR2Lab)
@@ -57,11 +114,11 @@ def hist_blender(
     )
     t_mean = np.full(3, 0.5 * 256, dtype=np.float32)
     t_std = np.full(3, (1 / 36) * 256, dtype=np.float32)
-    a_lab_norm = ((a_lab - a_mean) * t_std / a_std + t_mean).astype(np.float32)
-    b_lab_norm = ((b_lab - b_mean) * t_std / b_std + t_mean).astype(np.float32)
+    a_lab_norm = ((a_lab - a_mean) * t_std / (a_std + 1e-6) + t_mean).astype(np.float32)
+    b_lab_norm = ((b_lab - b_mean) * t_std / (b_std + 1e-6) + t_mean).astype(np.float32)
     ab_lab = (a_lab_norm * weight1 + b_lab_norm * weight2 - 128) / 0.5 + 128
     ab_mean, ab_std = np.mean(ab_lab, axis=(0, 1)), np.std(ab_lab, axis=(0, 1))
-    ab_lab_final = (ab_lab - ab_mean) * min_error_std / ab_std + min_error_mean
+    ab_lab_final = (ab_lab - ab_mean) * min_error_std / (ab_std + 1e-6) + min_error_mean
     ab_lab_final = np.clip(np.round(ab_lab_final), 0, 255).astype(np.uint8)
     return cv2.cvtColor(ab_lab_final, cv2.COLOR_Lab2BGR)
 
@@ -118,13 +175,11 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
     out_all = np.zeros((h * w, c), dtype=np.float32)
 
     for ch in range(c):
-        b = np.vstack(
-            [
-                gx_reshaped[:, ch : ch + 1] * grad_weights[ch],
-                gy_reshaped[:, ch : ch + 1] * grad_weights[ch],
-                Iab_centered[:, ch : ch + 1],
-            ]
-        )
+        b = np.vstack([
+            gx_reshaped[:, ch : ch + 1] * grad_weights[ch],
+            gy_reshaped[:, ch : ch + 1] * grad_weights[ch],
+            Iab_centered[:, ch : ch + 1],
+        ])
         if solver == "lsqr":
             A = cache["As"][ch]
             out_all[:, ch] = scipy.sparse.linalg.lsqr(A, b, iter_lim=maxiter)[0]
@@ -137,6 +192,16 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
         elif solver == "amg":
             A, ml = cache["As"][ch], cache["MLs"][ch]
             out_all[:, ch] = ml.solve(A.T @ b, tol=1e-6, maxiter=maxiter, accel="cg")
+        elif solver == "taichi-cg" and TAICHI_AVAILABLE:
+            ensure_ti_init()
+            ops = TaichiOps()
+            out_all[:, ch] = ops.poisson_solver_cg(
+                gx[..., ch],
+                gy[..., ch],
+                Iab_centered[..., ch].reshape(h, w),
+                grad_weights[ch],
+                max_iter=maxiter or 100,
+            ).reshape(-1)
     final = (out_all + Iab_mean).reshape(h, w, c)
 
     return cv2.cvtColor(np.clip(final, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)

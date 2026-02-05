@@ -4,10 +4,25 @@ import numpy as np
 
 
 class Warp:
-    def __init__(self, height: int, width: int):
+    def __init__(self, height: int, width: int, use_taichi: bool = False):
         self.H = height
         self.W = width
+        self.use_taichi = use_taichi
         self.grid = self._create_grid(self.H, self.W)
+
+        if self.use_taichi:
+            try:
+                import taichi as ti
+
+                from ..engines.backends.taichi_backend import ensure_ti_init
+                from ..engines.backends.taichi_ops import TaichiOps
+
+                ensure_ti_init()
+                self.ops = TaichiOps()
+                self._taichi_available = True
+            except ImportError:
+                self._taichi_available = False
+                self.use_taichi = False
 
     def _create_grid(self, H: int, W: int):
         x, y = np.meshgrid(np.arange(W), np.arange(H), indexing="xy")
@@ -16,6 +31,13 @@ class Warp:
     def _warp(self, img: np.ndarray, flo: np.ndarray):
         # The input image for warping must be float32
         flo_resized = cv2.resize(flo, (self.W, self.H), interpolation=cv2.INTER_LINEAR)
+
+        if self.use_taichi and self._taichi_available:
+            # Taichi-based warping
+            dst = np.zeros_like(img)
+            self.ops.bilinear_warp_kernel(img, flo_resized, dst)
+            return dst
+
         map_x = self.grid[..., 0] + flo_resized[..., 0]
         map_y = self.grid[..., 1] + flo_resized[..., 1]
 
@@ -54,8 +76,8 @@ class Warp:
 class PositionalGuide:
     """A stateless factory for creating positional guides."""
 
-    def __init__(self, height: int, width: int):
-        self.warp = Warp(height, width)
+    def __init__(self, height: int, width: int, use_taichi: bool = False):
+        self.warp = Warp(height, width, use_taichi=use_taichi)
         self.pristine_coord_map = self._create_coord_map(height, width)
 
     def _create_coord_map(self, H: int, W: int):
