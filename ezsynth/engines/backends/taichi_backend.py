@@ -1034,6 +1034,8 @@ class TaichiBackend(BaseSynthesisBackend):
                         t_guide_ti,
                         modulation_ti,
                         use_mod,
+                        s_weights_ti,
+                        g_weights_ti,
                         patch_size,
                         pm_idx % 2,
                         uniformity_weight,
@@ -1063,6 +1065,8 @@ class TaichiBackend(BaseSynthesisBackend):
                     t_guide_ti,
                     modulation_ti,
                     use_mod,
+                    s_weights_ti,
+                    g_weights_ti,
                     patch_size,
                     max(source_w, source_h) // 2,
                     uniformity_weight,
@@ -1099,7 +1103,9 @@ class TaichiBackend(BaseSynthesisBackend):
             )
 
             if iter_idx < search_vote_iters - 1:
-                self.eval_mask_kernel(mask, output_image, target_style_prev, int(stop_threshold))
+                self.eval_mask_kernel(
+                    mask, output_image, target_style_prev, int(stop_threshold)
+                )
                 self.dilate_mask_kernel(mask2, mask, patch_size)
                 mask.copy_(mask2)
             target_style_prev.copy_(output_image)
