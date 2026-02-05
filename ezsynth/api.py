@@ -8,7 +8,6 @@ from .config import (
     BlendingConfig,
     DebugConfig,
     EbsynthParamsConfig,
-    FinalPassConfig,
     MainConfig,
     PipelineConfig,
     PrecomputationConfig,
@@ -43,21 +42,17 @@ class RunConfig:
         use_lsqr=True,
         poisson_maxiter: Optional[int] = None,
         alpha: float = 0.75,
-        colorize: bool = True,
         use_temporal_nnf_propagation: bool = True,
         use_sparse_feature_guide: bool = True,
-        final_pass_enabled: bool = False,
-        final_pass_strength: float = 1.0,
         use_residual_transfer: bool = True,
         cost_function: str = "ssd",
         device: str = None,
         use_optimization: bool = True,
-        gnp_stiffness: float = 0.0,
-        gnp_iterations: int = 1,
         use_bilateral: bool = False,
         sigma_spatial: float = 4.0,
         sigma_color: float = 10.0,
         n_size_step: int = 1,
+        use_taichi_ops: bool = False,
     ):
         # Ebsynth gen params
         self.uniformity = uniformity
@@ -81,21 +76,17 @@ class RunConfig:
 
         # Pipeline params
         self.alpha = alpha
-        self.colorize = colorize
         self.use_temporal_nnf_propagation = use_temporal_nnf_propagation
         self.use_sparse_feature_guide = use_sparse_feature_guide
-        self.final_pass_enabled = final_pass_enabled
-        self.final_pass_strength = final_pass_strength
         self.use_residual_transfer = use_residual_transfer
         self.cost_function = cost_function
         self.device = device
         self.use_optimization = use_optimization
-        self.gnp_stiffness = gnp_stiffness
-        self.gnp_iterations = gnp_iterations
         self.use_bilateral = use_bilateral
         self.sigma_spatial = sigma_spatial
         self.sigma_color = sigma_color
         self.n_size_step = n_size_step
+        self.use_taichi_ops = use_taichi_ops
 
 
 class Ezsynth:
@@ -166,18 +157,15 @@ class Ezsynth:
 
         pipeline_cfg = PipelineConfig(
             pyramid_levels=config.pyramid_levels,
-            alpha=config.alpha,
-            colorize=config.colorize,
+            use_residual_transfer=config.use_residual_transfer,
             use_temporal_nnf_propagation=config.use_temporal_nnf_propagation,
             use_sparse_feature_guide=config.use_sparse_feature_guide,
-            final_pass=FinalPassConfig(
-                enabled=config.final_pass_enabled,
-                strength=config.final_pass_strength,
-            ),
         )
 
         blending_cfg = BlendingConfig(
-            use_lsqr=config.use_lsqr, poisson_maxiter=config.poisson_maxiter
+            use_lsqr=config.use_lsqr,
+            poisson_maxiter=config.poisson_maxiter,
+            use_taichi_ops=config.use_taichi_ops,
         )
 
         ebsynth_params_cfg = EbsynthParamsConfig(
@@ -282,8 +270,6 @@ class ImageSynth:
             cost_function=config.cost_function,
             device=config.device,
             use_optimization=config.use_optimization,
-            gnp_stiffness=config.gnp_stiffness,
-            gnp_iterations=config.gnp_iterations,
             use_bilateral=config.use_bilateral,
             sigma_spatial=config.sigma_spatial,
             sigma_color=config.sigma_color,
@@ -294,14 +280,8 @@ class ImageSynth:
         pipeline_cfg = PipelineConfig(
             pyramid_levels=config.pyramid_levels,
             use_residual_transfer=config.use_residual_transfer,
-            alpha=config.alpha,
-            colorize=config.colorize,
             use_temporal_nnf_propagation=config.use_temporal_nnf_propagation,
             use_sparse_feature_guide=config.use_sparse_feature_guide,
-            final_pass=FinalPassConfig(
-                enabled=config.final_pass_enabled,
-                strength=config.final_pass_strength,
-            ),
         )
 
         self.engine = EbsynthEngine(

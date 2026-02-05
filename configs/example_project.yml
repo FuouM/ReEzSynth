@@ -3,13 +3,14 @@
 project:
   name: "example_project"
   # --- REQUIRED PATHS ---
-  content_dir: "projects/example_project/content"
+  content_dir: "project/example"
   style_path:
-    - "projects/example_project/style000.jpg"
+    - "examples/styles/style000.jpg"
   style_indices: [0]
-  output_dir: "output/example_project"
+  output_dir: "output/example"
   # --- OPTIONAL PATHS ---
   mask_dir: null # Set to null as we are not using a mask for this test
+  modulation_dir: null # Directory for modulation maps
   # --- CACHING ---
   cache_dir: "cache/example_project"
   force_recompute_flow: false # If true, ignores existing flow cache and re-computes.
@@ -20,22 +21,18 @@ precomputation:
   flow_engine: "NeuFlow" # RAFT, NeuFlow
   # Model name. For RAFT: 'sintel', 'kitti'.
   # For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
-  flow_model: "neuflow_sintel"
+  flow_model: "neuflow_mixed"
   edge_method: "Classic" # Classic, PAGE, PST
 
 pipeline:
   pyramid_levels: 6 # Number of levels for the synthesis pyramid
   alpha: 0.75 # Content preservation. 1.0 = full style, 0.0 = full content.
-  max_iter: 200
-  flip_aug: false # Use flip augmentation for more style variety
-  content_loss: false # Use content self-similarity loss
-  colorize: false # Use advanced color matching
-  final_pass:
-    enabled: true
-    # How strongly to apply the final pass. 1.0 is a good default.
-    # Higher values will add more sharpness/style but risk re-introducing jitter.
-    # Lower values will be more stable but softer.
-    strength: 1.0
+  use_residual_transfer: false
+
+blending:
+  # Parameters for blending forward and reverse passes
+  poisson_solver: "disabled"
+  use_taichi_ops: false
 
 ebsynth_params:
   # Low-level ebsynth.dll parameters
@@ -43,13 +40,28 @@ ebsynth_params:
   patch_size: 7
   search_vote_iters: 12
   patch_match_iters: 6
+  vote_mode: "weighted"
   stop_threshold: 5 # Stop improving pixels when change is less than this value (0-255)
   # Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
   search_pruning_threshold: 50.0
-  # Cost function for patch matching. 
+  # Cost function for patch matching.
   # Sum of Squared Difference: "ssd"
   # Normalized Cross-Correlation: "ncc" is more robust to lighting changes.
   cost_function: "ncc" # Options: "ssd", "ncc"
+
+  # Backend and device
+  backend: "cuda"
+  device: null
+  use_optimization: true
+
+  # Bilateral filtering
+  use_bilateral: false
+  sigma_spatial: 4.0
+  sigma_color: 10.0
+  n_size_step: 1
+
+  # Other ebsynth tweaks
+  extra_pass_3x3: false
 
   # Guide weights
   edge_weight: 1.0

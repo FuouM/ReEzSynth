@@ -28,20 +28,10 @@ class PrecomputationConfig(BaseModel):
     edge_method: str = "Classic"  # Classic, PAGE, PST
 
 
-class FinalPassConfig(BaseModel):
-    enabled: bool = False
-    strength: float = Field(1.0, ge=0.0)
-
-
 class PipelineConfig(BaseModel):
     pyramid_levels: int = 1
     use_residual_transfer: bool = True
-    final_pass: FinalPassConfig = Field(default_factory=FinalPassConfig)
     alpha: float = Field(0.75, ge=0.0, le=1.0)
-    max_iter: int = 200
-    flip_aug: bool = False
-    content_loss: bool = False
-    colorize: bool = True
     use_temporal_nnf_propagation: bool = False
     use_sparse_feature_guide: bool = False
 
@@ -51,6 +41,7 @@ class BlendingConfig(BaseModel):
     poisson_maxiter: Optional[int] = None
     poisson_grad_weight_l: float = 2.5  # Gradient weight for L channel
     poisson_grad_weight_ab: float = 0.5  # Gradient weight for a/b channels
+    use_taichi_ops: bool = False
 
     @validator("poisson_solver")
     def solver_must_be_valid(cls, v):
@@ -63,6 +54,8 @@ class BlendingConfig(BaseModel):
             "amg",  # Requires pyamg
             # Algorithmic Alternatives
             "seamless",
+            # Taichi Solvers
+            "taichi-cg",
             # Special
             "disabled",
         ]
@@ -100,9 +93,6 @@ class EbsynthParamsConfig(BaseModel):
     sparse_anchor_weight: float = 10.0
     # New: Use optimized index_vector CPU backend (if available)
     use_optimization: bool = True
-    # New: GNP (Graph-Neural-PatchMatch) stiffness
-    gnp_stiffness: float = 0.0
-    gnp_iterations: int = 1
 
     @validator("vote_mode")
     def vote_mode_must_be_valid(cls, v):
@@ -112,8 +102,8 @@ class EbsynthParamsConfig(BaseModel):
 
     @validator("cost_function")
     def cost_function_must_be_valid(cls, v):
-        if v.lower() not in ["ssd", "ncc", "swd"]:
-            raise ValueError("cost_function must be 'ssd', 'ncc' or 'swd'")
+        if v.lower() not in ["ssd", "ncc"]:
+            raise ValueError("cost_function must be 'ssd' or 'ncc'")
         return v.lower()
 
     @validator("backend")

@@ -9,6 +9,7 @@ project:
   output_dir: "output/MyFirstProject"
   # --- OPTIONAL PATHS ---
   mask_dir: null # Set to null or remove if not using masks
+  modulation_dir: null # Directory for modulation maps (e.g. for regional style control)
   # --- CACHING ---
   cache_dir: "cache/MyFirstProject"
   force_recompute_flow: false # If true, ignores existing flow cache and re-computes.
@@ -31,14 +32,7 @@ pipeline:
   # The core synthesis pipeline settings
   pyramid_levels: 6 # Set to > 1 to enable pyramidal processing
   alpha: 0.75 # Content preservation. 1.0 = full style, 0.0 = full content.
-  max_iter: 200 # Optimization iterations per pyramid level
-  flip_aug: false # Use flip augmentation for more style variety
-  content_loss: false # Use content self-similarity loss
-  colorize: true # Use advanced color matching
   use_residual_transfer: false # Experimental feature for jitter reduction
-  final_pass:
-    enabled: false
-    strength: 1.0
   use_temporal_nnf_propagation: true
   use_sparse_feature_guide: true
 
@@ -56,6 +50,7 @@ blending:
   poisson_maxiter: null # Max iterations for iterative solvers (lsqr, lsmr, cg). null means default.
   poisson_grad_weight_l: 2.5 # Gradient weight for the L (lightness) channel during Poisson blending.
   poisson_grad_weight_ab: 0.5 # Gradient weight for the a/b (color) channels.
+  use_taichi_ops: false # Use Taichi-accelerated operations for blending if available.
 
 ebsynth_params:
   # Low-level ebsynth.dll parameters
@@ -63,13 +58,29 @@ ebsynth_params:
   patch_size: 7
   search_vote_iters: 12
   patch_match_iters: 6
+  vote_mode: "weighted" # 'weighted' (default) for better quality or 'plain' for speed.
   stop_threshold: 5 # Stop improving pixels when change is less than this value (0-255)
   # Skips random search for pixels with SSD error below this. 0.0 disables. Can provide a large speedup.
   search_pruning_threshold: 50.0
-  # Cost function for patch matching. 
+  # Cost function for patch matching.
   # Sum of Squared Difference: "ssd"
   # Normalized Cross-Correlation: "ncc" is more robust to lighting changes.
+  # Sliced Wasserstein Distance: "swd" (experimental) - REMOVED
   cost_function: "ncc" # Options: "ssd", "ncc"
+
+  # Backend and device
+  backend: "cuda" # "cuda", "torch", or "taichi"
+  device: null # "cpu", "cuda", or null for auto-detect
+  use_optimization: true # Use optimized index_vector CPU backend if applicable.
+
+  # Bilateral filtering (experimental)
+  use_bilateral: false
+  sigma_spatial: 4.0
+  sigma_color: 10.0
+  n_size_step: 1
+
+  # Other ebsynth tweaks
+  extra_pass_3x3: false
 
   # Guide weights
   edge_weight: 1.0

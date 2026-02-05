@@ -11,12 +11,16 @@ from .pipeline import SynthesisPipeline
 
 
 class Project:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, backend: str = None):
         self.config_path = Path(config_path)
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found at {config_path}")
 
         self.config = self._load_config()
+
+        # Override backend if specified via command line
+        if backend:
+            self.config.ebsynth_params.backend = backend
 
         # 1. Initialize data manager
         self.data = ProjectData(self.config.project)
