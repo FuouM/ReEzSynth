@@ -29,6 +29,13 @@ def main():
         required=True,
         help="Path to the project configuration YAML file.",
     )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["cuda", "torch", "taichi"],
+        default=None,
+        help="Backend for synthesis operations (overrides config). Options: cuda, torch, taichi.",
+    )
     args = parser.parse_args()
 
     # --- Welcome Message & Environment Check ---
@@ -46,7 +53,7 @@ def main():
     try:
         # --- Project Initialization ---
         print(f"\nLoading project with configuration: {args.config}")
-        project = Project(config_path=args.config)
+        project = Project(config_path=args.config, backend=args.backend)
 
         # --- Pipeline Execution ---
         print("\nStarting Ezsynth v2 pipeline...")
