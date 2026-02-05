@@ -13,7 +13,6 @@ EBSYNTH_VOTEMODE_WEIGHTED = 0x0002
 # --- Cost Function Constants ---
 COST_FUNCTION_SSD = 0
 COST_FUNCTION_NCC = 1
-COST_FUNCTION_SWD = 2
 
 # --- Extension Availability ---
 # This is determined dynamically at import time
@@ -42,7 +41,11 @@ def _load_extension():
     This function is called at module import time.
     Supports both CPU and CUDA backends.
     """
-    global EXTENSION_AVAILABLE, EXTENSION_CUDA_AVAILABLE, CUDA_EXTENSION_AVAILABLE, ebsynth_torch
+    global \
+        EXTENSION_AVAILABLE, \
+        EXTENSION_CUDA_AVAILABLE, \
+        CUDA_EXTENSION_AVAILABLE, \
+        ebsynth_torch
 
     if FORCE_EBSYNTH_JIT_LOADER:
         if JIT_VERBOSE:
@@ -68,16 +71,23 @@ def _load_extension():
     if force_jit:
         # Try the JIT loader
         try:
-            from ebsynth_torch_loader import ebsynth_torch as jit_ebsynth_torch, is_cuda_available
+            from ebsynth_torch_loader import ebsynth_torch as jit_ebsynth_torch
+            from ebsynth_torch_loader import is_cuda_available
 
             EXTENSION_AVAILABLE = jit_ebsynth_torch is not None
-            EXTENSION_CUDA_AVAILABLE = is_cuda_available() if EXTENSION_AVAILABLE else False
+            EXTENSION_CUDA_AVAILABLE = (
+                is_cuda_available() if EXTENSION_AVAILABLE else False
+            )
             CUDA_EXTENSION_AVAILABLE = EXTENSION_AVAILABLE  # Backward compatibility
             ebsynth_torch = jit_ebsynth_torch
             if EXTENSION_AVAILABLE:
                 if JIT_VERBOSE:
-                    backend_type = "CPU+CUDA" if EXTENSION_CUDA_AVAILABLE else "CPU-only"
-                    print(f"Extension loaded successfully (via JIT loader) - {backend_type}.")
+                    backend_type = (
+                        "CPU+CUDA" if EXTENSION_CUDA_AVAILABLE else "CPU-only"
+                    )
+                    print(
+                        f"Extension loaded successfully (via JIT loader) - {backend_type}."
+                    )
             else:
                 print("JIT loader found but extension not available.")
         except ImportError as e:

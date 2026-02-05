@@ -1,44 +1,73 @@
 # ezsynth/ebsynth_torch_loader.py
 
+import importlib.util
 import os
 import platform
+import sys
 from pathlib import Path
 
 import torch
 
-# Check if we should force JIT mode (skip pre-compiled extension)
+# Configuration
 FORCE_JIT = os.environ.get("FORCE_EBSYNTH_JIT", "0") == "1"
+FORCE_WHEEL = os.environ.get("FORCE_EBSYNTH_WHEEL", "0") == "1"
 
 # Check if CUDA is available
 cuda_available = torch.cuda.is_available()
 
-# Try to import pre-compiled extension first, then fall back to JIT
+# State variables
 ebsynth_torch = None
 _module_source = None
 
+
+def _log(msg):
+    print(f"[ebsynth_loader] {msg}")
+
+
+def _check_python_headers():
+    """Check if Python development headers are likely present."""
+    # This is a heuristic. Python.h is usually in include directory.
+    include_path = Path(sys.base_prefix) / "include"
+
+    # On Windows, it's typically pythonXY/include/Python.h
+    if platform.system() == "Windows":
+        # Check standard include path
+        if (include_path / "Python.h").exists():
+            return True
+        # Check if we are in a venv, headers might be in base prefix
+        return (Path(sys.base_prefix) / "include" / "Python.h").exists()
+
+    # On POSIX, it's often python3.x/Python.h
+    python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    if (include_path / python_version / "Python.h").exists():
+        return True
+
+    return False
+
+
+# 1. Try to load pre-compiled extension (wheel)
 if not FORCE_JIT:
     try:
-        # Try to import the pre-compiled extension
-        import ebsynth_torch  # type: ignore
+        import ebsynth_torch
 
         _module_source = "pre-compiled"
-        print("ebsynth_torch extension loaded successfully from pre-compiled wheel.")
+        _log("Loaded pre-compiled extension.")
     except ImportError:
-        # Pre-compiled extension not available, will try JIT
+        if FORCE_WHEEL:
+            raise ImportError(
+                "FORCE_EBSYNTH_WHEEL=1 but failed to import ebsynth_torch. "
+                "Please install the pre-compiled wheel."
+            )
         pass
 
 # If pre-compiled not available or FORCE_JIT is set, use JIT compilation
-if ebsynth_torch is None:
+if ebsynth_torch is None and not FORCE_WHEEL:
     import torch.utils.cpp_extension
 
-    # This is the name the compiled module will have in Python
     MODULE_NAME = "ebsynth_torch_jit"
-
-    # Find the directory where the C++/CUDA source files are located
     _ext_dir = Path(__file__).parent / "ebsynth_extension"
 
-    # List all the source files for the extension
-    # CPU-only files are always included
+    # CPU sources
     _source_files = [
         _ext_dir / "ext.cpp",
         _ext_dir / "dispatch.cpp",
@@ -51,21 +80,17 @@ if ebsynth_torch is None:
         _ext_dir / "cpu" / "dispatch_cpu.cpp",
     ]
 
-    # Add CUDA files only if CUDA is available
+    # CUDA sources
     if cuda_available:
-        _source_files.extend(
-            [
-                _ext_dir / "dispatch.cu",
-                _ext_dir / "kernels.cu",
-                _ext_dir / "integral_image.cu",
-            ]
-        )
+        _source_files.extend([
+            _ext_dir / "dispatch.cu",
+            _ext_dir / "kernels.cu",
+            _ext_dir / "integral_image.cu",
+        ])
 
-    # Convert Path objects to strings for the compiler
     _source_files_str = [str(p) for p in _source_files]
 
     def _get_platform_cflags():
-        """Get platform-specific compiler flags."""
         cflags = ["-O2"]
         system = platform.system()
         machine = platform.machine()
@@ -74,13 +99,11 @@ if ebsynth_torch is None:
             cflags.append("-std=c++17")
             cflags.append("-ffast-math")
             if machine == "arm64":
-                cflags.extend(["-arch", "arm64", "-mcpu=apple-m4"])  # Optimize for M4
+                cflags.extend(["-arch", "arm64", "-mcpu=apple-m4"])
             elif machine == "x86_64":
                 cflags.extend(["-arch", "x86_64"])
             cflags.extend(["-Xpreprocessor", "-fopenmp"])
         elif system == "Windows":
-            # /MP enables multi-processor compilation (major speedup)
-            # /EHsc enables exception handling (required for C++)
             cflags.extend(["/openmp", "/O2", "/fp:fast", "/MP", "/EHsc"])
             if machine in ["AMD64", "x86_64"]:
                 cflags.extend(["/arch:AVX2", "/D__SSE4_2__", "/D__AVX2__"])
@@ -94,7 +117,6 @@ if ebsynth_torch is None:
         return cflags
 
     def _get_platform_ldflags():
-        """Get platform-specific linker flags."""
         ldflags = []
         if platform.system() == "Darwin":
             libomp_paths = [
@@ -105,46 +127,44 @@ if ebsynth_torch is None:
                 if os.path.exists(path):
                     ldflags.extend([f"-L{path}", "-lomp", f"-Wl,-rpath,{path}"])
                     break
-            machine = platform.machine()
-            if machine == "arm64":
-                ldflags.extend(["-arch", "arm64"])
-            elif machine == "x86_64":
-                ldflags.extend(["-arch", "x86_64"])
         return ldflags
 
     def _get_platform_include_dirs():
-        """Get platform-specific include directories."""
         include_dirs = []
         if platform.system() == "Darwin":
-            libomp_include_paths = [
+            libomp_includes = [
                 "/opt/homebrew/opt/libomp/include",
                 "/usr/local/opt/libomp/include",
             ]
-            for path in libomp_include_paths:
+            for path in libomp_includes:
                 if os.path.exists(path):
                     include_dirs.append(path)
                     break
         return include_dirs
 
-    # JIT compilation using torch.utils.cpp_extension.load()
     try:
         backend_type = "CPU+CUDA" if cuda_available else "CPU-only"
-        print(
-            f"Attempting to JIT compile and load {backend_type} extension '{MODULE_NAME}'..."
-        )
+        _log(f"JIT compiling {backend_type} extension '{MODULE_NAME}'...")
+
+        # Check for Python headers on Windows specifically
+        if platform.system() == "Windows" and not _check_python_headers():
+            _log(
+                "WARNING: Python headers (Python.h) seem missing. JIT compilation will likely fail."
+            )
+            _log(
+                "If you are using ComfyUI Portable, you MUST use a pre-compiled wheel."
+            )
 
         extra_cflags = ["-DCPU_ONLY"] if not cuda_available else []
         extra_cflags.extend(_get_platform_cflags())
-        extra_ldflags = _get_platform_ldflags()
-        extra_include_dirs = _get_platform_include_dirs()
 
         ebsynth_torch = torch.utils.cpp_extension.load(
             name=MODULE_NAME,
             sources=_source_files_str,
             extra_cflags=extra_cflags,
             extra_cuda_cflags=[],
-            extra_ldflags=extra_ldflags,
-            extra_include_paths=extra_include_dirs,
+            extra_ldflags=_get_platform_ldflags(),
+            extra_include_paths=_get_platform_include_dirs(),
             verbose=True,
         )
 
