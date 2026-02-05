@@ -9,6 +9,10 @@
 #include <omp.h>
 #endif
 
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
+
 // ===================================================================
 //                        VOTING OPERATIONS
 // ===================================================================
@@ -65,12 +69,33 @@ void krnlVotePlain_cpu(
                             source_y >= 0 && source_y < source_h)
                         {
 
+#if defined(__ARM_NEON) && !defined(NO_SIMD)
+                            if (num_style_channels == 3) {
+                                uint8x8_t s_u8 = vld1_u8(&source[source_y][source_x][0]);
+                                uint16x8_t s_u16 = vmovl_u8(s_u8);
+                                float32x4_t s_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s_u16)));
+                                
+                                // Accumulate sumColor[0..2]
+                                sumColor[0] += vgetq_lane_f32(s_f32, 0);
+                                sumColor[1] += vgetq_lane_f32(s_f32, 1);
+                                sumColor[2] += vgetq_lane_f32(s_f32, 2);
+                                sumWeight += 1.0f;
+                            } else {
+                                const float weight = 1.0f;
+                                for (int c = 0; c < num_style_channels; ++c)
+                                {
+                                    sumColor[c] += weight * (float)source[source_y][source_x][c];
+                                }
+                                sumWeight += weight;
+                            }
+#else
                             const float weight = 1.0f;
                             for (int c = 0; c < num_style_channels; ++c)
                             {
                                 sumColor[c] += weight * (float)source[source_y][source_x][c];
                             }
                             sumWeight += weight;
+#endif
                         }
                     }
                 }
@@ -141,6 +166,32 @@ void krnlVoteWeighted_cpu(
                             source_y >= 0 && source_y < source_h)
                         {
 
+#if defined(__ARM_NEON) && !defined(NO_SIMD)
+                            if (num_style_channels == 3) {
+                                float error = error_map[t_neighbor_y][t_neighbor_x];
+                                float weight = 1.0f / (1.0f + error);
+                                
+                                uint8x8_t s_u8 = vld1_u8(&source[source_y][source_x][0]);
+                                uint16x8_t s_u16 = vmovl_u8(s_u8);
+                                float32x4_t s_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s_u16)));
+                                
+                                float32x4_t weighted_color = vmulq_n_f32(s_f32, weight);
+                                
+                                sumColor[0] += vgetq_lane_f32(weighted_color, 0);
+                                sumColor[1] += vgetq_lane_f32(weighted_color, 1);
+                                sumColor[2] += vgetq_lane_f32(weighted_color, 2);
+                                sumWeight += weight;
+                            } else {
+                                const float error = error_map[t_neighbor_y][t_neighbor_x];
+                                const float weight = 1.0f / (1.0f + error);
+
+                                for (int c = 0; c < num_style_channels; ++c)
+                                {
+                                    sumColor[c] += weight * (float)source[source_y][source_x][c];
+                                }
+                                sumWeight += weight;
+                            }
+#else
                             const float error = error_map[t_neighbor_y][t_neighbor_x];
                             const float weight = 1.0f / (1.0f + error);
 
@@ -149,6 +200,7 @@ void krnlVoteWeighted_cpu(
                                 sumColor[c] += weight * (float)source[source_y][source_x][c];
                             }
                             sumWeight += weight;
+#endif
                         }
                     }
                 }

@@ -4,9 +4,9 @@
 #include <algorithm>
 #include <limits>
 
-// ===================================================================
-//                        CPU SSD COST FUNCTION
-// ===================================================================
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 float compute_patch_ssd_split_cpu(
     torch::PackedTensorAccessor32<uint8_t, 3> source_style,
@@ -59,13 +59,69 @@ float compute_patch_ssd_split_cpu(
             weight_sum += weight;
 
             // Style difference
+#if defined(__ARM_NEON) && !defined(NO_SIMD)
+            if (num_style_channels == 3) {
+                uint8x8_t s_u8 = vld1_u8(&source_style[cur_sy][cur_sx][0]);
+                uint8x8_t t_u8 = vld1_u8(&target_style[cur_ty][cur_tx][0]);
+                
+                uint16x8_t s_u16 = vmovl_u8(s_u8);
+                uint16x8_t t_u16 = vmovl_u8(t_u8);
+                
+                float32x4_t s_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s_u16)));
+                float32x4_t t_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(t_u16)));
+                float32x4_t w_f32 = vld1q_f32(&style_weights[0]);
+                
+                float32x4_t diff = vsubq_f32(s_f32, t_f32);
+                float32x4_t err_vec = vmulq_f32(vdupq_n_f32(weight), vmulq_f32(w_f32, vmulq_f32(diff, diff)));
+                
+                // Sum first 3 elements (RGB)
+                error += vgetq_lane_f32(err_vec, 0) + vgetq_lane_f32(err_vec, 1) + vgetq_lane_f32(err_vec, 2);
+            } else {
+                for (int c = 0; c < num_style_channels; ++c)
+                {
+                    float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
+                    error += weight * style_weights[c] * diff * diff;
+                }
+            }
+#else
             for (int c = 0; c < num_style_channels; ++c)
             {
                 float diff = (float)source_style[cur_sy][cur_sx][c] - (float)target_style[cur_ty][cur_tx][c];
                 error += weight * style_weights[c] * diff * diff;
             }
+#endif
 
             // Guide difference
+#if defined(__ARM_NEON) && !defined(NO_SIMD)
+            if (num_guide_channels == 3) {
+                uint8x8_t s_u8 = vld1_u8(&source_guide[cur_sy][cur_sx][0]);
+                uint8x8_t t_u8 = vld1_u8(&target_guide[cur_ty][cur_tx][0]);
+                
+                uint16x8_t s_u16 = vmovl_u8(s_u8);
+                uint16x8_t t_u16 = vmovl_u8(t_u8);
+                
+                float32x4_t s_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s_u16)));
+                float32x4_t t_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(t_u16)));
+                float32x4_t w_f32 = vld1q_f32(&guide_weights[0]);
+                
+                float32x4_t diff = vsubq_f32(s_f32, t_f32);
+                float32x4_t mod_f32 = vdupq_n_f32(1.0f);
+                if (use_modulation) {
+                    uint8x8_t m_u8 = vld1_u8(&target_modulation_guide[cur_ty][cur_tx][0]);
+                    mod_f32 = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(m_u8)))), 1.0f/255.0f);
+                }
+                
+                float32x4_t err_vec = vmulq_f32(vdupq_n_f32(weight), vmulq_f32(w_f32, vmulq_f32(mod_f32, vmulq_f32(diff, diff))));
+                error += vgetq_lane_f32(err_vec, 0) + vgetq_lane_f32(err_vec, 1) + vgetq_lane_f32(err_vec, 2);
+            } else {
+                for (int c = 0; c < num_guide_channels; ++c)
+                {
+                    float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
+                    float modulation = use_modulation ? ((float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f) : 1.0f;
+                    error += weight * guide_weights[c] * modulation * diff * diff;
+                }
+            }
+#else
             for (int c = 0; c < num_guide_channels; ++c)
             {
                 float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
@@ -76,6 +132,7 @@ float compute_patch_ssd_split_cpu(
                 }
                 error += weight * guide_weights[c] * modulation * diff * diff;
             }
+#endif
         }
         if (ebest > 0 && error > ebest)
             return error;
@@ -171,19 +228,67 @@ float compute_patch_ncc_sat_cpu(
             weight_sum += weight;
 
             float s_val_g = 0.0f, t_val_g = 0.0f;
+#if defined(__ARM_NEON) && !defined(NO_SIMD)
+            if (num_style_channels == 3) {
+                uint8x8_t s_u8 = vld1_u8(&source_style[cur_sy][cur_sx][0]);
+                uint8x8_t t_u8 = vld1_u8(&target_style[cur_ty][cur_tx][0]);
+                uint16x8_t s_u16 = vmovl_u8(s_u8);
+                uint16x8_t t_u16 = vmovl_u8(t_u8);
+                float32x4_t s_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s_u16)));
+                float32x4_t t_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(t_u16)));
+                
+                s_val_g = (vgetq_lane_f32(s_f32, 0) + vgetq_lane_f32(s_f32, 1) + vgetq_lane_f32(s_f32, 2));
+                t_val_g = (vgetq_lane_f32(t_f32, 0) + vgetq_lane_f32(t_f32, 1) + vgetq_lane_f32(t_f32, 2));
+            } else {
+                for (int c = 0; c < num_style_channels; ++c)
+                {
+                    s_val_g += (float)source_style[cur_sy][cur_sx][c];
+                    t_val_g += (float)target_style[cur_ty][cur_tx][c];
+                }
+            }
+#else
             for (int c = 0; c < num_style_channels; ++c)
             {
                 s_val_g += (float)source_style[cur_sy][cur_sx][c];
                 t_val_g += (float)target_style[cur_ty][cur_tx][c];
             }
+#endif
             sum_st += weight * (s_val_g / num_style_channels) * (t_val_g / num_style_channels);
 
+            // Guide SSD part in NCC
+#if defined(__ARM_NEON) && !defined(NO_SIMD)
+            if (num_guide_channels == 3) {
+                uint8x8_t s_u8 = vld1_u8(&source_guide[cur_sy][cur_sx][0]);
+                uint8x8_t t_u8 = vld1_u8(&target_guide[cur_ty][cur_tx][0]);
+                uint16x8_t s_u16 = vmovl_u8(s_u8);
+                uint16x8_t t_u16 = vmovl_u8(t_u8);
+                float32x4_t s_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s_u16)));
+                float32x4_t t_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(t_u16)));
+                float32x4_t w_f32 = vld1q_f32(&guide_weights[0]);
+                float32x4_t diff = vsubq_f32(s_f32, t_f32);
+                float32x4_t mod_f32 = vdupq_n_f32(1.0f);
+                if (use_modulation) {
+                    uint8x8_t m_u8 = vld1_u8(&target_modulation_guide[cur_ty][cur_tx][0]);
+                    mod_f32 = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(m_u8)))), 1.0f/255.0f);
+                }
+                float32x4_t err_vec = vmulq_f32(vdupq_n_f32(weight), vmulq_f32(w_f32, vmulq_f32(mod_f32, vmulq_f32(diff, diff))));
+                guide_error += vgetq_lane_f32(err_vec, 0) + vgetq_lane_f32(err_vec, 1) + vgetq_lane_f32(err_vec, 2);
+            } else {
+                for (int c = 0; c < num_guide_channels; ++c)
+                {
+                    float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
+                    float modulation = use_modulation ? ((float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f) : 1.0f;
+                    guide_error += weight * guide_weights[c] * modulation * diff * diff;
+                }
+            }
+#else
             for (int c = 0; c < num_guide_channels; ++c)
             {
                 float diff = (float)source_guide[cur_sy][cur_sx][c] - (float)target_guide[cur_ty][cur_tx][c];
                 float modulation = use_modulation ? ((float)target_modulation_guide[cur_ty][cur_tx][c] / 255.0f) : 1.0f;
                 guide_error += weight * guide_weights[c] * modulation * diff * diff;
             }
+#endif
         }
     }
 
@@ -234,6 +339,27 @@ float compute_patch_ncc_split_cpu(
             int cur_ty = std::min(std::max(ty + py, 0), target_h - 1);
 
             float s_val = 0.0f, t_val = 0.0f;
+#if defined(__ARM_NEON) && !defined(NO_SIMD)
+            if (num_style_channels == 3) {
+                uint8x8_t s_u8 = vld1_u8(&source_style[cur_sy][cur_sx][0]);
+                uint8x8_t t_u8 = vld1_u8(&target_style[cur_ty][cur_tx][0]);
+                uint16x8_t s_u16 = vmovl_u8(s_u8);
+                uint16x8_t t_u16 = vmovl_u8(t_u8);
+                float32x4_t s_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(s_u16)));
+                float32x4_t t_f32 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(t_u16)));
+                
+                s_val = (vgetq_lane_f32(s_f32, 0) + vgetq_lane_f32(s_f32, 1) + vgetq_lane_f32(s_f32, 2)) / 3.0f;
+                t_val = (vgetq_lane_f32(t_f32, 0) + vgetq_lane_f32(t_f32, 1) + vgetq_lane_f32(t_f32, 2)) / 3.0f;
+            } else {
+                for (int c = 0; c < num_style_channels; ++c)
+                {
+                    s_val += (float)source_style[cur_sy][cur_sx][c];
+                    t_val += (float)target_style[cur_ty][cur_tx][c];
+                }
+                s_val /= num_style_channels;
+                t_val /= num_style_channels;
+            }
+#else
             for (int c = 0; c < num_style_channels; ++c)
             {
                 s_val += (float)source_style[cur_sy][cur_sx][c];
@@ -241,6 +367,7 @@ float compute_patch_ncc_split_cpu(
             }
             s_val /= num_style_channels;
             t_val /= num_style_channels;
+#endif
 
             float weight = 1.0f;
             if (use_bilateral)

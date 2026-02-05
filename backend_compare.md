@@ -38,9 +38,10 @@
 |-|-|-|-|-|
 | CPU C++ PyTorch JIT            | 0.2230 s  |  2.2521 s |  1.5188 s |  4.0867 s |
 | CPU C++ OPT PyTorch JIT        | 0.2175 s  |  2.3316 s |  1.5395 s |  4.1791 s |
+| CPU - +SIMD                    | 0.1645 s  |  2.2492 s |  1.4181 s |  3.9289 s |
 | PyTorch CPU                    | 1.5803 s  | 46.0797 s | 17.2497 s | 65.0448 s |
-| PyTorch MPS                    | 1.9048 s  | 18.6886 s |  9.5341 s | 30.3013 s |
-| Taichi  MPS                    | 0.3984 s  |  0.7467 s |  0.5148 s |  1.7712 s |
+| PyTorch MPS                    | 1.2983 s  | 14.6254 s |  9.0572 s | 25.2149 s |
+| Taichi  MPS                    | 0.4008 s  |  0.7628 s |  0.5966 s |  1.8582 s |
 
 > Full config. Residual Transfer: True, SSD
 
@@ -48,6 +49,7 @@
 |-|-|-|-|-|
 | CPU C++ PyTorch JIT            |  0.7796 s  |   7.4995 s |   5.1122 s |  13.4845 s  |
 | CPU C++ OPTS PyTorch JIT       |  0.4749 s  |   5.3502 s |   3.7535 s |   9.6710 s  |
+| CPU - +SIMD                    |  0.4998 s  |   6.7563 s |   4.5929 s |  11.9494 s  |
 | PyTorch CPU                    | 16.9250 s  | 216.7993 s | 142.7609 s | 376.1542 s  |
 | PyTorch MPS                    | 38.6542 s  | 205.5949 s | 205.1384 s | 449.7303 s  |
 | Taichi  MPS                    |  0.9665 s  |   3.0835 s |   2.2306 s |   6.3870 s  |
