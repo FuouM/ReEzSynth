@@ -1,3 +1,4 @@
 *.dat
 *.bytes
 */test_outputs/*
+test_output/*

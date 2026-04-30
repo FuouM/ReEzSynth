@@ -1,38 +1,41 @@
 # FaceBlit (PyTorch)
 
-<!-- markdownlint-disable MD033 -->
-<!-- markdownlint-disable MD045 -->
+Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) in PyTorch and Taichi, accelerated by Numba. Supports CUDA, CPU and MPS.
 
-Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) focused on face style transfer. This README covers the pure Python/PyTorch port used for research and integration into ReEzSynth.
+## Quick start
 
-## Examples
+```bash
+python src/faceblit_run.py
+```
 
-| Original | Style | Styled (CPU) | Styled (GPU) |
-|:-:|:-:|:-:|:-:|
-| <img src="examples/target2.png" height="250"> | <img src="examples/style_watercolorgirl.png" height="250"> | <img src="examples/output_refs/target2_stylized_pytorch_cpu.png" height="250"> | <img src="examples/output_refs/target2_stylized_pytorch_gpu.png" height="250"> |
+![img](examples/faceblit_output_comparison.png)
 
-## What's here
+## Video face stylization
 
-- `faceblit_pytorch`: Pure Python/PyTorch implementation with image stylization and style-asset precomputation.
-- `examples/`: Sample assets and reference outputs used by tests.
-- `models/`: Model files needed for style precompute and target landmark detection.
+One can stylize a video, frame-by-frame, using this method. This only works for frames where a face is detected. Use EbSynth to propagate a stylized still instead, or use FastBlend, for temporal coherence and consistency.
 
-## Required assets
+```bash
+python src/faceblit_run_video.py
+```
+
+Zuzka2 example from <https://github.com/OndrejTexler/Few-Shot-Patch-Based-Training#run> `testing-data.zip`
+
+## Face detection model
+
+To use Dlib's facial landmark model, download the 68-point landmark model at:
+
+<https://github.com/AnetaTexler/FaceBlit/blob/master/VS/facemark_models/shape_predictor_68_face_landmarks.dat>
+
+```bash
+FaceBlit/models/
+  model_files.md
+  shape_predictor_68_face_landmarks.dat
+```
 
 - Dlib 68-point landmark model (needed for style precompute and target landmark detection):  
   <https://github.com/AnetaTexler/FaceBlit/blob/master/VS/facemark_models/shape_predictor_68_face_landmarks.dat>
-- Place the file at `FaceBlit/models/shape_predictor_68_face_landmarks.dat` (or point to it explicitly).
-- Sample style/target images live in `FaceBlit/examples/` and are reused by the tests.
 
-## Installation
-
-- Windows users can grab prebuilt dlib wheels here if needed: <https://github.com/z-mahmud22/Dlib_Windows_Python3.x>
-
-## Quickstart (PyTorch)
-
-The port mirrors the FaceBlit flow: precompute style assets, prepare target guides, detect landmarks, then stylize. Try it out by running `python faceblit_pytorch/test_faceblit_pytorch.py`
-
-To test the Taichi implementation, run `python faceblit_taichi\demo.py`
+Alternatively, use FAN detection backend (<https://github.com/1adrianb/face-alignment>)
 
 ## References
 
@@ -44,5 +47,22 @@ To test the Taichi implementation, run `python faceblit_taichi\demo.py`
     volume    = "4",
     number    = "1",
     year      = "2021",
+}
+
+@inproceedings{bulat2017far,
+  title={How far are we from solving the 2D \& 3D Face Alignment problem? (and a dataset of 230,000 3D facial landmarks)},
+  author={Bulat, Adrian and Tzimiropoulos, Georgios},
+  booktitle={International Conference on Computer Vision},
+  year={2017}
+}
+
+@Article{Texler20-SIG,
+    author    = "Ond\v{r}ej Texler and David Futschik and Michal Ku\v{c}era and Ond\v{r}ej Jamri\v{s}ka and \v{S}\'{a}rka Sochorov\'{a} and Menglei Chai and Sergey Tulyakov and Daniel S\'{y}kora",
+    title     = "Interactive Video Stylization Using Few-Shot Patch-Based Training",
+    journal   = "ACM Transactions on Graphics",
+    volume    = "39",
+    number    = "4",
+    pages     = "73",
+    year      = "2020",
 }
 ```
