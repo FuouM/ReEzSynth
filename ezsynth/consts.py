@@ -44,6 +44,14 @@ _extension_load_attempted = False
 TORCH_CUDA_CLEAR_CACHE = True
 TORCH_MPS_CLEAR_CACHE = True
 
+# --- run.py Startup Environment ---
+# Applied before importing heavy runtime modules in the CLI entrypoint.
+RUNPY_STARTUP_ENV = {
+    "KMP_DUPLICATE_LIB_OK": "TRUE",
+    "EZSYNTH_SKIP_METAL": "1",
+    "EZSYNTH_SKIP_METAL_VERBOSE": "0",
+}
+
 
 def ensure_ebsynth_extension() -> None:
     """Load native ebsynth_torch once when the CUDA C++ backend is requested."""

@@ -2,16 +2,16 @@
 import argparse
 import os
 import time
+from pathlib import Path
+
+from ezsynth.consts import RUNPY_STARTUP_ENV
+
+for _key, _value in RUNPY_STARTUP_ENV.items():
+    os.environ[_key] = _value
 
 import torch
-
-# This addresses the OpenMP runtime conflict.
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-# Disables experimental Metal ops
-os.environ["EZSYNTH_SKIP_METAL"] = "1"
-os.environ["EZSYNTH_SKIP_METAL_VERBOSE"] = "0"
-
 from ezsynth.project import Project
+from ezsynth.utils.video import export_frames_to_browser_h264_mp4
 
 
 def main():
@@ -36,6 +36,23 @@ def main():
         default=None,
         help="Backend for synthesis operations (overrides config). Options: cuda, torch, taichi.",
     )
+    parser.add_argument(
+        "--export-mp4",
+        action="store_true",
+        help="After synthesis, export H.264 MP4 (yuv420p, browser-friendly; requires ffmpeg).",
+    )
+    parser.add_argument(
+        "--mp4-fps",
+        type=float,
+        default=30.0,
+        help="Frame rate for --export-mp4.",
+    )
+    parser.add_argument(
+        "--mp4-output",
+        type=str,
+        default=None,
+        help="Output .mp4 path. Default: next to the frame folder (<output_dir parent>/<name>.mp4).",
+    )
     args = parser.parse_args()
 
     # --- Welcome Message & Environment Check ---
@@ -57,11 +74,20 @@ def main():
 
         # --- Pipeline Execution ---
         print("\nStarting Ezsynth v2 pipeline...")
-        project.run()
+        final_frames = project.run()
+
+        if args.export_mp4:
+            if args.mp4_output:
+                mp4_path = Path(args.mp4_output)
+            else:
+                od = project.data.output_dir
+                mp4_path = od.parent / f"{od.name}.mp4"
+            export_frames_to_browser_h264_mp4(final_frames, mp4_path, args.mp4_fps)
 
     except FileNotFoundError as e:
-        print(f"\n[ERROR] A required file or directory was not found: {e}")
-        print("Please check the paths in your configuration file.")
+        print(f"\n[ERROR] {e}")
+        if "ffmpeg" not in str(e).lower():
+            print("Please check the paths in your configuration file.")
     except Exception as e:
         print(f"\n[ERROR] An unexpected error occurred: {e}")
         import traceback
