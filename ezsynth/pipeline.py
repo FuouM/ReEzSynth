@@ -13,7 +13,13 @@ from .data import ProjectData
 from .engines.synthesis_engine import EbsynthEngine
 from .utils.blend_utils import Blender
 from .utils.feature_utils import generate_tracked_features, render_gaussian_guide
-from .utils.io_utils import load_frames_from_dir, write_image
+from .utils.io_utils import load_frames_from_dir
+from .utils.pipeline_utils import (
+    has_exact_cache_files,
+    load_cached_flow,
+    save_edge_map_cache,
+    save_flow_cache,
+)
 from .utils.sequence_utils import SynthesisSequence, create_sequences
 from .utils.warp_utils import PositionalGuide, Warp
 
@@ -48,14 +54,9 @@ class SynthesisPipeline:
 
         if (
             not self.config.project.force_recompute_flow
-            and cache_dir.exists()
-            and len(list(cache_dir.glob("*.npy"))) == num_expected_flows
+            and has_exact_cache_files(cache_dir, "npy", num_expected_flows)
         ):
-            print(f"Loading optical flow from cache: {cache_dir}")
-            flow_paths = sorted(cache_dir.glob("*.npy"))
-            self._fwd_flows = [
-                np.load(p) for p in tqdm(flow_paths, desc="Loading Cached Flow")
-            ]
+            self._fwd_flows = load_cached_flow(cache_dir)
         else:
             from .engines.flow_engine import (  # Just-in-time import
                 NeuFlowEngine,
@@ -74,10 +75,7 @@ class SynthesisPipeline:
                 raise ValueError(f"Unknown flow engine: '{engine_name}'")
 
             self._fwd_flows = engine.compute(content_frames)
-            print(f"Saving {len(self._fwd_flows)} flow fields to cache: {cache_dir}")
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            for i, flow in enumerate(tqdm(self._fwd_flows, desc="Saving Flow Cache")):
-                np.save(cache_dir / f"{i:05d}.npy", flow)
+            save_flow_cache(self._fwd_flows, cache_dir)
 
             print("Optical flow computation complete. Releasing model from memory...")
             del engine
@@ -93,8 +91,7 @@ class SynthesisPipeline:
 
         if (
             not self.config.project.force_recompute_edge
-            and cache_dir.exists()
-            and len(list(cache_dir.glob("*.png"))) == len(content_frames)
+            and has_exact_cache_files(cache_dir, "png", len(content_frames))
         ):
             print(f"Loading edge maps from cache: {cache_dir}")
             self._edge_maps = load_frames_from_dir(cache_dir)
@@ -104,10 +101,7 @@ class SynthesisPipeline:
             engine = EdgeEngine(method=self.config.precomputation.edge_method)
             self._edge_maps = engine.compute(content_frames)
 
-            print(f"Saving {len(self._edge_maps)} edge maps to cache: {cache_dir}")
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            for i, edge_map in enumerate(self._edge_maps):
-                write_image(cache_dir / f"{i:05d}.png", edge_map)
+            save_edge_map_cache(self._edge_maps, cache_dir)
             del engine
 
         print("Edge map pre-computation finished.")

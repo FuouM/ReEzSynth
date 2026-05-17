@@ -15,7 +15,7 @@ COST_FUNCTION_SSD = 0
 COST_FUNCTION_NCC = 1
 
 # --- Extension Availability ---
-# This is determined dynamically at import time
+# Updated when ensure_ebsynth_extension() successfully loads the native module (CUDA backend).
 EXTENSION_AVAILABLE = False
 EXTENSION_CUDA_AVAILABLE = False
 ebsynth_torch = None  # Will be set if extension is available
@@ -26,8 +26,18 @@ CUDA_EXTENSION_AVAILABLE = False  # Deprecated, use EXTENSION_AVAILABLE instead
 # --- Environment Variable Defaults ---
 # Instead of relying on env vars, we use these defaults
 # Can be overridden by setting environment variables before import
-FORCE_EBSYNTH_JIT_LOADER = True
+# When False (default): try pip-installed `ebsynth_torch` first, then JIT.
+# Set FORCE_EBSYNTH_JIT_LOADER=1 in the environment for legacy JIT-only workflows.
+FORCE_EBSYNTH_JIT_LOADER = os.environ.get(
+    "FORCE_EBSYNTH_JIT_LOADER",
+    "",
+).strip().lower() in ("1", "true", "yes")
+
 JIT_VERBOSE = False
+
+# Load native extension only when the CUDA/extension backend actually needs it
+# (avoids JIT/import side effects when using torch/taichi backends).
+_extension_load_attempted = False
 
 # --- Torch Ops Cache Clearing ---
 # This is useful to reduce memory usage
@@ -35,10 +45,19 @@ TORCH_CUDA_CLEAR_CACHE = True
 TORCH_MPS_CLEAR_CACHE = True
 
 
+def ensure_ebsynth_extension() -> None:
+    """Load native ebsynth_torch once when the CUDA C++ backend is requested."""
+    global _extension_load_attempted
+    if _extension_load_attempted:
+        return
+    _extension_load_attempted = True
+    _load_extension()
+
+
 def _load_extension():
     """
     Dynamically load the ebsynth extension and set EXTENSION_AVAILABLE.
-    This function is called at module import time.
+    Called from ensure_ebsynth_extension() before first use by CudaBackend.
     Supports both CPU and CUDA backends.
     """
     global \
@@ -99,10 +118,6 @@ def _load_extension():
 
     if not EXTENSION_AVAILABLE:
         print("\n[WARNING] ebsynth_torch extension not available.")
-        print("Only PyTorch backend can be used.")
+        print("Only PyTorch / Taichi backends can be used without it.")
         print("To enable the C++ extension, ensure a C++ compiler is installed.")
         print("For CUDA support, also ensure the NVIDIA CUDA Toolkit is installed.\n")
-
-
-# Load extension at import time
-_load_extension()
