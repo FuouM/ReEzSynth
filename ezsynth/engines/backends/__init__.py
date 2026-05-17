@@ -4,6 +4,7 @@
 # Import CudaBackend only if CUDA extension is available
 from ...consts import CUDA_EXTENSION_AVAILABLE
 from .base import BaseSynthesisBackend
+from .protocol import SynthesisBackend
 from .pytorch_backend import PyTorchBackend
 
 if CUDA_EXTENSION_AVAILABLE:
@@ -18,4 +19,10 @@ try:
 except ImportError:
     TaichiBackend = None
 
-__all__ = ["BaseSynthesisBackend", "CudaBackend", "PyTorchBackend", "TaichiBackend"]
+__all__ = [
+    "BaseSynthesisBackend",
+    "CudaBackend",
+    "PyTorchBackend",
+    "SynthesisBackend",
+    "TaichiBackend",
+]

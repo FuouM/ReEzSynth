@@ -3,9 +3,9 @@ from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
 import torch
-import torch.nn.functional as F
 
 from ...config import EbsynthParamsConfig, PipelineConfig
+from .common import random_init_nnf, resample_tensor
 
 
 class BaseSynthesisBackend(ABC):
@@ -52,39 +52,10 @@ class BaseSynthesisBackend(ABC):
         self, tensor: torch.Tensor, new_h: int, new_w: int, mode: str = "bilinear"
     ) -> torch.Tensor:
         """Helper to resample a tensor using torch.nn.functional.interpolate."""
-        if tensor.shape[0] == new_h and tensor.shape[1] == new_w:
-            return tensor
-
-        is_uint8 = tensor.dtype == torch.uint8
-
-        tensor_float = tensor.permute(2, 0, 1).unsqueeze(0).float()
-
-        resampled_float = F.interpolate(
-            tensor_float, size=(new_h, new_w), mode=mode, align_corners=False
-        )
-
-        resampled = resampled_float.squeeze(0).permute(1, 2, 0)
-
-        if is_uint8:
-            return resampled.clamp(0, 255).to(torch.uint8).contiguous()
-
-        return resampled.contiguous()
+        return resample_tensor(tensor, new_h, new_w, mode)
 
     def _init_nnf(self, target_h, target_w, source_h, source_w, patch_size):
         """Initializes a random NNF on the GPU."""
-        r = patch_size // 2
-        rand_x = torch.randint(
-            r,
-            source_w - r,
-            (target_h, target_w, 1),
-            device=self.device,
-            dtype=torch.int32,
+        return random_init_nnf(
+            self.device, target_h, target_w, source_h, source_w, patch_size
         )
-        rand_y = torch.randint(
-            r,
-            source_h - r,
-            (target_h, target_w, 1),
-            device=self.device,
-            dtype=torch.int32,
-        )
-        return torch.cat([rand_x, rand_y], dim=2).contiguous()
