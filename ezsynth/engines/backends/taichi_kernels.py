@@ -1,9 +1,4 @@
-"""Module-level Taichi kernels for :mod:`taichi_backend`.
-
-The functions keep ``self`` as their first parameter and are imported into
-``TaichiBackend``'s class namespace. This preserves existing method call sites
-while keeping kernel definitions separate from backend orchestration.
-"""
+"""Taichi kernels for :mod:`taichi_backend` (module-level ``@ti.kernel`` / ``@ti.func``)."""
 
 import taichi as ti
 
@@ -11,7 +6,6 @@ from ...consts import COST_FUNCTION_NCC, EBSYNTH_VOTEMODE_WEIGHTED
 
 @ti.func
 def get_omega(
-    self: ti.template(),
     omega_map: ti.template(),
     x: int,
     y: int,
@@ -29,7 +23,7 @@ def get_omega(
 
 @ti.func
 def query_sat(
-    self: ti.template(), sat: ti.template(), x1: int, y1: int, x2: int, y2: int, w: int, h: int
+    sat: ti.template(), x1: int, y1: int, x2: int, y2: int, w: int, h: int
 ):
     x1 = ti.max(x1, 0)
     y1 = ti.max(y1, 0)
@@ -43,7 +37,6 @@ def query_sat(
 
 @ti.func
 def compute_patch_ncc(
-    self: ti.template(),
     sx: int,
     sy: int,
     tx: int,
@@ -79,16 +72,16 @@ def compute_patch_ncc(
     if use_bilateral == 0 and n_size_step == 1:
         # Optimized non-bilateral path using SAT
         N = float(patch_size * patch_size)
-        sum_s = self.query_sat(
+        sum_s = query_sat(
             source_style_sat, sx - r, sy - r, sx + r, sy + r, sw, sh
         )
-        sum_sq_s = self.query_sat(
+        sum_sq_s = query_sat(
             source_style_sq_sat, sx - r, sy - r, sx + r, sy + r, sw, sh
         )
-        sum_t = self.query_sat(
+        sum_t = query_sat(
             target_style_sat, tx - r, ty - r, tx + r, ty + r, tw, th
         )
-        sum_sq_t = self.query_sat(
+        sum_sq_t = query_sat(
             target_style_sq_sat, tx - r, ty - r, tx + r, ty + r, tw, th
         )
 
@@ -224,7 +217,6 @@ def compute_patch_ncc(
 
 @ti.func
 def compute_patch_ssd(
-    self: ti.template(),
     sx: int,
     sy: int,
     tx: int,
@@ -330,7 +322,7 @@ def compute_patch_ssd(
 
 @ti.kernel
 def compute_integral_image(
-    self: ti.template(), src: ti.types.ndarray(), dst: ti.types.ndarray(), sqr: int
+    src: ti.types.ndarray(), dst: ti.types.ndarray(), sqr: int
 ):
     h, w = src.shape[0], src.shape[1]
     NSC = src.shape[2]
@@ -354,13 +346,12 @@ def compute_integral_image(
             dst[y, x] = s
 
 @ti.kernel
-def populate_omega(self: ti.template(), nnf: ti.types.ndarray(), omega_map: ti.types.ndarray()):
+def populate_omega(nnf: ti.types.ndarray(), omega_map: ti.types.ndarray()):
     for ty, tx in ti.ndrange(nnf.shape[0], nnf.shape[1]):
         ti.atomic_add(omega_map[nnf[ty, tx, 1], nnf[ty, tx, 0]], 1)
 
 @ti.kernel
 def compute_error_map_kernel(
-    self: ti.template(),
     nnf: ti.types.ndarray(),
     error_map: ti.types.ndarray(),
     source_style: ti.types.ndarray(),
@@ -388,7 +379,7 @@ def compute_error_map_kernel(
     for ty, tx in ti.ndrange(th, tw):
         sx, sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
         if cost_mode == COST_FUNCTION_NCC:
-            error_map[ty, tx] = self.compute_patch_ncc(
+            error_map[ty, tx] = compute_patch_ncc(
                 sx,
                 sy,
                 tx,
@@ -418,7 +409,7 @@ def compute_error_map_kernel(
                 n_size_step,
             )
         else:
-            error_map[ty, tx] = self.compute_patch_ssd(
+            error_map[ty, tx] = compute_patch_ssd(
                 sx,
                 sy,
                 tx,
@@ -447,7 +438,6 @@ def compute_error_map_kernel(
 
 @ti.kernel
 def patchmatch_step_kernel(
-    self: ti.template(),
     nnf: ti.types.ndarray(),
     error_map: ti.types.ndarray(),
     omega_map: ti.types.ndarray(),
@@ -487,7 +477,7 @@ def patchmatch_step_kernel(
 
         best_sx, best_sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
         best_total_err = error_map[ty, tx] + uniformity_weight * (
-            self.get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
+            get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
             / pixel_count
             / omega_best
         )
@@ -503,7 +493,7 @@ def patchmatch_step_kernel(
                 if r <= cand_sx < sw - r and r <= cand_sy < sh - r:
                     new_err = 0.0
                     if cost_mode == COST_FUNCTION_NCC:
-                        new_err = self.compute_patch_ncc(
+                        new_err = compute_patch_ncc(
                             cand_sx,
                             cand_sy,
                             tx,
@@ -533,7 +523,7 @@ def patchmatch_step_kernel(
                             n_size_step,
                         )
                     else:
-                        new_err = self.compute_patch_ssd(
+                        new_err = compute_patch_ssd(
                             cand_sx,
                             cand_sy,
                             tx,
@@ -561,7 +551,7 @@ def patchmatch_step_kernel(
                         )
 
                     new_total_err = new_err + uniformity_weight * (
-                        self.get_omega(
+                        get_omega(
                             omega_map, cand_sx, cand_sy, patch_size, sw, sh
                         )
                         / pixel_count
@@ -580,7 +570,6 @@ def patchmatch_step_kernel(
 
 @ti.kernel
 def random_search_kernel(
-    self: ti.template(),
     nnf: ti.types.ndarray(),
     error_map: ti.types.ndarray(),
     omega_map: ti.types.ndarray(),
@@ -621,7 +610,7 @@ def random_search_kernel(
 
         best_sx, best_sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
         best_total_err = error_map[ty, tx] + uniformity_weight * (
-            self.get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
+            get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
             / pixel_count
             / omega_best
         )
@@ -636,7 +625,7 @@ def random_search_kernel(
             if pr <= cand_sx < sw - pr and pr <= cand_sy < sh - pr:
                 new_err = 0.0
                 if cost_mode == COST_FUNCTION_NCC:
-                    new_err = self.compute_patch_ncc(
+                    new_err = compute_patch_ncc(
                         cand_sx,
                         cand_sy,
                         tx,
@@ -666,7 +655,7 @@ def random_search_kernel(
                         n_size_step,
                     )
                 else:
-                    new_err = self.compute_patch_ssd(
+                    new_err = compute_patch_ssd(
                         cand_sx,
                         cand_sy,
                         tx,
@@ -694,7 +683,7 @@ def random_search_kernel(
                     )
 
                 new_total_err = new_err + uniformity_weight * (
-                    self.get_omega(omega_map, cand_sx, cand_sy, patch_size, sw, sh)
+                    get_omega(omega_map, cand_sx, cand_sy, patch_size, sw, sh)
                     / pixel_count
                     / omega_best
                 )
@@ -712,7 +701,6 @@ def random_search_kernel(
 
 @ti.kernel
 def voting_kernel(
-    self: ti.template(),
     output_image: ti.types.ndarray(),
     source_style: ti.types.ndarray(),
     target_style: ti.types.ndarray(),
@@ -796,7 +784,6 @@ def voting_kernel(
 
 @ti.kernel
 def eval_mask_kernel(
-    self: ti.template(),
     mask: ti.types.ndarray(),
     current_img: ti.types.ndarray(),
     previous_img: ti.types.ndarray(),
@@ -813,7 +800,7 @@ def eval_mask_kernel(
 
 @ti.kernel
 def dilate_mask_kernel(
-    self: ti.template(), dst: ti.types.ndarray(), src: ti.types.ndarray(), patch_size: int
+    dst: ti.types.ndarray(), src: ti.types.ndarray(), patch_size: int
 ):
     th, tw, r = dst.shape[0], dst.shape[1], patch_size // 2
     for y, x in ti.ndrange(th, tw):

@@ -10,16 +10,18 @@ class Warp:
         self.use_taichi = use_taichi
         self.grid = self._create_grid(self.H, self.W)
         self._taichi_available = False
+        self._taichi_ops = None
 
         if self.use_taichi:
             try:
                 from ..engines.backends.taichi_backend import ensure_ti_init
-                from ..engines.backends.taichi_ops import TaichiOps
+                from ..engines.backends import taichi_ops
 
                 ensure_ti_init()
-                self.ops = TaichiOps()
+                self._taichi_ops = taichi_ops
                 self._taichi_available = True
             except ImportError:
+                self._taichi_ops = None
                 self.use_taichi = False
 
     def _create_grid(self, H: int, W: int):
@@ -34,7 +36,7 @@ class Warp:
 
         if self.use_taichi and self._taichi_available and interpolation == cv2.INTER_LINEAR:
             dst = np.zeros_like(img)
-            self.ops.bilinear_warp_kernel(img, flo_resized, dst)
+            self._taichi_ops.bilinear_warp_kernel(img, flo_resized, dst)
             return dst
 
         map_x = self.grid[..., 0] + flo_resized[..., 0]
@@ -95,7 +97,7 @@ class Warp:
         if not (
             self.use_taichi
             and self._taichi_available
-            and hasattr(self.ops, "soft_splat_kernel")
+            and hasattr(self._taichi_ops, "soft_splat_kernel")
         ):
             del fill_holes, src_guide, tgt_guide
             if return_weight:
@@ -133,7 +135,7 @@ class Warp:
             else np.zeros((1, 1, 3), dtype=np.float32)
         )
 
-        self.ops.soft_splat_kernel(
+        self._taichi_ops.soft_splat_kernel(
             img_float,
             flow_f32,
             dst_color,
@@ -148,7 +150,7 @@ class Warp:
             self.run_pull_push(dst_color, dst_weight)
 
         out = np.zeros_like(img, dtype=np.uint8 if was_uint8 else np.float32)
-        self.ops.normalize_splat_kernel(dst_color, dst_weight, out, was_uint8)
+        self._taichi_ops.normalize_splat_kernel(dst_color, dst_weight, out, was_uint8)
         if return_weight:
             return out, raw_weight
         return out
@@ -166,7 +168,7 @@ class Warp:
             color_shape = pyramid_color[-1].shape[2:]
             next_color = np.zeros((h_next, w_next, *color_shape), dtype=np.float32)
             next_weight = np.zeros((h_next, w_next), dtype=np.float32)
-            self.ops.pull_kernel(
+            self._taichi_ops.pull_kernel(
                 pyramid_color[-1],
                 pyramid_weight[-1],
                 next_color,
@@ -176,7 +178,7 @@ class Warp:
             pyramid_weight.append(next_weight)
 
         for i in range(len(pyramid_color) - 2, -1, -1):
-            self.ops.push_kernel(
+            self._taichi_ops.push_kernel(
                 pyramid_color[i + 1],
                 pyramid_weight[i + 1],
                 pyramid_color[i],

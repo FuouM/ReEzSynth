@@ -17,10 +17,10 @@ except ImportError:
     PYAMG_AVAILABLE = False
 
 try:
-    import taichi as ti
+    import taichi  # noqa: F401 — dependency gate before importing taichi_ops
 
     from ..engines.backends.taichi_backend import ensure_ti_init
-    from ..engines.backends.taichi_ops import TaichiOps
+    from ..engines.backends import taichi_ops
 
     TAICHI_AVAILABLE = True
 except ImportError:
@@ -61,7 +61,6 @@ def hist_blender(
 ) -> np.ndarray:
     if use_taichi and TAICHI_AVAILABLE:
         ensure_ti_init()
-        ops = TaichiOps()
 
         # Prepare buffers
         ma, sa = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
@@ -75,19 +74,19 @@ def hist_blender(
             else np.where(error_mask == 0, a, b)
         )
 
-        ops.compute_stats_kernel(a, ma, sa)
-        ops.compute_stats_kernel(b, mb, sb)
-        ops.compute_stats_kernel(m_lab, mme, sme)
+        taichi_ops.compute_stats_kernel(a, ma, sa)
+        taichi_ops.compute_stats_kernel(b, mb, sb)
+        taichi_ops.compute_stats_kernel(m_lab, mme, sme)
 
         temp_lab = np.zeros_like(a, dtype=np.float32)
-        ops.hist_blend_apply_kernel(
+        taichi_ops.hist_blend_apply_kernel(
             a, b, error_mask, ma, sa, mb, sb, mme, sme, weight1, weight2, temp_lab
         )
 
         # Second pass for ab_stats
         mab, sab = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
         # Compute stats of temp_lab (which is already in Lab-ish space in the kernel)
-        # Actually TaichiOps.compute_stats_kernel converts BGR to Lab.
+        # Actually compute_stats_kernel converts BGR to Lab.
         # I should add a compute_stats_lab_kernel if I want to be precise.
         # For now, let's use the CPU for stats of the blended result to be safe, or just compute it in Taichi.
 
@@ -98,7 +97,7 @@ def hist_blender(
         out = np.zeros_like(a)
         mab = np.mean(temp_lab, axis=(0, 1))
         sab = np.std(temp_lab, axis=(0, 1))
-        ops.hist_blend_final_pass_kernel(temp_lab, mab, sab, mme, sme, out)
+        taichi_ops.hist_blend_final_pass_kernel(temp_lab, mab, sab, mme, sme, out)
         return out
 
     if len(error_mask.shape) == 2:
@@ -194,8 +193,7 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
             out_all[:, ch] = ml.solve(A.T @ b, tol=1e-6, maxiter=maxiter, accel="cg")
         elif solver == "taichi-cg" and TAICHI_AVAILABLE:
             ensure_ti_init()
-            ops = TaichiOps()
-            out_all[:, ch] = ops.poisson_solver_cg(
+            out_all[:, ch] = taichi_ops.poisson_solver_cg(
                 gx[..., ch],
                 gy[..., ch],
                 Iab_centered[..., ch].reshape(h, w),

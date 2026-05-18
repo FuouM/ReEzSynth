@@ -4,7 +4,6 @@ from ezsynth import consts
 import ezsynth.engines.backends as backends
 import ezsynth.torch_ops as torch_ops
 from ezsynth.engines.backends.common import random_init_nnf, resample_tensor
-from ezsynth.engines.backends.taichi_backend import TaichiBackend
 from ezsynth.engines.backends import taichi_kernels
 from ezsynth.torch_ops.device_cache import clear_torch_device_cache
 from ezsynth.torch_ops import microprofile
@@ -64,7 +63,6 @@ def test_consts_expose_extension_and_tuning_controls():
     assert hasattr(consts, "TORCH_MICROPROFILE")
     assert hasattr(consts, "TAICHI_INIT_VERBOSE")
     assert callable(consts.ensure_extension_loaded)
-    assert callable(consts.ensure_ebsynth_extension)
 
 
 def test_microprofile_records_regions_when_enabled(monkeypatch):
@@ -80,5 +78,5 @@ def test_microprofile_records_regions_when_enabled(monkeypatch):
 
 
 def test_taichi_backend_imports_kernel_module():
-    assert TaichiBackend.compute_patch_ssd is taichi_kernels.compute_patch_ssd
-    assert TaichiBackend.random_search_kernel is taichi_kernels.random_search_kernel
+    assert callable(taichi_kernels.compute_patch_ssd)
+    assert callable(taichi_kernels.random_search_kernel)

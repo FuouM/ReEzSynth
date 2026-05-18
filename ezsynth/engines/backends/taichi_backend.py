@@ -11,7 +11,7 @@ from ...consts import (
     TAICHI_INIT_VERBOSE,
 )
 from ...utils.timer import SynthesisTimer
-from .base import BaseSynthesisBackend
+from . import taichi_kernels as tk
 
 
 # Initialize Taichi
@@ -42,12 +42,12 @@ def ensure_ti_init():
         _ti_initialized = True
 
 
-@ti.data_oriented
-class TaichiBackend(BaseSynthesisBackend):
+class TaichiBackend:
     def __init__(
         self, ebsynth_config: EbsynthParamsConfig, pipeline_config: PipelineConfig
     ):
-        super().__init__(ebsynth_config, pipeline_config)
+        self.ebsynth_config = ebsynth_config
+        self.pipeline_config = pipeline_config
         ensure_ti_init()
         self.device = "cpu"
         if torch.backends.mps.is_available() and platform.system() == "Darwin":
@@ -69,22 +69,6 @@ class TaichiBackend(BaseSynthesisBackend):
                 return operation_func()
         else:
             return operation_func()
-
-    # --- KERNELS AND FUNCS ---
-    from .taichi_kernels import (
-        compute_error_map_kernel,
-        compute_integral_image,
-        compute_patch_ncc,
-        compute_patch_ssd,
-        dilate_mask_kernel,
-        eval_mask_kernel,
-        get_omega,
-        patchmatch_step_kernel,
-        populate_omega,
-        query_sat,
-        random_search_kernel,
-        voting_kernel,
-    )
 
     def run_level(
         self,
@@ -162,17 +146,17 @@ class TaichiBackend(BaseSynthesisBackend):
             self._timed_operation(
                 "source_sats",
                 lambda: (
-                    self.compute_integral_image(style_ti, s_sat, 0),
-                    self.compute_integral_image(style_ti, s_sq_sat, 1),
+                    tk.compute_integral_image(style_ti, s_sat, 0),
+                    tk.compute_integral_image(style_ti, s_sq_sat, 1),
                 ),
             )
 
         self._timed_operation(
-            "populate_omega", lambda: self.populate_omega(nnf_ti, omega_map)
+            "populate_omega", lambda: tk.populate_omega(nnf_ti, omega_map)
         )
         self._timed_operation(
             "initial_vote",
-            lambda: self.voting_kernel(
+            lambda: tk.voting_kernel(
                 target_style_prev,
                 style_ti,
                 target_style_prev,  # Dummy target style for center
@@ -192,13 +176,13 @@ class TaichiBackend(BaseSynthesisBackend):
                 self._timed_operation(
                     f"target_sats_{iter_idx}",
                     lambda: (
-                        self.compute_integral_image(target_style_prev, t_sat, 0),
-                        self.compute_integral_image(target_style_prev, t_sq_sat, 1),
+                        tk.compute_integral_image(target_style_prev, t_sat, 0),
+                        tk.compute_integral_image(target_style_prev, t_sq_sat, 1),
                     ),
                 )
             self._timed_operation(
                 f"error_map_{iter_idx}",
-                lambda: self.compute_error_map_kernel(
+                lambda: tk.compute_error_map_kernel(
                     nnf_ti,
                     error_map,
                     style_ti,
@@ -224,7 +208,7 @@ class TaichiBackend(BaseSynthesisBackend):
             for pm_idx in range(patch_match_iters):
                 self._timed_operation(
                     f"pm_step_{iter_idx}_{pm_idx}",
-                    lambda: self.patchmatch_step_kernel(
+                    lambda: tk.patchmatch_step_kernel(
                         nnf_ti,
                         error_map,
                         omega_map,
@@ -255,7 +239,7 @@ class TaichiBackend(BaseSynthesisBackend):
 
             self._timed_operation(
                 f"random_search_{iter_idx}",
-                lambda: self.random_search_kernel(
+                lambda: tk.random_search_kernel(
                     nnf_ti,
                     error_map,
                     omega_map,
@@ -287,7 +271,7 @@ class TaichiBackend(BaseSynthesisBackend):
 
             self._timed_operation(
                 f"vote_{iter_idx}",
-                lambda: self.voting_kernel(
+                lambda: tk.voting_kernel(
                     output_image,
                     style_ti,
                     target_style_prev,
@@ -303,10 +287,10 @@ class TaichiBackend(BaseSynthesisBackend):
             )
 
             if iter_idx < search_vote_iters - 1:
-                self.eval_mask_kernel(
+                tk.eval_mask_kernel(
                     mask, output_image, target_style_prev, int(stop_threshold)
                 )
-                self.dilate_mask_kernel(mask2, mask, patch_size)
+                tk.dilate_mask_kernel(mask2, mask, patch_size)
                 mask.copy_(mask2)
             target_style_prev.copy_(output_image)
 

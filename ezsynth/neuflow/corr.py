@@ -3,26 +3,8 @@ import math
 import torch
 import torch.nn.functional as F
 
+from ..torch_ops.grid_sample_bilinear_pixel import grid_sample_bilinear_pixel_coords
 from . import utils
-
-
-def bilinear_sample(img, coords):
-    """Wrapper for grid_sample, uses pixel coordinates"""
-    H, W = img.shape[-2:]
-    xgrid, ygrid = coords.split([1, 1], dim=-1)
-    xgrid = 2 * xgrid / (W - 1) - 1
-    ygrid = 2 * ygrid / (H - 1) - 1
-
-    grid = torch.cat([xgrid, ygrid], dim=-1)
-
-    # Only apply cudnn flags on CUDA devices
-    if img.device.type == "cuda":
-        with torch.backends.cudnn.flags(enabled=False):
-            img = F.grid_sample(img, grid, align_corners=True)
-    else:
-        img = F.grid_sample(img, grid, align_corners=True)
-
-    return img
 
 
 class CorrBlock:
@@ -55,7 +37,9 @@ class CorrBlock:
 
         for level, corr in enumerate(corr_pyramid):
             curr_coords = coords / 2**level + self.delta
-            corr = bilinear_sample(corr, curr_coords)
+            corr = grid_sample_bilinear_pixel_coords(
+                corr, curr_coords, disable_cudnn_on_cuda=True
+            )
             corr = corr.view(b, h, w, -1)
             out_list.append(corr)
 

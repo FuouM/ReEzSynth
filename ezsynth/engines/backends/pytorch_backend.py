@@ -12,11 +12,10 @@ from ...torch_ops.patch_ops import extract_patches
 from ...torch_ops.patchmatch_ops import propagation_step, random_search_step, try_patch_batch
 from ...torch_ops.voting_ops import vote_plain, vote_weighted
 from ...utils.timer import SynthesisTimer
-from .base import BaseSynthesisBackend
 from .common import get_auto_torch_device, resample_tensor
 
 
-class PyTorchBackend(BaseSynthesisBackend):
+class PyTorchBackend:
     """
     PyTorch backend with CPU/GPU support using torch_ops.
     """
@@ -24,7 +23,8 @@ class PyTorchBackend(BaseSynthesisBackend):
     def __init__(
         self, ebsynth_config: EbsynthParamsConfig, pipeline_config: PipelineConfig
     ):
-        super().__init__(ebsynth_config, pipeline_config)
+        self.ebsynth_config = ebsynth_config
+        self.pipeline_config = pipeline_config
         self.device = get_auto_torch_device()
         if self.device == "cuda":
             torch.set_float32_matmul_precision("high")

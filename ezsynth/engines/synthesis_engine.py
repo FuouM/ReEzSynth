@@ -225,9 +225,8 @@ class PreparedSynthesisContext:
 
 class EbsynthEngine:
     """
-    A high-performance wrapper for the ebsynth library using a native
-    PyTorch C++/CUDA extension. This engine manages the pyramidal synthesis
-    process by calling a single-level CUDA kernel in a loop.
+    Multi-level patch-based synthesis: builds an image pyramid and runs the
+    configured backend (native extension, pure PyTorch, or Taichi) level by level.
     """
 
     def __init__(

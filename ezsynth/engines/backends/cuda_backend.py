@@ -6,10 +6,9 @@ import torch
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ... import consts
 from ...utils.timer import SynthesisTimer
-from .base import BaseSynthesisBackend
 
 
-class CudaBackend(BaseSynthesisBackend):
+class CudaBackend:
     """
     CUDA backend using the native ebsynth_torch extension.
     Also supports CPU tensors through the unified dispatch layer.
@@ -18,7 +17,8 @@ class CudaBackend(BaseSynthesisBackend):
     def __init__(
         self, ebsynth_config: EbsynthParamsConfig, pipeline_config: PipelineConfig, device: str = None
     ):
-        super().__init__(ebsynth_config, pipeline_config)
+        self.ebsynth_config = ebsynth_config
+        self.pipeline_config = pipeline_config
         if not consts.EXTENSION_AVAILABLE or consts.ebsynth_torch is None:
             raise RuntimeError(
                 "Extension backend selected but ebsynth_torch extension is not available."

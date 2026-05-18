@@ -25,13 +25,10 @@ COST_FUNCTION_SSD = 0
 COST_FUNCTION_NCC = 1
 
 # --- Extension Availability ---
-# Updated when ensure_ebsynth_extension() successfully loads the native module (CUDA backend).
+# Updated when ``ensure_extension_loaded()`` successfully loads the native module.
 EXTENSION_AVAILABLE = False
 EXTENSION_CUDA_AVAILABLE = False
 ebsynth_torch = None  # Will be set if extension is available
-
-# Backward compatibility aliases
-CUDA_EXTENSION_AVAILABLE = False  # Deprecated, use EXTENSION_AVAILABLE instead
 
 # --- Native extension loader controls ---
 # When False (default): try pip-installed `ebsynth_torch` first, then JIT.
@@ -100,22 +97,13 @@ def ensure_extension_loaded() -> bool:
     return EXTENSION_AVAILABLE and ebsynth_torch is not None
 
 
-def ensure_ebsynth_extension() -> None:
-    """Load native ebsynth_torch once when the CUDA C++ backend is requested."""
-    ensure_extension_loaded()
-
-
 def _load_extension():
     """
     Dynamically load the ebsynth extension and set EXTENSION_AVAILABLE.
-    Called from ensure_ebsynth_extension() before first use by CudaBackend.
+    Invoked from ``ensure_extension_loaded()`` before first use by the CUDA backend.
     Supports both CPU and CUDA backends.
     """
-    global \
-        EXTENSION_AVAILABLE, \
-        EXTENSION_CUDA_AVAILABLE, \
-        CUDA_EXTENSION_AVAILABLE, \
-        ebsynth_torch
+    global EXTENSION_AVAILABLE, EXTENSION_CUDA_AVAILABLE, ebsynth_torch
 
     if EXTENSION_AVAILABLE and ebsynth_torch is not None:
         return
@@ -136,7 +124,6 @@ def _load_extension():
 
             EXTENSION_AVAILABLE = True
             EXTENSION_CUDA_AVAILABLE = True  # Assume CUDA if direct import works
-            CUDA_EXTENSION_AVAILABLE = True
             if JIT_VERBOSE:
                 print("Extension loaded successfully (direct import).")
             return  # Success, no need to continue
@@ -165,7 +152,6 @@ def _load_extension():
             EXTENSION_CUDA_AVAILABLE = (
                 is_cuda_available() if EXTENSION_AVAILABLE else False
             )
-            CUDA_EXTENSION_AVAILABLE = EXTENSION_AVAILABLE  # Backward compatibility
             ebsynth_torch = jit_ebsynth_torch
             if EXTENSION_AVAILABLE:
                 if JIT_VERBOSE:
@@ -182,7 +168,6 @@ def _load_extension():
             ebsynth_torch = None
             EXTENSION_AVAILABLE = False
             EXTENSION_CUDA_AVAILABLE = False
-            CUDA_EXTENSION_AVAILABLE = False
 
     if not EXTENSION_AVAILABLE:
         print("\n[WARNING] ebsynth_torch extension not available.")

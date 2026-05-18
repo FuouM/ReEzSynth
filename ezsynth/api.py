@@ -92,8 +92,8 @@ class RunConfig:
 
 class Ezsynth:
     """
-    A high-level API for ReEzSynth that mimics the interface of older versions,
-    providing a simplified way to run the synthesis pipeline without managing config files.
+    High-level path-based video synthesis: builds ``SynthesisConfigs`` from simple
+    directory arguments and runs ``SynthesisPipeline`` (same core as the CLI).
     """
 
     def __init__(
@@ -236,24 +236,9 @@ class Ezsynth:
             self._temp_cache_dir.cleanup()
 
 
-# --- START OF NEW CONTENT ---
-
-
-def load_guide(
-    source: Union[str, np.ndarray],
-    target: Union[str, np.ndarray],
-    weight: float = 1.0,
-) -> GuideObject:
-    """
-    Helper function to load a guide pair from paths or use existing NumPy arrays.
-    """
-    return GuideObject.load_guide(source, target, weight)
-
-
 class ImageSynth:
     """
-    A high-level API for single-image synthesis, similar to the old Ezsynth.
-    This class is a lightweight wrapper around the core EbsynthEngine.
+    Single-image stylization using ``EbsynthEngine`` with ``GuideObject`` inputs.
     """
 
     def __init__(
@@ -268,8 +253,7 @@ class ImageSynth:
             style_image (Union[str, np.ndarray]): Path to the style image or the image as a NumPy array.
             config (RunConfig): An object containing detailed synthesis parameters.
         """
-        self.style = load_guide(style_image, style_image).keyframe
-        # Use load_guide to handle path or array
+        self.style = GuideObject.load_guide(style_image, style_image).keyframe
 
         ebsynth_params_cfg = EbsynthParamsConfig(
             uniformity=config.uniformity,
@@ -318,14 +302,12 @@ class ImageSynth:
         if not guides:
             raise ValueError("At least one guide must be provided to the run() method.")
 
-        processed_guides = [load_guide(src, tgt, weight) for src, tgt, weight in guides]
+        processed_guides = [
+            GuideObject.load_guide(src, tgt, weight) for src, tgt, weight in guides
+        ]
 
-        # EbsynthEngine handles the synthesis directly
         stylized_image, error_map = self.engine.run(
             self.style, guides=processed_guides, benchmark=benchmark
         )
 
         return stylized_image, error_map
-
-
-# --- END OF NEW CONTENT ---
