@@ -27,7 +27,28 @@ class _FakeEngine:
         return target.copy(), error
 
 
-def test_pass_runner_uses_precomputed_guides_and_flow():
+def test_pass_runner_uses_precomputed_guides_and_flow(monkeypatch):
+    class _FakeContext:
+        def __init__(self, engine, style_img, guides):
+            self.engine = engine
+            self.style_img = style_img
+
+        def run_frame(
+            self,
+            guides,
+            initial_nnf=None,
+            return_error=True,
+            output_nnf=False,
+        ):
+            return self.engine.run(
+                self.style_img,
+                guides=guides,
+                initial_nnf=initial_nnf,
+                output_nnf=output_nnf,
+            )
+
+    monkeypatch.setattr("ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext)
+
     style = np.full((2, 2, 3), 255, dtype=np.uint8)
     content = [
         np.zeros((2, 2, 3), dtype=np.uint8),

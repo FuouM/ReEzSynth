@@ -10,7 +10,7 @@ from ..guide import GuideObject
 from ..precompute import PrecomputeState
 from ..utils.sequence_utils import SynthesisSequence
 from ..utils.warp_utils import PositionalGuide, Warp
-from .synthesis_engine import EbsynthEngine
+from .synthesis_engine import EbsynthEngine, PreparedSynthesisContext
 
 
 class SynthesisPassRunner:
@@ -59,6 +59,7 @@ class SynthesisPassRunner:
 
         previous_nnf = None
         use_propagation = self.engine.pipeline_config.use_temporal_nnf_propagation
+        synthesis_context = None
 
         for source_idx in tqdm(frame_indices, desc=desc):
             target_idx = source_idx + step
@@ -93,10 +94,13 @@ class SynthesisPassRunner:
                 )
                 initial_nnf_for_target = warped_nnf_float.astype(np.int32)
 
-            run_output = self.engine.run(
-                style_img,
+            if synthesis_context is None:
+                synthesis_context = PreparedSynthesisContext(self.engine, style_img, guides)
+
+            run_output = synthesis_context.run_frame(
                 guides=guides,
                 initial_nnf=initial_nnf_for_target,
+                return_error=collect_intermediates,
                 output_nnf=use_propagation,
             )
 
