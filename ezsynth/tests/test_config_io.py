@@ -34,6 +34,8 @@ def test_configs_from_mapping_builds_config_sections():
     assert configs.precomputation.flow_engine == "NeuFlow"
     assert configs.precomputation.flow_model == "neuflow_mixed"
     assert configs.debug.save_flow_viz is False
+    assert configs.pipeline.use_forward_warping is False
+    assert configs.blending.use_forward_warping is False
 
 
 def test_configs_from_yaml_loads_config_sections(tmp_path: Path):

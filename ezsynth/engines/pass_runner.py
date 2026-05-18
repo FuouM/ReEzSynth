@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import cv2
 import numpy as np
 from tqdm import tqdm
 
@@ -74,6 +75,7 @@ class SynthesisPassRunner:
             target_idx = source_idx + step
             transition_idx = source_idx if is_forward else target_idx
             flow = self.precompute_state.fwd_flows[transition_idx]
+            directed_flow = flow * (-step)
             occlusion_masks = (
                 self.precompute_state.fwd_occlusion_masks
                 if is_forward
@@ -86,12 +88,21 @@ class SynthesisPassRunner:
             if collect_intermediates:
                 flows_used_in_pass.append(flow)
 
+            s2t_flow = flow if is_forward else -flow
             previous_stylized_frame = stylized_frames[-1]
-            warped_previous_style = warp.run_warping(
-                previous_stylized_frame,
-                flow * (-step),
+            if pipeline_config.use_forward_warping:
+                warped_previous_style = warp.run_forward_warping(
+                    previous_stylized_frame,
+                    s2t_flow,
+                )
+            else:
+                warped_previous_style = warp.run_warping(
+                    previous_stylized_frame,
+                    directed_flow,
+                )
+            current_target_pos_guide = pos_guider.create_from_flow(
+                s2t_flow if pipeline_config.use_forward_warping else flow
             )
-            current_target_pos_guide = pos_guider.create_from_flow(flow)
 
             guides = self._prepare_guides_for_frame(
                 keyframe_idx=keyframe_idx,
@@ -105,11 +116,12 @@ class SynthesisPassRunner:
 
             initial_nnf_for_target = None
             if use_propagation and previous_nnf is not None:
-                warped_nnf_float = warp.run_warping(
-                    previous_nnf.astype(np.float32),
-                    flow * (-step),
+                warped_nnf_float = warp.run_warping_float_map(
+                    previous_nnf,
+                    directed_flow,
+                    interpolation=cv2.INTER_NEAREST,
                 )
-                initial_nnf_for_target = warped_nnf_float.astype(np.int32)
+                initial_nnf_for_target = warped_nnf_float.astype(np.int32, copy=False)
 
             modulation_map = None
             if (
@@ -181,10 +193,18 @@ class SynthesisPassRunner:
         key = (height, width)
         tools = self._warp_tools_cache.get(key)
         if tools is None:
-            use_taichi = self.engine.ebsynth_config.backend == "taichi"
+            use_taichi = (
+                self.engine.ebsynth_config.backend == "taichi"
+                or self.engine.pipeline_config.use_forward_warping
+            )
             tools = (
                 Warp(height, width, use_taichi=use_taichi),
-                PositionalGuide(height, width, use_taichi=use_taichi),
+                PositionalGuide(
+                    height,
+                    width,
+                    use_taichi=use_taichi,
+                    use_forward_warp=self.engine.pipeline_config.use_forward_warping,
+                ),
             )
             self._warp_tools_cache[key] = tools
         return tools

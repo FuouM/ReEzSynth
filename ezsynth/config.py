@@ -75,6 +75,7 @@ class PipelineConfig(BaseModel):
     occlusion_fill_radius: int = 3
     occlusion_fill_feather: int = 5
     occlusion_refine_feather: int = 5
+    use_forward_warping: bool = False
 
 
 class BlendingConfig(BaseModel):
@@ -91,6 +92,7 @@ class BlendingConfig(BaseModel):
     poisson_grad_weight_l: float = 2.5  # Gradient weight for L channel
     poisson_grad_weight_ab: float = 0.5  # Gradient weight for a/b channels
     use_taichi_ops: bool = False
+    use_forward_warping: bool = False
 
 
 class EbsynthParamsConfig(BaseModel):

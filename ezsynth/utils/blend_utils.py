@@ -18,9 +18,12 @@ class Blender:
         poisson_grad_weight_l=2.5,
         poisson_grad_weight_ab=0.5,
         use_taichi_ops=False,
+        use_forward_warping=False,
     ):
-        self.warp = Warp(height, width, use_taichi=use_taichi_ops)
+        use_taichi = use_taichi_ops or use_forward_warping
+        self.warp = Warp(height, width, use_taichi=use_taichi)
         self.use_taichi_ops = use_taichi_ops
+        self.use_forward_warping = use_forward_warping
         self.reconstructor = Reconstructor(
             solver=poisson_solver,
             poisson_maxiter=poisson_maxiter,
@@ -47,17 +50,24 @@ class Blender:
         for i, mask in tqdm(
             enumerate(masks), total=len(masks), desc="Warping blend masks"
         ):
-            # The original logic used the previous frame's flow to warp the current mask.
-            # We replicate this for perfect consistency. For the first mask, use a zero flow.
-            flow = flows_fwd[i - 1] if i > 0 else np.zeros_like(flows_fwd[0])
-
-            warped_prev_mask = self.warp.run_warping(prev_mask.astype(np.float32), flow)
+            if i == 0:
+                warped_prev_mask = prev_mask
+            elif self.use_forward_warping:
+                warped_prev_mask = self.warp.run_forward_warping(
+                    prev_mask,
+                    flows_fwd[i - 1],
+                )
+            else:
+                warped_prev_mask = self.warp.run_warping_float_map(
+                    prev_mask,
+                    flows_fwd[i - 1],
+                )
 
             final_mask = np.where(
                 (warped_prev_mask > 0.5) & (mask == 0), 1, mask
             ).astype(np.uint8)
 
-            prev_mask = final_mask.copy()
+            prev_mask = final_mask
             warped_masks.append(final_mask)
         return warped_masks
 

@@ -8,6 +8,7 @@ from ezsynth.utils.sequence_utils import (
     SynthesisSequence,
     create_directional_sequences,
 )
+from ezsynth.utils.warp_utils import Warp
 
 
 class _FakeEngine:
@@ -155,6 +156,69 @@ def test_pass_runner_uses_occlusion_modulation(monkeypatch):
     modulation = engine.calls[0]["modulation_map"]
     assert modulation[0, 0, 0] == 255
     assert modulation[0, 1, 0] == 32
+
+
+def test_pass_runner_uses_forward_warping_when_enabled(monkeypatch):
+    class _FakeContext:
+        def __init__(self, engine, style_img, guides):
+            self.engine = engine
+            self.style_img = style_img
+
+        def run_frame(
+            self,
+            guides,
+            modulation_map=None,
+            initial_nnf=None,
+            return_error=True,
+            output_nnf=False,
+        ):
+            return self.engine.run(
+                self.style_img,
+                guides=guides,
+                modulation_map=modulation_map,
+                initial_nnf=initial_nnf,
+                output_nnf=output_nnf,
+            )
+
+    calls = []
+
+    def _fake_forward(self, img, flow, **kwargs):
+        calls.append(flow.copy())
+        return img.copy()
+
+    monkeypatch.setattr("ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext)
+    monkeypatch.setattr(Warp, "run_forward_warping", _fake_forward)
+
+    style = np.full((2, 2, 3), 255, dtype=np.uint8)
+    content = [
+        np.zeros((2, 2, 3), dtype=np.uint8),
+        np.full((2, 2, 3), 10, dtype=np.uint8),
+    ]
+    flow = np.ones((2, 2, 2), dtype=np.float32)
+    state = PrecomputeState(
+        edge_maps=[frame.copy() for frame in content],
+        fwd_flows=[flow],
+    )
+    engine = _FakeEngine(
+        PipelineConfig(
+            use_temporal_nnf_propagation=False,
+            use_forward_warping=True,
+        )
+    )
+
+    SynthesisPassRunner(
+        engine=engine,
+        precompute_state=state,
+        debug_cfg=DebugConfig(),
+    ).run(
+        seq=SynthesisSequence(0, 1, SynthesisSequence.MODE_FWD, [0]),
+        style_img=style,
+        is_forward=True,
+        content_frames=content,
+    )
+
+    assert len(calls) == 2
+    np.testing.assert_array_equal(calls[0], flow)
 
 
 def test_scheduler_removes_duplicate_sequence_boundaries(monkeypatch):

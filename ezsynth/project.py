@@ -12,7 +12,12 @@ from .service import SynthesisConfigs
 
 
 class Project:
-    def __init__(self, config_path: str, backend: str = None):
+    def __init__(
+        self,
+        config_path: str,
+        backend: str = None,
+        forward_warp: bool = None,
+    ):
         self.config_path = Path(config_path)
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found at {config_path}")
@@ -22,6 +27,11 @@ class Project:
         # Override backend if specified via command line
         if backend:
             self.configs.ebsynth_params.backend = backend
+
+        # Override forward warp if specified via command line
+        if forward_warp is not None:
+            self.configs.blending.use_forward_warping = forward_warp
+            self.configs.pipeline.use_forward_warping = forward_warp
 
         # 1. Initialize data manager
         self.data = ProjectData.from_config(self.configs.project)
