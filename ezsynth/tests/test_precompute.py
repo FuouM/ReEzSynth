@@ -3,8 +3,14 @@ from pathlib import Path
 import numpy as np
 
 from ezsynth.config import DebugConfig, PipelineConfig, PrecomputationConfig, ProjectConfig
+from ezsynth.flow.run import (
+    compute_backward_optical_flow_sequence,
+    compute_bidirectional_optical_flow_sequence,
+    compute_optical_flow_sequence,
+    optical_flow_engine,
+)
 from ezsynth.precompute import compute_guide
-from ezsynth.precompute_runner import PrecomputeRunner, compute_optical_flow_sequence
+from ezsynth.precompute_runner import PrecomputeRunner
 
 
 def test_compute_guide_uses_cache_when_exact_files_exist(tmp_path: Path):
@@ -77,21 +83,73 @@ def test_precompute_runner_populates_state_without_heavy_engines(tmp_path, monke
 
 
 def test_compute_optical_flow_sequence_supports_opencv_engine(monkeypatch):
-    class _FakeOpenCVFlowEngine:
-        def __init__(self, method):
-            self.method = method
-
-        def compute(self, frames):
-            return [np.zeros((2, 2, 2), dtype=np.float32)]
-
     monkeypatch.setattr(
-        "ezsynth.engines.flow_engine.OpenCVFlowEngine",
-        _FakeOpenCVFlowEngine,
+        "ezsynth.flow.run.compute_opencv_flow_sequence",
+        lambda frames, method: [np.zeros((2, 2, 2), dtype=np.float32)],
     )
 
     flows = compute_optical_flow_sequence(
         [np.zeros((2, 2, 3), dtype=np.uint8) for _ in range(2)],
         PrecomputationConfig(flow_engine="OpenCV", opencv_flow_method="FARNEBACK"),
     )
+
+    assert len(flows) == 1
+
+
+def test_backward_flow_reverses_reversed_sequence(monkeypatch):
+    monkeypatch.setattr(
+        "ezsynth.flow.run.compute_optical_flow_sequence",
+        lambda frames, precomputation_cfg: [
+            frame[..., :2].astype(np.float32) for frame in frames[:-1]
+        ],
+    )
+    frames = [np.full((2, 2, 3), i, dtype=np.uint8) for i in range(3)]
+
+    flows = compute_backward_optical_flow_sequence(
+        frames,
+        PrecomputationConfig(flow_engine="OpenCV"),
+    )
+
+    assert [int(flow[0, 0, 0]) for flow in flows] == [1, 2]
+
+
+def test_bidirectional_flow_reuses_session(monkeypatch):
+    calls = []
+
+    def _fake_engine(precomputation_cfg):
+        class _Session:
+            def __enter__(self):
+                def _compute(frames):
+                    calls.append([int(frame[0, 0, 0]) for frame in frames])
+                    return [np.zeros((2, 2, 2), dtype=np.float32) for _ in frames[:-1]]
+
+                return _compute
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+        return _Session()
+
+    monkeypatch.setattr("ezsynth.flow.run.optical_flow_engine", _fake_engine)
+    frames = [np.full((2, 2, 3), i, dtype=np.uint8) for i in range(3)]
+
+    fwd, bwd = compute_bidirectional_optical_flow_sequence(
+        frames,
+        PrecomputationConfig(flow_engine="OpenCV"),
+    )
+
+    assert len(fwd) == 2
+    assert len(bwd) == 2
+    assert calls == [[0, 1, 2], [2, 1, 0]]
+
+
+def test_optical_flow_engine_session_supports_opencv():
+    frames = [
+        np.zeros((16, 16, 3), dtype=np.uint8),
+        np.ones((16, 16, 3), dtype=np.uint8),
+    ]
+
+    with optical_flow_engine(PrecomputationConfig(flow_engine="OpenCV")) as compute:
+        flows = compute(frames)
 
     assert len(flows) == 1

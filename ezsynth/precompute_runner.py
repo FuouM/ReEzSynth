@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
-import torch
 from tqdm import tqdm
 
 from .config import DebugConfig, PipelineConfig, PrecomputationConfig, ProjectConfig
+from .flow.run import compute_optical_flow_sequence
 from .precompute import PrecomputeState, compute_guide
 from .utils.feature_utils import generate_tracked_features, render_gaussian_guide
 from .utils.io_utils import load_frames_from_dir, write_image
@@ -99,44 +99,6 @@ class PrecomputeRunner:
             f32 = flow if flow.dtype == np.float32 else flow.astype(np.float32)
             bgr = flow_to_image(f32, convert_to_bgr=True)
             write_image(out_dir / f"{i:05d}.png", bgr)
-
-
-def compute_optical_flow_sequence(
-    content_frames: List[np.ndarray], precomputation_cfg: PrecomputationConfig
-) -> List[np.ndarray]:
-    from .engines.flow_engine import (
-        NeuFlowEngine,
-        OpenCVFlowEngine,
-        RAFTFlowEngine,
-        TorchVisionFlowEngine,
-    )
-
-    print("Instantiating Flow Engine...")
-    engine_name = precomputation_cfg.flow_engine.upper()
-    if engine_name == "RAFT":
-        engine = RAFTFlowEngine(
-            model_name=precomputation_cfg.flow_model,
-            arch=engine_name,
-        )
-    elif engine_name == "NEUFLOW":
-        engine = NeuFlowEngine(model_name=precomputation_cfg.flow_model)
-    elif engine_name == "OPENCV":
-        engine = OpenCVFlowEngine(method=precomputation_cfg.opencv_flow_method)
-    elif engine_name == "TORCHVISION":
-        engine = TorchVisionFlowEngine(
-            model_name=precomputation_cfg.torchvision_flow_model
-        )
-    else:
-        raise ValueError(f"Unknown flow engine: '{engine_name}'")
-
-    try:
-        return engine.compute(content_frames)
-    finally:
-        print("Optical flow computation complete. Releasing model from memory...")
-        del engine
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
 
 def compute_edge_maps(
     content_frames: List[np.ndarray], edge_method: str
