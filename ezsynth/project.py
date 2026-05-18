@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-import yaml
 
-from .config import MainConfig
+from .config_io import configs_from_yaml
 from .data import ProjectData
 from .pipeline import SynthesisPipeline
+from .service import SynthesisConfigs
 
 
 class Project:
@@ -16,22 +16,28 @@ class Project:
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found at {config_path}")
 
-        self.config = self._load_config()
+        self.configs = self._load_config()
 
         # Override backend if specified via command line
         if backend:
-            self.config.ebsynth_params.backend = backend
+            self.configs.ebsynth_params.backend = backend
 
         # 1. Initialize data manager
-        self.data = ProjectData(self.config.project)
+        self.data = ProjectData(self.configs.project)
 
         # 2. Initialize the main synthesis pipeline
-        self.pipeline = SynthesisPipeline(self.config, self.data)
+        self.pipeline = SynthesisPipeline(
+            ebsynth_params_cfg=self.configs.ebsynth_params,
+            pipeline_cfg=self.configs.pipeline,
+            project_cfg=self.configs.project,
+            precomputation_cfg=self.configs.precomputation,
+            blending_cfg=self.configs.blending,
+            data=self.data,
+            debug_cfg=self.configs.debug,
+        )
 
-    def _load_config(self) -> MainConfig:
-        with open(self.config_path, "r") as f:
-            config_data = yaml.safe_load(f)
-        return MainConfig(**config_data)
+    def _load_config(self) -> SynthesisConfigs:
+        return configs_from_yaml(self.config_path)
 
     def run(self) -> List[np.ndarray]:
         """

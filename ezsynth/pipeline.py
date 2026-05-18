@@ -6,7 +6,14 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from .config import MainConfig
+from .config import (
+    BlendingConfig,
+    DebugConfig,
+    EbsynthParamsConfig,
+    PipelineConfig,
+    PrecomputationConfig,
+    ProjectConfig,
+)
 from .data import ProjectData
 
 # Engines are imported just-in-time to save memory
@@ -31,14 +38,28 @@ class SynthesisPipeline:
     core synthesis engine for the main processing loop.
     """
 
-    def __init__(self, config: MainConfig, data: ProjectData):
-        self.config = config
+    def __init__(
+        self,
+        ebsynth_params_cfg: EbsynthParamsConfig,
+        pipeline_cfg: PipelineConfig,
+        project_cfg: ProjectConfig,
+        precomputation_cfg: PrecomputationConfig,
+        blending_cfg: BlendingConfig,
+        data: ProjectData,
+        debug_cfg: DebugConfig = None,
+    ):
         self.data = data
+        self.project_cfg = project_cfg
+        self.precomputation_cfg = precomputation_cfg
+        self.pipeline_cfg = pipeline_cfg
+        self.blending_cfg = blending_cfg
+        self.ebsynth_params_cfg = ebsynth_params_cfg
+        self.debug_cfg = debug_cfg if debug_cfg is not None else DebugConfig()
 
         # The synthesis engine is used repeatedly, so we initialize it here.
         # It's a C++ extension and manages its own memory efficiently.
         self.synthesis_engine = EbsynthEngine(
-            ebsynth_config=config.ebsynth_params, pipeline_config=config.pipeline
+            ebsynth_config=ebsynth_params_cfg, pipeline_config=pipeline_cfg
         )
 
         # Pre-computation results will be stored here after they are computed or loaded
@@ -49,11 +70,11 @@ class SynthesisPipeline:
     def _compute_optical_flow(self, content_frames: List[np.ndarray]):
         """Load or compute optical flow, ensuring the model is cleared from memory afterwards."""
         print("\n--- Pre-computation: Optical Flow ---")
-        cache_dir = Path(self.config.project.cache_dir) / "flow"
+        cache_dir = Path(self.project_cfg.cache_dir) / "flow"
         num_expected_flows = len(content_frames) - 1
 
         if (
-            not self.config.project.force_recompute_flow
+            not self.project_cfg.force_recompute_flow
             and has_exact_cache_files(cache_dir, "npy", num_expected_flows)
         ):
             self._fwd_flows = load_cached_flow(cache_dir)
@@ -64,13 +85,13 @@ class SynthesisPipeline:
             )
 
             print("Instantiating Flow Engine...")
-            engine_name = self.config.precomputation.flow_engine.upper()
+            engine_name = self.precomputation_cfg.flow_engine.upper()
             if engine_name == "RAFT":
                 engine = RAFTFlowEngine(
-                    model_name=self.config.precomputation.flow_model, arch=engine_name
+                    model_name=self.precomputation_cfg.flow_model, arch=engine_name
                 )
             elif engine_name == "NEUFLOW":
-                engine = NeuFlowEngine(model_name=self.config.precomputation.flow_model)
+                engine = NeuFlowEngine(model_name=self.precomputation_cfg.flow_model)
             else:
                 raise ValueError(f"Unknown flow engine: '{engine_name}'")
 
@@ -86,11 +107,11 @@ class SynthesisPipeline:
     def _compute_edge_maps(self, content_frames: List[np.ndarray]):
         """Load or compute edge maps."""
         print("\n--- Pre-computation: Edge Maps ---")
-        edge_method_name = self.config.precomputation.edge_method.lower()
-        cache_dir = Path(self.config.project.cache_dir) / f"edges_{edge_method_name}"
+        edge_method_name = self.precomputation_cfg.edge_method.lower()
+        cache_dir = Path(self.project_cfg.cache_dir) / f"edges_{edge_method_name}"
 
         if (
-            not self.config.project.force_recompute_edge
+            not self.project_cfg.force_recompute_edge
             and has_exact_cache_files(cache_dir, "png", len(content_frames))
         ):
             print(f"Loading edge maps from cache: {cache_dir}")
@@ -98,7 +119,7 @@ class SynthesisPipeline:
         else:
             from .engines.edge_engine import EdgeEngine  # Just-in-time import
 
-            engine = EdgeEngine(method=self.config.precomputation.edge_method)
+            engine = EdgeEngine(method=self.precomputation_cfg.edge_method)
             self._edge_maps = engine.compute(content_frames)
 
             save_edge_map_cache(self._edge_maps, cache_dir)
@@ -116,7 +137,7 @@ class SynthesisPipeline:
         self._compute_edge_maps(content_frames)
 
         # 3. Sparse Features (depends on flow, low VRAM)
-        if self.config.pipeline.use_sparse_feature_guide:
+        if self.pipeline_cfg.use_sparse_feature_guide:
             print("\nGenerating sparse feature guides...")
             tracked_points = generate_tracked_features(
                 content_frames[0], self._fwd_flows
@@ -156,7 +177,7 @@ class SynthesisPipeline:
         """
         Executes the complete synthesis process (fwd, rev, blend) for the video.
         """
-        style_indices = self.config.project.style_indices
+        style_indices = self.project_cfg.style_indices
         sequences = create_sequences(
             num_frames=len(content_frames), style_indices=style_indices
         )
@@ -204,7 +225,7 @@ class SynthesisPipeline:
                 )
 
                 h, w, _ = content_frames[0].shape
-                blender = Blender(h, w, **self.config.blending.model_dump())
+                blender = Blender(h, w, **self.blending_cfg.model_dump())
 
                 blended_frames = blender.run(
                     fwd_frames=fwd_frames,
@@ -232,7 +253,7 @@ class SynthesisPipeline:
         content_frames: List[np.ndarray],
     ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
         """Prepares the list of guide tuples for a single Ebsynth run."""
-        eb_params = self.config.ebsynth_params
+        eb_params = self.ebsynth_params_cfg
         guides = [
             (
                 self._edge_maps[keyframe_idx],
@@ -248,7 +269,7 @@ class SynthesisPipeline:
             (style_img, warped_previous_style, eb_params.warp_weight),
         ]
 
-        if self.config.pipeline.use_sparse_feature_guide and self._sparse_guides:
+        if self.pipeline_cfg.use_sparse_feature_guide and self._sparse_guides:
             guides.append(
                 (
                     self._sparse_guides[keyframe_idx],
@@ -290,7 +311,7 @@ class SynthesisPipeline:
         source_pos_guide = pos_guider.get_pristine_guide_uint8()
 
         previous_nnf = None
-        use_propagation = self.config.pipeline.use_temporal_nnf_propagation
+        use_propagation = self.pipeline_cfg.use_temporal_nnf_propagation
 
         for source_idx in tqdm(frame_indices, desc=desc):
             target_idx = source_idx + step

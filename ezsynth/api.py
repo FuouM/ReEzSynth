@@ -8,7 +8,6 @@ from .config import (
     BlendingConfig,
     DebugConfig,
     EbsynthParamsConfig,
-    MainConfig,
     PipelineConfig,
     PrecomputationConfig,
     ProjectConfig,
@@ -16,6 +15,7 @@ from .config import (
 from .data import ProjectData
 from .engines.synthesis_engine import EbsynthEngine
 from .pipeline import SynthesisPipeline
+from .service import SynthesisConfigs
 from .utils import io_utils
 
 
@@ -137,7 +137,7 @@ class Ezsynth:
             self._temp_cache_dir = tempfile.TemporaryDirectory()
             cache_dir = self._temp_cache_dir.name
 
-        # --- 1. Translate simple args into the structured MainConfig ---
+        # --- 1. Translate simple args into structured config sections ---
         project_cfg = ProjectConfig(
             name=Path(content_dir).name,
             content_dir=content_dir,
@@ -181,7 +181,7 @@ class Ezsynth:
             sparse_anchor_weight=config.sparse_anchor_weight,
         )
 
-        self.main_config = MainConfig(
+        self.configs = SynthesisConfigs(
             project=project_cfg,
             precomputation=precomputation_cfg,
             pipeline=pipeline_cfg,
@@ -191,8 +191,16 @@ class Ezsynth:
         )
 
         # --- 2. Initialize the core pipeline components ---
-        self.data = ProjectData(self.main_config.project)
-        self.pipeline = SynthesisPipeline(self.main_config, self.data)
+        self.data = ProjectData(self.configs.project)
+        self.pipeline = SynthesisPipeline(
+            ebsynth_params_cfg=self.configs.ebsynth_params,
+            pipeline_cfg=self.configs.pipeline,
+            project_cfg=self.configs.project,
+            precomputation_cfg=self.configs.precomputation,
+            blending_cfg=self.configs.blending,
+            data=self.data,
+            debug_cfg=self.configs.debug,
+        )
 
         print("\nEzsynth API initialized successfully.")
 
