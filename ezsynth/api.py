@@ -14,10 +14,10 @@ from .config import (
 )
 from .data import ProjectData
 from .engines.synthesis_engine import EbsynthEngine
+from .guide import GuideObject
 from .output import OutputManager
 from .pipeline import SynthesisPipeline
 from .service import SynthesisConfigs
-from .utils import io_utils
 
 
 class RunConfig:
@@ -243,13 +243,11 @@ def load_guide(
     source: Union[str, np.ndarray],
     target: Union[str, np.ndarray],
     weight: float = 1.0,
-) -> Tuple[np.ndarray, np.ndarray, float]:
+) -> GuideObject:
     """
     Helper function to load a guide pair from paths or use existing NumPy arrays.
     """
-    src_img = io_utils.read_image(source) if isinstance(source, str) else source
-    tgt_img = io_utils.read_image(target) if isinstance(target, str) else target
-    return (src_img, tgt_img, weight)
+    return GuideObject.load_guide(source, target, weight)
 
 
 class ImageSynth:
@@ -270,7 +268,7 @@ class ImageSynth:
             style_image (Union[str, np.ndarray]): Path to the style image or the image as a NumPy array.
             config (RunConfig): An object containing detailed synthesis parameters.
         """
-        self.style = load_guide(style_image, style_image)[0]
+        self.style = load_guide(style_image, style_image).keyframe
         # Use load_guide to handle path or array
 
         ebsynth_params_cfg = EbsynthParamsConfig(

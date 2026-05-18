@@ -22,7 +22,7 @@ class _FakeEngine:
                 "output_nnf": output_nnf,
             }
         )
-        target = guides[1][1]
+        target = guides[1].target
         error = np.zeros(target.shape[:2], dtype=np.float32)
         return target.copy(), error
 
@@ -56,6 +56,7 @@ def test_pass_runner_uses_precomputed_guides_and_flow():
     assert flows[0] is state.fwd_flows[0]
     assert nnfs == []
     assert len(engine.calls[0]["guides"]) == 4
+    assert engine.calls[0]["guides"][0].weight == engine.ebsynth_config.edge_weight
     np.testing.assert_array_equal(frames[-1], content[-1])
 
 

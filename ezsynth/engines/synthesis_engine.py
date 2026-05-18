@@ -13,6 +13,7 @@ from ..consts import (
     EBSYNTH_VOTEMODE_WEIGHTED,
     ebsynth_torch,
 )
+from ..guide import GuideObject
 from ..torch_ops import SynthesisTimer
 from .backends import CudaBackend, PyTorchBackend, TaichiBackend
 
@@ -90,7 +91,7 @@ class EbsynthEngine:
     def run(
         self,
         style_img: np.ndarray,
-        guides: List[Tuple[np.ndarray, np.ndarray, float]],
+        guides: List[GuideObject],
         modulation_map: Optional[np.ndarray] = None,
         initial_nnf: Optional[np.ndarray] = None,
         output_nnf: bool = False,
@@ -101,6 +102,9 @@ class EbsynthEngine:
         """
         Runs the full pyramidal synthesis process.
         """
+        _validate_image_array(style_img, "style_img")
+        _validate_guides(guides)
+
         if benchmark:
             self.benchmark_enabled = True
             self.timer.reset()
@@ -123,9 +127,9 @@ class EbsynthEngine:
             nonlocal source_guide_cat, target_guide_cat, modulation_tensor
 
             style_tensor = torch.from_numpy(style_img).to(self.device)
-            guides_source_np = [g[0] for g in guides]
-            guides_target_np = [g[1] for g in guides]
-            guide_weights_py = [g[2] for g in guides]
+            guides_source_np = [g.keyframe for g in guides]
+            guides_target_np = [g.target for g in guides]
+            guide_weights_py = [g.weight for g in guides]
 
             source_guide_cat = torch.from_numpy(
                 np.concatenate(guides_source_np, axis=2)
@@ -398,3 +402,29 @@ class EbsynthEngine:
             return stylized_image_np, error_map_np, nnf_np
 
         return stylized_image_np, error_map_np
+
+
+def _validate_image_array(array: np.ndarray, name: str) -> None:
+    if not isinstance(array, np.ndarray):
+        raise TypeError(f"{name} must be a NumPy array.")
+    if array.ndim != 3:
+        raise ValueError(f"{name} must be an HWC image, got shape {array.shape}.")
+    if array.shape[2] <= 0:
+        raise ValueError(f"{name} must have at least one channel.")
+    if array.dtype != np.uint8:
+        raise ValueError(f"{name} must be uint8, got {array.dtype}.")
+
+
+def _validate_guides(guides: List[GuideObject]) -> None:
+    if not guides:
+        raise ValueError("At least one guide is required.")
+    for i, guide in enumerate(guides):
+        if not isinstance(guide, GuideObject):
+            raise TypeError(f"guides[{i}] must be a GuideObject.")
+        _validate_image_array(guide.keyframe, f"guides[{i}].keyframe")
+        _validate_image_array(guide.target, f"guides[{i}].target")
+        if guide.keyframe.shape[2] != guide.target.shape[2]:
+            raise ValueError(
+                f"guides[{i}] keyframe/target channel mismatch: "
+                f"{guide.keyframe.shape[2]} vs {guide.target.shape[2]}"
+            )

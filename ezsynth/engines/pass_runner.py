@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 
 from ..config import DebugConfig
+from ..guide import GuideObject
 from ..precompute import PrecomputeState
 from ..utils.sequence_utils import SynthesisSequence
 from ..utils.warp_utils import PositionalGuide, Warp
@@ -140,21 +141,29 @@ class SynthesisPassRunner:
         source_pos_guide: np.ndarray,
         target_pos_guide: np.ndarray,
         content_frames: List[np.ndarray],
-    ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+    ) -> List[GuideObject]:
         eb_params = self.engine.ebsynth_config
         guides = [
-            (
-                self.precompute_state.edge_maps[keyframe_idx],
-                self.precompute_state.edge_maps[target_idx],
-                eb_params.edge_weight,
+            GuideObject(
+                keyframe=self.precompute_state.edge_maps[keyframe_idx],
+                target=self.precompute_state.edge_maps[target_idx],
+                weight=eb_params.edge_weight,
             ),
-            (
-                content_frames[keyframe_idx],
-                content_frames[target_idx],
-                eb_params.image_weight,
+            GuideObject(
+                keyframe=content_frames[keyframe_idx],
+                target=content_frames[target_idx],
+                weight=eb_params.image_weight,
             ),
-            (source_pos_guide, target_pos_guide, eb_params.pos_weight),
-            (style_img, warped_previous_style, eb_params.warp_weight),
+            GuideObject(
+                keyframe=source_pos_guide,
+                target=target_pos_guide,
+                weight=eb_params.pos_weight,
+            ),
+            GuideObject(
+                keyframe=style_img,
+                target=warped_previous_style,
+                weight=eb_params.warp_weight,
+            ),
         ]
 
         if (
@@ -162,10 +171,10 @@ class SynthesisPassRunner:
             and self.precompute_state.sparse_guides
         ):
             guides.append(
-                (
-                    self.precompute_state.sparse_guides[keyframe_idx],
-                    self.precompute_state.sparse_guides[target_idx],
-                    eb_params.sparse_anchor_weight,
+                GuideObject(
+                    keyframe=self.precompute_state.sparse_guides[keyframe_idx],
+                    target=self.precompute_state.sparse_guides[target_idx],
+                    weight=eb_params.sparse_anchor_weight,
                 )
             )
         return guides
