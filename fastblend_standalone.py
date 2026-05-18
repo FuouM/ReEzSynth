@@ -21,7 +21,6 @@ import argparse
 from pathlib import Path
 
 import torch
-from FastBlend.src.engine import FastBlendEngine, FastBlendInput_Sequence
 
 from ezsynth.utils.fastblend_cli import (
     create_fastblend_config,
@@ -29,6 +28,7 @@ from ezsynth.utils.fastblend_cli import (
     save_frames,
 )
 from ezsynth.utils.video import export_frames_to_browser_h264_mp4
+from FastBlend.src.engine import FastBlendEngine, FastBlendInput_Sequence
 
 
 def main():
@@ -192,9 +192,7 @@ def main():
             else:
                 od = Path(args.output_dir)
                 mp4_path = od.parent / f"{od.name}.mp4"
-            export_frames_to_browser_h264_mp4(
-                fastblend_frames, mp4_path, args.mp4_fps
-            )
+            export_frames_to_browser_h264_mp4(fastblend_frames, mp4_path, args.mp4_fps)
         except FileNotFoundError as e:
             print(f"\n[ERROR] {e}")
             if "ffmpeg" not in str(e).lower():

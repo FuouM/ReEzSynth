@@ -1,5 +1,5 @@
-import platform
 import importlib
+import platform
 from pathlib import Path
 
 import torch
@@ -26,6 +26,7 @@ _module_source = None
 
 def _log(msg):
     print(f"[ebsynth_loader] {msg}")
+
 
 # 1. Try to load pre-compiled extension (wheel)
 if not FORCE_JIT:
@@ -64,11 +65,13 @@ if ebsynth_torch is None and not FORCE_WHEEL:
 
     # CUDA sources
     if cuda_available:
-        _source_files.extend([
-            _ext_dir / "dispatch.cu",
-            _ext_dir / "kernels.cu",
-            _ext_dir / "integral_image.cu",
-        ])
+        _source_files.extend(
+            [
+                _ext_dir / "dispatch.cu",
+                _ext_dir / "kernels.cu",
+                _ext_dir / "integral_image.cu",
+            ]
+        )
 
     _source_files_str = [str(p) for p in _source_files]
 

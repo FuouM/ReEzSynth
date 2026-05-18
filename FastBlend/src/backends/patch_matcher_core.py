@@ -145,7 +145,9 @@ class FaceBlitPatchMatcherCore(ABC):
         return self._kernel_pairwise_patch_error(source, nnf)
 
     def get_error(self, tensors: PatchMatchTensors, nnf: torch.Tensor) -> torch.Tensor:
-        error_guide = self.get_patch_error(tensors.source_guide, nnf, tensors.target_guide)
+        error_guide = self.get_patch_error(
+            tensors.source_guide, nnf, tensors.target_guide
+        )
         if self.use_mean_target_style:
             target_style = self.apply_nnf_to_image(nnf, tensors.source_style)
             target_style = target_style.mean(dim=0, keepdim=True)
@@ -155,9 +157,7 @@ class FaceBlitPatchMatcherCore(ABC):
         if self.use_pairwise_patch_error:
             error_style = self.get_pairwise_patch_error(tensors.source_style, nnf)
         else:
-            error_style = self.get_patch_error(
-                tensors.source_style, nnf, target_style
-            )
+            error_style = self.get_patch_error(tensors.source_style, nnf, target_style)
         return error_guide * self.guide_weight + error_style
 
     def clamp_bound(self, nnf: torch.Tensor) -> torch.Tensor:

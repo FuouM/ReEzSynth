@@ -10,6 +10,7 @@ for _key, _value in RUNPY_STARTUP_ENV.items():
     os.environ[_key] = _value
 
 import torch
+
 from ezsynth.project import Project
 from ezsynth.utils.video import export_frames_to_browser_h264_mp4
 

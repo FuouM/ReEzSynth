@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import torch
+
 from ezsynth.api import ImageSynth, RunConfig
 from ezsynth.guide import GuideObject
 from ezsynth.utils.io_utils import write_image
