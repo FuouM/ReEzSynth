@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from ezsynth.config import BlendingConfig, DebugConfig, EbsynthParamsConfig
+from ezsynth.config import PrecomputationConfig
 from ezsynth.config_io import configs_from_mapping, configs_from_yaml
 from ezsynth.service import SynthesisConfigs
 
@@ -30,6 +31,8 @@ def test_configs_from_mapping_builds_config_sections():
     assert isinstance(configs.ebsynth_params, EbsynthParamsConfig)
     assert isinstance(configs.debug, DebugConfig)
     assert configs.blending.poisson_solver == "lsqr"
+    assert configs.precomputation.flow_engine == "NeuFlow"
+    assert configs.precomputation.flow_model == "neuflow_mixed"
     assert configs.debug.save_flow_viz is False
 
 
@@ -66,3 +69,19 @@ def test_configs_from_yaml_requires_mapping(tmp_path: Path):
 
     with pytest.raises(ValueError, match="YAML mapping"):
         configs_from_yaml(config_path)
+
+
+def test_precomputation_config_validates_flow_model_matches_engine():
+    with pytest.raises(ValueError, match="RAFT checkpoint"):
+        PrecomputationConfig(flow_engine="RAFT", flow_model="neuflow_mixed")
+
+    with pytest.raises(ValueError, match="NeuFlow checkpoint"):
+        PrecomputationConfig(flow_engine="NeuFlow", flow_model="sintel")
+
+
+def test_precomputation_config_accepts_alternate_flow_engines():
+    opencv = PrecomputationConfig(flow_engine="OpenCV")
+    torchvision = PrecomputationConfig(flow_engine="TorchVision")
+
+    assert opencv.opencv_flow_method == "DIS"
+    assert torchvision.torchvision_flow_model == "raft_large"

@@ -4,7 +4,7 @@ import numpy as np
 
 from ezsynth.config import DebugConfig, PipelineConfig, PrecomputationConfig, ProjectConfig
 from ezsynth.precompute import compute_guide
-from ezsynth.precompute_runner import PrecomputeRunner
+from ezsynth.precompute_runner import PrecomputeRunner, compute_optical_flow_sequence
 
 
 def test_compute_guide_uses_cache_when_exact_files_exist(tmp_path: Path):
@@ -74,3 +74,24 @@ def test_precompute_runner_populates_state_without_heavy_engines(tmp_path, monke
     assert len(state.sparse_guides) == 2
     np.testing.assert_array_equal(state.edge_maps[0], edge)
     np.testing.assert_array_equal(state.sparse_guides[0], sparse)
+
+
+def test_compute_optical_flow_sequence_supports_opencv_engine(monkeypatch):
+    class _FakeOpenCVFlowEngine:
+        def __init__(self, method):
+            self.method = method
+
+        def compute(self, frames):
+            return [np.zeros((2, 2, 2), dtype=np.float32)]
+
+    monkeypatch.setattr(
+        "ezsynth.engines.flow_engine.OpenCVFlowEngine",
+        _FakeOpenCVFlowEngine,
+    )
+
+    flows = compute_optical_flow_sequence(
+        [np.zeros((2, 2, 3), dtype=np.uint8) for _ in range(2)],
+        PrecomputationConfig(flow_engine="OpenCV", opencv_flow_method="FARNEBACK"),
+    )
+
+    assert len(flows) == 1

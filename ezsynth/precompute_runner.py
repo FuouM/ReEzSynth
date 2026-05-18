@@ -104,7 +104,12 @@ class PrecomputeRunner:
 def compute_optical_flow_sequence(
     content_frames: List[np.ndarray], precomputation_cfg: PrecomputationConfig
 ) -> List[np.ndarray]:
-    from .engines.flow_engine import NeuFlowEngine, RAFTFlowEngine
+    from .engines.flow_engine import (
+        NeuFlowEngine,
+        OpenCVFlowEngine,
+        RAFTFlowEngine,
+        TorchVisionFlowEngine,
+    )
 
     print("Instantiating Flow Engine...")
     engine_name = precomputation_cfg.flow_engine.upper()
@@ -115,6 +120,12 @@ def compute_optical_flow_sequence(
         )
     elif engine_name == "NEUFLOW":
         engine = NeuFlowEngine(model_name=precomputation_cfg.flow_model)
+    elif engine_name == "OPENCV":
+        engine = OpenCVFlowEngine(method=precomputation_cfg.opencv_flow_method)
+    elif engine_name == "TORCHVISION":
+        engine = TorchVisionFlowEngine(
+            model_name=precomputation_cfg.torchvision_flow_model
+        )
     else:
         raise ValueError(f"Unknown flow engine: '{engine_name}'")
 

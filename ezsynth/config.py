@@ -1,6 +1,15 @@
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator
+
+from .flow.types import (
+    NEUFLOW_FLOW_MODELS,
+    RAFT_FLOW_MODELS,
+    FlowEngineName,
+    FlowModelName,
+    OpenCvFlowMethod,
+    TorchVisionRaftModel,
+)
 
 
 class ProjectConfig(BaseModel):
@@ -21,11 +30,24 @@ class ProjectConfig(BaseModel):
 
 
 class PrecomputationConfig(BaseModel):
-    flow_engine: str = "RAFT"  # Options: RAFT, NeuFlow
-    # Model name. For RAFT: 'sintel', 'kitti'.
-    # For NeuFlow: 'neuflow_sintel', 'neuflow_mixed', 'neuflow_things'.
-    flow_model: str = "sintel"
-    edge_method: str = "Classic"  # Classic, PAGE, PST
+    flow_engine: FlowEngineName = "NeuFlow"
+    # Interpretation depends on ``flow_engine`` (RAFT vs NeuFlow checkpoint names).
+    flow_model: FlowModelName = "neuflow_mixed"
+    edge_method: Literal["Classic", "PAGE", "PST"] = "Classic"
+    opencv_flow_method: OpenCvFlowMethod = "DIS"
+    torchvision_flow_model: TorchVisionRaftModel = "raft_large"
+
+    @model_validator(mode="after")
+    def _flow_model_matches_engine(self):
+        if self.flow_engine == "RAFT" and self.flow_model not in RAFT_FLOW_MODELS:
+            raise ValueError(
+                f"flow_model {self.flow_model!r} is not a RAFT checkpoint name {RAFT_FLOW_MODELS}"
+            )
+        if self.flow_engine == "NeuFlow" and self.flow_model not in NEUFLOW_FLOW_MODELS:
+            raise ValueError(
+                f"flow_model {self.flow_model!r} is not a NeuFlow checkpoint name {NEUFLOW_FLOW_MODELS}"
+            )
+        return self
 
 
 class PipelineConfig(BaseModel):
@@ -37,38 +59,25 @@ class PipelineConfig(BaseModel):
 
 
 class BlendingConfig(BaseModel):
-    poisson_solver: str = "lsqr"  # See validator for all options
+    poisson_solver: Literal[
+        "lsqr",
+        "lsmr",
+        "cg",
+        "amg",
+        "seamless",
+        "taichi-cg",
+        "disabled",
+    ] = "lsqr"
     poisson_maxiter: Optional[int] = None
     poisson_grad_weight_l: float = 2.5  # Gradient weight for L channel
     poisson_grad_weight_ab: float = 0.5  # Gradient weight for a/b channels
     use_taichi_ops: bool = False
 
-    @validator("poisson_solver")
-    def solver_must_be_valid(cls, v):
-        valid_solvers = [
-            # Standard Solvers
-            "lsqr",
-            "lsmr",
-            # Advanced CPU Solvers
-            "cg",
-            "amg",  # Requires pyamg
-            # Algorithmic Alternatives
-            "seamless",
-            # Taichi Solvers
-            "taichi-cg",
-            # Special
-            "disabled",
-        ]
-        solver = v.lower()
-        if solver not in valid_solvers:
-            raise ValueError(f"poisson_solver must be one of {valid_solvers}")
-        return solver
-
 
 class EbsynthParamsConfig(BaseModel):
     uniformity: float = 3500.0
     patch_size: int = 7
-    vote_mode: str = "weighted"  # 'weighted' or 'plain'
+    vote_mode: Literal["weighted", "plain"] = "weighted"
     search_vote_iters: int = 12
     patch_match_iters: int = 6
     stop_threshold: int = 5
@@ -80,9 +89,9 @@ class EbsynthParamsConfig(BaseModel):
     sigma_color: float = 10.0
     n_size_step: int = 1
     # New: Cost function for patch matching.
-    cost_function: str = "ssd"  # "ssd" or "ncc"
+    cost_function: Literal["ssd", "ncc"] = "ssd"
     # New: Backend for synthesis operations.
-    backend: str = "cuda"  # "cuda" or "torch"
+    backend: Literal["cuda", "torch", "taichi"] = "cuda"
     # New: Device for synthesis (allows CPU with C++ extension)
     device: Optional[str] = None  # None for auto-detect, or "cpu"/"cuda"
     extra_pass_3x3: bool = False
@@ -93,24 +102,6 @@ class EbsynthParamsConfig(BaseModel):
     sparse_anchor_weight: float = 10.0
     # New: Use optimized index_vector CPU backend (if available)
     use_optimization: bool = True
-
-    @validator("vote_mode")
-    def vote_mode_must_be_valid(cls, v):
-        if v.lower() not in ["weighted", "plain"]:
-            raise ValueError("vote_mode must be 'weighted' or 'plain'")
-        return v.lower()
-
-    @validator("cost_function")
-    def cost_function_must_be_valid(cls, v):
-        if v.lower() not in ["ssd", "ncc"]:
-            raise ValueError("cost_function must be 'ssd' or 'ncc'")
-        return v.lower()
-
-    @validator("backend")
-    def backend_must_be_valid(cls, v):
-        if v.lower() not in ["cuda", "torch", "taichi"]:
-            raise ValueError("backend must be 'cuda', 'torch', or 'taichi'")
-        return v.lower()
 
 
 class DebugConfig(BaseModel):
