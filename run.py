@@ -53,6 +53,12 @@ def main():
         default=None,
         help="Output .mp4 path. Default: next to the frame folder (<output_dir parent>/<name>.mp4).",
     )
+    parser.add_argument(
+        "--forward-warp",
+        action="store_true",
+        default=None,
+        help="Use forward-warping paths for synthesis guide and blend-mask propagation.",
+    )
     args = parser.parse_args()
 
     # --- Welcome Message & Environment Check ---
@@ -70,7 +76,11 @@ def main():
     try:
         # --- Project Initialization ---
         print(f"\nLoading project with configuration: {args.config}")
-        project = Project(config_path=args.config, backend=args.backend)
+        project = Project(
+            config_path=args.config,
+            backend=args.backend,
+            forward_warp=args.forward_warp,
+        )
 
         # --- Pipeline Execution ---
         print("\nStarting Ezsynth v2 pipeline...")

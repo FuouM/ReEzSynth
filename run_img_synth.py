@@ -5,7 +5,8 @@ from argparse import ArgumentParser
 
 import numpy as np
 import torch
-from ezsynth.api import ImageSynth, RunConfig, load_guide
+from ezsynth.api import ImageSynth, RunConfig
+from ezsynth.guide import GuideObject
 from ezsynth.utils.io_utils import write_image
 
 # Parse command line arguments
@@ -154,7 +155,7 @@ ezsynner = ImageSynth(
 # The main source/target pair is now passed as a guide to run()
 result_img, result_err = ezsynner.run(
     guides=[
-        load_guide(
+        GuideObject.load_guide(
             f"{EXAMPLES_DIR}/texbynum/source_segment.png",
             f"{EXAMPLES_DIR}/texbynum/target_segment.png",
             weight=1.0,  # The weight is now explicit per-guide
@@ -200,17 +201,17 @@ ezsynner = ImageSynth(
 
 result_img, result_err = ezsynner.run(
     guides=[
-        load_guide(
+        GuideObject.load_guide(
             f"{EXAMPLES_DIR}/stylit/source_fullgi.png",
             f"{EXAMPLES_DIR}/stylit/target_fullgi.png",
             weight=0.66,
         ),
-        load_guide(
+        GuideObject.load_guide(
             f"{EXAMPLES_DIR}/stylit/source_dirdif.png",
             f"{EXAMPLES_DIR}/stylit/target_dirdif.png",
             weight=0.66,
         ),
-        load_guide(
+        GuideObject.load_guide(
             f"{EXAMPLES_DIR}/stylit/source_indirb.png",
             f"{EXAMPLES_DIR}/stylit/target_indirb.png",
             weight=0.66,
@@ -258,17 +259,17 @@ ezsynner = ImageSynth(
 
 result_img, result_err = ezsynner.run(
     guides=[
-        load_guide(
+        GuideObject.load_guide(
             f"{EXAMPLES_DIR}/facestyle/source_Gapp.png",
             f"{EXAMPLES_DIR}/facestyle/target_Gapp.png",
             weight=2.0,
         ),
-        load_guide(
+        GuideObject.load_guide(
             f"{EXAMPLES_DIR}/facestyle/source_Gseg.png",
             f"{EXAMPLES_DIR}/facestyle/target_Gseg.png",
             weight=1.5,
         ),
-        load_guide(
+        GuideObject.load_guide(
             f"{EXAMPLES_DIR}/facestyle/source_Gpos.png",
             f"{EXAMPLES_DIR}/facestyle/target_Gpos.png",
             weight=1.5,
