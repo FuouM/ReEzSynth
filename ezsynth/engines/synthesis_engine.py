@@ -11,11 +11,9 @@ from ..consts import (
     COST_FUNCTION_SSD,
     EBSYNTH_VOTEMODE_PLAIN,
     EBSYNTH_VOTEMODE_WEIGHTED,
-    ebsynth_torch,
 )
 from ..guide import GuideObject
-from ..torch_ops import SynthesisTimer
-from .backends import CudaBackend, PyTorchBackend, TaichiBackend
+from ..utils.timer import SynthesisTimer
 from .backends.common import random_init_nnf, resample_tensor
 
 EngineRunResult = Union[
@@ -247,26 +245,26 @@ class EbsynthEngine:
         self.pipeline_config = pipeline_config
         self.backend_type = ebsynth_config.backend
 
-        # Create the appropriate backend
+        # Create the appropriate backend. Concrete backend imports are kept
+        # branch-local so optional dependencies do not affect unrelated backends.
         if self.backend_type == "cuda":
-            if CudaBackend is None:
-                raise RuntimeError(
-                    "CUDA backend requested but ebsynth_torch extension is not available. "
-                    "The extension will be JIT compiled on first run. "
-                    "If you see this error, the JIT compilation may have failed. "
-                    "Check the error output above for compilation details."
-                )
+            from .backends.cuda_backend import CudaBackend
+
             # Check if device is specified in config (for CPU mode with C++ extension)
             device = getattr(ebsynth_config, "device", None)
             self.backend = CudaBackend(ebsynth_config, pipeline_config, device=device)
         elif self.backend_type == "torch":
+            from .backends.pytorch_backend import PyTorchBackend
+
             self.backend = PyTorchBackend(ebsynth_config, pipeline_config)
         elif self.backend_type == "taichi":
-            if TaichiBackend is None:
+            try:
+                from .backends.taichi_backend import TaichiBackend
+            except ImportError as exc:
                 raise RuntimeError(
                     "Taichi backend requested but Taichi is not available. "
                     "Please install taichi: pip install taichi"
-                )
+                ) from exc
             self.backend = TaichiBackend(ebsynth_config, pipeline_config)
         else:
             raise ValueError(f"Unsupported backend: {self.backend_type}")
@@ -337,8 +335,8 @@ class EbsynthEngine:
             self.rand_states = torch.empty(
                 th * tw * 48, dtype=torch.uint8, device=self.device
             )
-            if self.backend_type == "cuda":
-                ebsynth_torch.init_rand_states(self.rand_states)
+            if hasattr(self.backend, "init_rand_states"):
+                self.backend.init_rand_states(self.rand_states)
 
     def _determine_num_pyramid_levels(
         self, sh: int, sw: int, th: int, tw: int

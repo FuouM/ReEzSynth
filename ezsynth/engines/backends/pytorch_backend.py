@@ -4,23 +4,16 @@ from typing import Optional, Tuple
 import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
-from ...consts import (
-    EBSYNTH_VOTEMODE_PLAIN,
-    EBSYNTH_VOTEMODE_WEIGHTED,
-    TORCH_MPS_CLEAR_CACHE,
-)
-from ...torch_ops import (
-    SynthesisTimer,
-    populate_omega_map,
-    propagation_step,
-    random_search_step,
-    try_patch_batch,
-    vote_plain,
-    vote_weighted,
-)
+from ...consts import EBSYNTH_VOTEMODE_WEIGHTED
+from ...torch_ops.device_cache import clear_torch_device_cache
 from ...torch_ops.mask_ops import dilate_mask, evaluate_mask
+from ...torch_ops.omega_ops import populate_omega_map
 from ...torch_ops.patch_ops import extract_patches
+from ...torch_ops.patchmatch_ops import propagation_step, random_search_step, try_patch_batch
+from ...torch_ops.voting_ops import vote_plain, vote_weighted
+from ...utils.timer import SynthesisTimer
 from .base import BaseSynthesisBackend
+from .common import get_auto_torch_device, resample_tensor
 
 
 class PyTorchBackend(BaseSynthesisBackend):
@@ -32,13 +25,9 @@ class PyTorchBackend(BaseSynthesisBackend):
         self, ebsynth_config: EbsynthParamsConfig, pipeline_config: PipelineConfig
     ):
         super().__init__(ebsynth_config, pipeline_config)
-        # Auto-detect and use the best available device
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
+        self.device = get_auto_torch_device()
+        if self.device == "cuda":
+            torch.set_float32_matmul_precision("high")
 
         # Memory optimization: track if we're on MPS
         self._is_mps = self.device == "mps"
@@ -59,6 +48,31 @@ class PyTorchBackend(BaseSynthesisBackend):
                 return operation_func()
         else:
             return operation_func()
+
+    def _make_random_generator(self, device: torch.device) -> Optional[torch.Generator]:
+        """Return a deterministic generator when PyTorch supports one for the device."""
+        device_type = torch.device(device).type
+        if device_type == "mps":
+            # MPS torch.randint does not consistently accept explicit generators.
+            return None
+        generator = torch.Generator(device=device_type)
+        generator.manual_seed(1337)
+        return generator
+
+    @staticmethod
+    def _extract_patches(
+        tensor: torch.Tensor,
+        patch_size: int,
+        *,
+        as_float: bool = False,
+        clear_device_cache: bool = True,
+    ) -> torch.Tensor:
+        patches = extract_patches(tensor, patch_size)
+        if as_float and patches.dtype != torch.float32:
+            patches = patches.float()
+        if clear_device_cache:
+            clear_torch_device_cache(tensor.device)
+        return patches
 
     def run_level(
         self,
@@ -85,6 +99,8 @@ class PyTorchBackend(BaseSynthesisBackend):
         if benchmark:
             self.enable_benchmarking(True)
 
+        random_generator = self._make_random_generator(nnf.device)
+
         if self.pipeline_config.use_residual_transfer:
             return self._run_level_pytorch_iterative(
                 style_tensor,
@@ -101,6 +117,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                 patch_match_iters,
                 stop_threshold,
                 cost_function_mode,
+                random_generator,
             )
         else:
             return self._run_level_pytorch(
@@ -118,6 +135,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                 patch_match_iters,
                 stop_threshold,
                 cost_function_mode,
+                random_generator,
             )
 
     def _run_level_pytorch(
@@ -136,6 +154,7 @@ class PyTorchBackend(BaseSynthesisBackend):
         patch_match_iters,
         stop_threshold,
         cost_function_mode,
+        random_generator,
     ):
         """
         PyTorch implementation of the synthesis level using torch_ops.
@@ -157,11 +176,35 @@ class PyTorchBackend(BaseSynthesisBackend):
                 target_style_patches, \
                 source_guide_patches, \
                 target_guide_patches
-            source_style_patches = extract_patches(style_tensor, patch_size)
-            target_style_resized = self._resample_tensor(style_tensor, H_t, W_t)
-            target_style_patches = extract_patches(target_style_resized, patch_size)
-            source_guide_patches = extract_patches(source_guide_tensor, patch_size)
-            target_guide_patches = extract_patches(target_guide_tensor, patch_size)
+            source_style_patches = self._extract_patches(
+                style_tensor,
+                patch_size,
+                as_float=True,
+                clear_device_cache=False,
+            )
+            if H_s == H_t and W_s == W_t:
+                target_style_resized = style_tensor
+                target_style_patches = source_style_patches
+            else:
+                target_style_resized = resample_tensor(style_tensor, H_t, W_t)
+                target_style_patches = self._extract_patches(
+                    target_style_resized,
+                    patch_size,
+                    as_float=True,
+                    clear_device_cache=False,
+                )
+            source_guide_patches = self._extract_patches(
+                source_guide_tensor,
+                patch_size,
+                as_float=True,
+                clear_device_cache=False,
+            )
+            target_guide_patches = self._extract_patches(
+                target_guide_tensor,
+                patch_size,
+                as_float=True,
+                clear_device_cache=True,
+            )
 
         self._timed_operation("patch_extraction", _extract_patches)
         # --- END OPTIMIZATION ---
@@ -270,6 +313,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                         self.ebsynth_config.search_pruning_threshold,
                         cost_function_mode,
                         omega_best,
+                        generator=random_generator,
                     )
 
                 self._timed_operation("random_search_step", _random_search)
@@ -299,6 +343,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                         self.ebsynth_config.search_pruning_threshold,
                         cost_function_mode,
                         omega_best,
+                        generator=random_generator,
                     )
 
                 self._timed_operation("random_search_step", _random_search)
@@ -315,8 +360,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                 output_image = vote_plain(style_tensor, nnf, patch_size)
 
             # Clear MPS cache after voting to free memory
-            if TORCH_MPS_CLEAR_CACHE and self._is_mps:
-                torch.mps.empty_cache()
+            clear_torch_device_cache(self.device)
 
         self._timed_operation("voting", _perform_voting)
 
@@ -330,8 +374,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                 source_guide_patches,
                 target_guide_patches,
             )
-            if TORCH_MPS_CLEAR_CACHE:
-                torch.mps.empty_cache()
+            clear_torch_device_cache(self.device)
 
         return output_image, output_error, nnf
 
@@ -351,6 +394,7 @@ class PyTorchBackend(BaseSynthesisBackend):
         patch_match_iters,
         stop_threshold,
         cost_function_mode,
+        random_generator,
     ):
         """
         New, fast algorithm matching CUDA. Iteratively refines the NNF and the
@@ -366,11 +410,26 @@ class PyTorchBackend(BaseSynthesisBackend):
 
         def _extract_source_patches():
             nonlocal source_style_patches, source_guide_patches, target_guide_patches
-            source_style_patches = extract_patches(style_tensor, patch_size)
-            source_guide_patches = extract_patches(source_guide_tensor, patch_size)
+            source_style_patches = self._extract_patches(
+                style_tensor,
+                patch_size,
+                as_float=True,
+                clear_device_cache=False,
+            )
+            source_guide_patches = self._extract_patches(
+                source_guide_tensor,
+                patch_size,
+                as_float=True,
+                clear_device_cache=False,
+            )
             # --- OPTIMIZATION: Hoist target guide patch extraction out of the loop ---
             # The target guide tensor does not change during the iterative process.
-            target_guide_patches = extract_patches(target_guide_tensor, patch_size)
+            target_guide_patches = self._extract_patches(
+                target_guide_tensor,
+                patch_size,
+                as_float=True,
+                clear_device_cache=True,
+            )
 
         self._timed_operation("patch_extraction", _extract_source_patches)
 
@@ -390,8 +449,10 @@ class PyTorchBackend(BaseSynthesisBackend):
 
         def _extract_initial_target_patches():
             nonlocal initial_target_patches
-            initial_target_patches = extract_patches(
-                self._resample_tensor(style_tensor, H_t, W_t), patch_size
+            initial_target_patches = self._extract_patches(
+                resample_tensor(style_tensor, H_t, W_t),
+                patch_size,
+                as_float=True,
             )
 
         self._timed_operation("initial_target_patches", _extract_initial_target_patches)
@@ -418,8 +479,7 @@ class PyTorchBackend(BaseSynthesisBackend):
             )[1]
             # Free initial_target_patches immediately after use
             del initial_target_patches
-            if TORCH_MPS_CLEAR_CACHE and self._is_mps:
-                torch.mps.empty_cache()
+            clear_torch_device_cache(self.device)
 
         self._timed_operation("nnf_initialization", _init_nnf_iterative)
 
@@ -447,8 +507,10 @@ class PyTorchBackend(BaseSynthesisBackend):
 
                 def _extract_target_patches():
                     nonlocal target_style_patches_current
-                    target_style_patches_current = extract_patches(
-                        target_style_prev, patch_size
+                    target_style_patches_current = self._extract_patches(
+                        target_style_prev,
+                        patch_size,
+                        as_float=True,
                     )
 
                 self._timed_operation(
@@ -521,6 +583,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                         self.ebsynth_config.search_pruning_threshold,
                         cost_function_mode,
                         omega_best,
+                        generator=random_generator,
                     )
 
                 self._timed_operation("random_search_step", _final_random_search)
@@ -529,8 +592,7 @@ class PyTorchBackend(BaseSynthesisBackend):
                 del target_style_patches_current
                 target_style_patches_current = None
 
-                if TORCH_MPS_CLEAR_CACHE and self._is_mps:
-                    torch.mps.empty_cache()
+                clear_torch_device_cache(self.device)
 
                 def _vote():
                     nonlocal target_style_temp
@@ -568,7 +630,11 @@ class PyTorchBackend(BaseSynthesisBackend):
         def _generate_final_output():
             nonlocal output_image, output_error
             output_image = target_style_temp
-            final_target_patches = extract_patches(output_image, patch_size)
+            final_target_patches = self._extract_patches(
+                output_image,
+                patch_size,
+                as_float=True,
+            )
             # Use pre-computed target_guide_patches here as well
             output_error = try_patch_batch(
                 nnf,
@@ -588,8 +654,7 @@ class PyTorchBackend(BaseSynthesisBackend):
             )[1]
             # Free final_target_patches immediately
             del final_target_patches
-            if TORCH_MPS_CLEAR_CACHE and self._is_mps:
-                torch.mps.empty_cache()
+            clear_torch_device_cache(self.device)
 
         self._timed_operation("final_output", _generate_final_output)
 

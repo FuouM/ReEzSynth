@@ -1,19 +1,16 @@
 # ezsynth/engines/backends/taichi_backend.py
 import platform
 from typing import Optional, Tuple
-
-import numpy as np
 import taichi as ti
 import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ...consts import (
     COST_FUNCTION_NCC,
-    COST_FUNCTION_SSD,
     EBSYNTH_VOTEMODE_PLAIN,
     EBSYNTH_VOTEMODE_WEIGHTED,
 )
-from ...torch_ops import SynthesisTimer
+from ...utils.timer import SynthesisTimer
 from .base import BaseSynthesisBackend
 
 

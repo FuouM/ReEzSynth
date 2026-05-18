@@ -5,7 +5,7 @@ import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ...consts import EXTENSION_AVAILABLE, EXTENSION_CUDA_AVAILABLE, ebsynth_torch
-from ...torch_ops import SynthesisTimer
+from ...utils.timer import SynthesisTimer
 from .base import BaseSynthesisBackend
 
 
@@ -37,6 +37,10 @@ class CudaBackend(BaseSynthesisBackend):
         self.benchmark_enabled = enabled
         if enabled:
             self.timer.reset()
+
+    def init_rand_states(self, rand_states: torch.Tensor) -> None:
+        """Initialize native RNG state for the tensor's device."""
+        ebsynth_torch.init_rand_states(rand_states)
 
     def run_level(
         self,
