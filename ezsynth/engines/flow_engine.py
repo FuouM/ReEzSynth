@@ -12,10 +12,9 @@ from ..flow.types import (
     RaftCheckpointName,
     TorchVisionRaftModel,
 )
-from .base import BaseEngine
 
 
-class OpenCVFlowEngine(BaseEngine):
+class OpenCVFlowEngine:
     """
     An engine for computing optical flow using OpenCV methods (DIS, Farneback).
     """
@@ -33,7 +32,7 @@ class OpenCVFlowEngine(BaseEngine):
         return compute_opencv_flow_sequence(frames, cast(OpenCvFlowMethod, self.method))
 
 
-class TorchVisionFlowEngine(BaseEngine):
+class TorchVisionFlowEngine:
     """
     An engine for computing optical flow using TorchVision's RAFT models.
     """
@@ -54,7 +53,7 @@ class TorchVisionFlowEngine(BaseEngine):
         )
 
 
-class RAFTFlowEngine(BaseEngine):
+class RAFTFlowEngine:
     """
     An engine for computing optical flow between frames using the RAFT model.
     """
@@ -70,7 +69,7 @@ class RAFTFlowEngine(BaseEngine):
         return compute_custom_raft_sequence(frames, cast(RaftCheckpointName, self.model_name))
 
 
-class NeuFlowEngine(BaseEngine):
+class NeuFlowEngine:
     """
     An engine for computing optical flow using the NeuFlow model.
     """

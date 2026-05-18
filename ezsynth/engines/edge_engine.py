@@ -3,10 +3,7 @@ from typing import List
 import numpy as np
 
 from ..edge.batch import compute_edge
-from .base import BaseEngine
-
-
-class EdgeEngine(BaseEngine):
+class EdgeEngine:
     """
     An engine responsible for computing edge maps for a sequence of frames.
     Wraps the underlying EdgeDetector implementation.
