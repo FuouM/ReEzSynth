@@ -22,6 +22,22 @@ def get_omega(
     return float(sum_val)
 
 @ti.func
+def patch_omega_atomic_add(
+    omega_map: ti.template(),
+    cx: int,
+    cy: int,
+    patch_size: int,
+    sw: int,
+    sh: int,
+    delta: int,
+):
+    r = patch_size // 2
+    for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
+        cur_x = ti.max(0, ti.min(cx + px, sw - 1))
+        cur_y = ti.max(0, ti.min(cy + py, sh - 1))
+        ti.atomic_add(omega_map[cur_y, cur_x], delta)
+
+@ti.func
 def query_sat(
     sat: ti.template(), x1: int, y1: int, x2: int, y2: int, w: int, h: int
 ):
@@ -123,6 +139,7 @@ def compute_patch_ncc(
         ncc = (
             cov / (std_s * std_t) if (std_s > epsilon and std_t > epsilon) else 0.0
         )
+        ncc = ti.min(1.0, ti.max(-1.0, ncc))
         final_error = (1.0 - ncc) * style_weights[0] * N + guide_error
 
     else:
@@ -209,6 +226,7 @@ def compute_patch_ncc(
                 if (std_s > epsilon and std_t > epsilon)
                 else 0.0
             )
+            ncc = ti.min(1.0, ti.max(-1.0, ncc))
             final_error = (1.0 - ncc) * style_weights[0] * sum_weight + guide_error
         else:
             final_error = guide_error
@@ -346,9 +364,14 @@ def compute_integral_image(
             dst[y, x] = s
 
 @ti.kernel
-def populate_omega(nnf: ti.types.ndarray(), omega_map: ti.types.ndarray()):
+def populate_omega(
+    nnf: ti.types.ndarray(), omega_map: ti.types.ndarray(), patch_size: int
+):
+    sh, sw = omega_map.shape[0], omega_map.shape[1]
     for ty, tx in ti.ndrange(nnf.shape[0], nnf.shape[1]):
-        ti.atomic_add(omega_map[nnf[ty, tx, 1], nnf[ty, tx, 0]], 1)
+        patch_omega_atomic_add(
+            omega_map, nnf[ty, tx, 0], nnf[ty, tx, 1], patch_size, sw, sh, 1
+        )
 
 @ti.kernel
 def compute_error_map_kernel(
@@ -558,8 +581,12 @@ def patchmatch_step_kernel(
                         / omega_best
                     )
                     if new_total_err < best_total_err:
-                        ti.atomic_add(omega_map[best_sy, best_sx], -1)
-                        ti.atomic_add(omega_map[cand_sy, cand_sx], 1)
+                        patch_omega_atomic_add(
+                            omega_map, best_sx, best_sy, patch_size, sw, sh, -1
+                        )
+                        patch_omega_atomic_add(
+                            omega_map, cand_sx, cand_sy, patch_size, sw, sh, 1
+                        )
                         best_sx, best_sy, error_map[ty, tx], best_total_err = (
                             cand_sx,
                             cand_sy,
@@ -688,8 +715,12 @@ def random_search_kernel(
                     / omega_best
                 )
                 if new_total_err < best_total_err:
-                    ti.atomic_add(omega_map[best_sy, best_sx], -1)
-                    ti.atomic_add(omega_map[cand_sy, cand_sx], 1)
+                    patch_omega_atomic_add(
+                        omega_map, best_sx, best_sy, patch_size, sw, sh, -1
+                    )
+                    patch_omega_atomic_add(
+                        omega_map, cand_sx, cand_sy, patch_size, sw, sh, 1
+                    )
                     best_sx, best_sy, error_map[ty, tx], best_total_err = (
                         cand_sx,
                         cand_sy,

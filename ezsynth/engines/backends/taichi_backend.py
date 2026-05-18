@@ -152,7 +152,7 @@ class TaichiBackend:
             )
 
         self._timed_operation(
-            "populate_omega", lambda: tk.populate_omega(nnf_ti, omega_map)
+            "populate_omega", lambda: tk.populate_omega(nnf_ti, omega_map, patch_size)
         )
         self._timed_operation(
             "initial_vote",
