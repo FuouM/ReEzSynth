@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 
 from ezsynth.utils import io_utils
-from ezsynth.utils.image_utils import resize_image_to_match
+from ezsynth.utils.image_utils import assert_uniform_image_shapes, resize_image_to_match
 
 from .config import ProjectConfig
 
@@ -58,6 +58,11 @@ class ProjectData:
         self._mask_frames: Optional[List[np.ndarray]] = None
         self._modulation_frames: Optional[List[np.ndarray]] = None  # New
 
+    @classmethod
+    def from_config(cls, config: ProjectConfig) -> "ProjectData":
+        """Build a data manager from a project config."""
+        return cls(config)
+
     def get_content_frames(self, force_reload: bool = False) -> List[np.ndarray]:
         """Loads, validates, and caches the content frames from disk."""
         if self._content_frames is None or force_reload:
@@ -65,14 +70,7 @@ class ProjectData:
             if not frames:
                 raise ValueError(f"No content frames found in {self.content_dir}")
 
-            # Validate that all frames have the same resolution
-            first_frame_shape = frames[0].shape
-            for i, frame in enumerate(frames[1:]):
-                if frame.shape != first_frame_shape:
-                    raise ValueError(
-                        f"Content frame resolution mismatch. Frame 0 is {first_frame_shape[:2]}, "
-                        f"but frame {i+1} is {frame.shape[:2]}. All content frames must be the same size."
-                    )
+            assert_uniform_image_shapes(frames)
             self._content_frames = frames
         return self._content_frames
 

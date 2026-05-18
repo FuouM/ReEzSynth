@@ -6,6 +6,7 @@ import numpy as np
 
 from .config_io import configs_from_yaml
 from .data import ProjectData
+from .output import OutputManager
 from .pipeline import SynthesisPipeline
 from .service import SynthesisConfigs
 
@@ -23,7 +24,7 @@ class Project:
             self.configs.ebsynth_params.backend = backend
 
         # 1. Initialize data manager
-        self.data = ProjectData(self.configs.project)
+        self.data = ProjectData.from_config(self.configs.project)
 
         # 2. Initialize the main synthesis pipeline
         self.pipeline = SynthesisPipeline(
@@ -51,8 +52,11 @@ class Project:
         # The pipeline now returns the frames instead of saving them.
         final_frames = self.pipeline.run()
 
-        # The project is responsible for telling the data manager to save the frames.
-        self.data.save_output_frames(final_frames)
+        OutputManager(self.data).handle(
+            final_frames,
+            save=True,
+            visible_output_dir=self.data.output_dir,
+        )
 
         print("\n--- Project Execution Complete ---")
         print(f"Output saved to: {self.data.output_dir}")

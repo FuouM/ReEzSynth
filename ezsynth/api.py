@@ -14,6 +14,7 @@ from .config import (
 )
 from .data import ProjectData
 from .engines.synthesis_engine import EbsynthEngine
+from .output import OutputManager
 from .pipeline import SynthesisPipeline
 from .service import SynthesisConfigs
 from .utils import io_utils
@@ -191,7 +192,7 @@ class Ezsynth:
         )
 
         # --- 2. Initialize the core pipeline components ---
-        self.data = ProjectData(self.configs.project)
+        self.data = ProjectData.from_config(self.configs.project)
         self.pipeline = SynthesisPipeline(
             ebsynth_params_cfg=self.configs.ebsynth_params,
             pipeline_cfg=self.configs.pipeline,
@@ -216,7 +217,11 @@ class Ezsynth:
 
         if self.output_dir_path:
             print(f"\nSaving output to specified directory: {self.output_dir_path}")
-            self.data.save_output_frames(final_frames)
+            OutputManager(self.data).handle(
+                final_frames,
+                save=True,
+                visible_output_dir=self.output_dir_path,
+            )
         else:
             print("\nOutput directory not specified, skipping save.")
 
