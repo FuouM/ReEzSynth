@@ -814,6 +814,115 @@ def voting_kernel(
                     output_image[ty, tx, c] = source_style[sy, sx, c]
 
 @ti.kernel
+def vote_plain_kernel(
+    source_style: ti.types.ndarray(dtype=ti.u8, ndim=3),
+    nnf: ti.types.ndarray(dtype=ti.i32, ndim=3),
+    acc: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    wsum: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    output_image: ti.types.ndarray(dtype=ti.u8, ndim=3),
+    patch_size: ti.i32,
+):
+    th, tw = output_image.shape[0], output_image.shape[1]
+    sh, sw = source_style.shape[0], source_style.shape[1]
+    NSC = source_style.shape[2]
+    r = patch_size // 2
+    for ty, tx in ti.ndrange(th, tw):
+        for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
+            oy = ty - py
+            ox = tx - px
+            if 0 <= ox < tw and 0 <= oy < th:
+                sx = ti.max(0, ti.min(nnf[oy, ox, 0] + px, sw - 1))
+                sy = ti.max(0, ti.min(nnf[oy, ox, 1] + py, sh - 1))
+                wsum[ty, tx] += 1.0
+                for c in range(NSC):
+                    acc[ty, tx, c] += ti.cast(source_style[sy, sx, c], ti.f32)
+        weight = ti.max(wsum[ty, tx], 1e-6)
+        for c in range(NSC):
+            val = ti.max(0.0, ti.min(255.0, acc[ty, tx, c] / weight))
+            output_image[ty, tx, c] = ti.u8(ti.cast(val, ti.i32))
+
+@ti.kernel
+def vote_weighted_kernel(
+    source_style: ti.types.ndarray(dtype=ti.u8, ndim=3),
+    nnf: ti.types.ndarray(dtype=ti.i32, ndim=3),
+    error_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    acc: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    wsum: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    output_image: ti.types.ndarray(dtype=ti.u8, ndim=3),
+    patch_size: ti.i32,
+):
+    th, tw = output_image.shape[0], output_image.shape[1]
+    sh, sw = source_style.shape[0], source_style.shape[1]
+    NSC = source_style.shape[2]
+    r = patch_size // 2
+    for ty, tx in ti.ndrange(th, tw):
+        for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
+            oy = ty - py
+            ox = tx - px
+            if 0 <= ox < tw and 0 <= oy < th:
+                sx = ti.max(0, ti.min(nnf[oy, ox, 0] + px, sw - 1))
+                sy = ti.max(0, ti.min(nnf[oy, ox, 1] + py, sh - 1))
+                weight = 1.0 / (1.0 + error_map[oy, ox])
+                wsum[ty, tx] += weight
+                for c in range(NSC):
+                    acc[ty, tx, c] += (
+                        weight * ti.cast(source_style[sy, sx, c], ti.f32)
+                    )
+        weight_sum = ti.max(wsum[ty, tx], 1e-6)
+        for c in range(NSC):
+            val = ti.max(0.0, ti.min(255.0, acc[ty, tx, c] / weight_sum))
+            output_image[ty, tx, c] = ti.u8(ti.cast(val, ti.i32))
+
+def run_vote_dispatch(
+    output_image,
+    source_style,
+    target_style,
+    nnf,
+    error_map,
+    patch_size,
+    mode,
+    use_bilateral,
+    sigma_spatial,
+    sigma_color,
+    n_size_step,
+    acc,
+    wsum,
+):
+    if use_bilateral:
+        voting_kernel(
+            output_image,
+            source_style,
+            target_style,
+            nnf,
+            error_map,
+            patch_size,
+            mode,
+            use_bilateral,
+            sigma_spatial,
+            sigma_color,
+            n_size_step,
+        )
+    elif mode == EBSYNTH_VOTEMODE_WEIGHTED:
+        vote_weighted_kernel(
+            source_style,
+            nnf,
+            error_map,
+            acc,
+            wsum,
+            output_image,
+            int(patch_size),
+        )
+    else:
+        vote_plain_kernel(
+            source_style,
+            nnf,
+            acc,
+            wsum,
+            output_image,
+            int(patch_size),
+        )
+
+@ti.kernel
 def eval_mask_kernel(
     mask: ti.types.ndarray(),
     current_img: ti.types.ndarray(),

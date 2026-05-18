@@ -25,6 +25,19 @@ def get_ti_arch():
     return ti.cpu
 
 
+def get_taichi_torch_device() -> str:
+    arch = get_ti_arch()
+    if arch == ti.cuda:
+        return "cuda"
+    if (
+        arch == ti.metal
+        and hasattr(torch.backends, "mps")
+        and torch.backends.mps.is_available()
+    ):
+        return "mps"
+    return "cpu"
+
+
 _ti_initialized = False
 
 
@@ -49,14 +62,13 @@ class TaichiBackend:
         self.ebsynth_config = ebsynth_config
         self.pipeline_config = pipeline_config
         ensure_ti_init()
-        self.device = "cpu"
-        if torch.backends.mps.is_available() and platform.system() == "Darwin":
-            self.device = "mps"
-        elif torch.cuda.is_available():
-            self.device = "cuda"
+        self.device = get_taichi_torch_device()
 
         self.timer = SynthesisTimer()
         self.benchmark_enabled = False
+        self._vote_acc: Optional[torch.Tensor] = None
+        self._vote_wsum: Optional[torch.Tensor] = None
+        self._vote_buf_key: Optional[Tuple[int, int, int, str]] = None
 
     def enable_benchmarking(self, enabled: bool = True):
         self.benchmark_enabled = enabled
@@ -69,6 +81,25 @@ class TaichiBackend:
                 return operation_func()
         else:
             return operation_func()
+
+    def _vote_get_scratch(self, out: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        key = (out.shape[0], out.shape[1], out.shape[2], str(out.device))
+        if self._vote_buf_key != key or self._vote_acc is None:
+            self._vote_acc = torch.zeros(
+                (out.shape[0], out.shape[1], out.shape[2]),
+                dtype=torch.float32,
+                device=out.device,
+            )
+            self._vote_wsum = torch.zeros(
+                (out.shape[0], out.shape[1]),
+                dtype=torch.float32,
+                device=out.device,
+            )
+            self._vote_buf_key = key
+        assert self._vote_acc is not None and self._vote_wsum is not None
+        self._vote_acc.zero_()
+        self._vote_wsum.zero_()
+        return self._vote_acc, self._vote_wsum
 
     def run_level(
         self,
@@ -96,9 +127,11 @@ class TaichiBackend:
         orig_device = style_tensor.device
 
         def to_ti(t):
-            return (
-                t.contiguous() if orig_device.type == "cuda" else t.cpu().contiguous()
-            )
+            if orig_device.type in ("cuda", "mps"):
+                return t.contiguous()
+            if t.device.type == "cpu" and t.is_contiguous():
+                return t
+            return t.cpu().contiguous()
 
         style_ti, s_guide_ti, t_guide_ti, modulation_ti = (
             to_ti(style_tensor),
@@ -106,22 +139,31 @@ class TaichiBackend:
             to_ti(target_guide_tensor),
             to_ti(modulation_tensor),
         )
+        ti_device = style_ti.device
         if modulation_ti.numel() == 0:
-            modulation_ti = torch.zeros((1, 1, 1), dtype=torch.uint8)
+            modulation_ti = torch.zeros((1, 1, 1), dtype=torch.uint8, device=ti_device)
         nnf_ti, s_weights_ti, g_weights_ti = (
             to_ti(nnf),
             to_ti(style_weights),
             to_ti(guide_weights),
         )
         error_map, omega_map, mask, mask2 = (
-            torch.zeros((target_h, target_w), dtype=torch.float32),
-            torch.zeros((source_h, source_w), dtype=torch.int32),
-            torch.full((target_h, target_w), 255, dtype=torch.uint8),
-            torch.zeros((target_h, target_w), dtype=torch.uint8),
+            torch.zeros((target_h, target_w), dtype=torch.float32, device=ti_device),
+            torch.zeros((source_h, source_w), dtype=torch.int32, device=ti_device),
+            torch.full((target_h, target_w), 255, dtype=torch.uint8, device=ti_device),
+            torch.zeros((target_h, target_w), dtype=torch.uint8, device=ti_device),
         )
         output_image, target_style_prev = (
-            torch.zeros((target_h, target_w, style_tensor.shape[2]), dtype=torch.uint8),
-            torch.zeros((target_h, target_w, style_tensor.shape[2]), dtype=torch.uint8),
+            torch.zeros(
+                (target_h, target_w, style_tensor.shape[2]),
+                dtype=torch.uint8,
+                device=ti_device,
+            ),
+            torch.zeros(
+                (target_h, target_w, style_tensor.shape[2]),
+                dtype=torch.uint8,
+                device=ti_device,
+            ),
         )
         use_mod = 1 if modulation_tensor.numel() > 0 else 0
         omega_best = max(
@@ -135,12 +177,12 @@ class TaichiBackend:
         n_size_step = self.ebsynth_config.n_size_step
 
         s_sat, s_sq_sat = (
-            torch.zeros((source_h, source_w), dtype=torch.float32),
-            torch.zeros((source_h, source_w), dtype=torch.float32),
+            torch.zeros((source_h, source_w), dtype=torch.float32, device=ti_device),
+            torch.zeros((source_h, source_w), dtype=torch.float32, device=ti_device),
         )
         t_sat, t_sq_sat = (
-            torch.zeros((target_h, target_w), dtype=torch.float32),
-            torch.zeros((target_h, target_w), dtype=torch.float32),
+            torch.zeros((target_h, target_w), dtype=torch.float32, device=ti_device),
+            torch.zeros((target_h, target_w), dtype=torch.float32, device=ti_device),
         )
         if cost_function_mode == COST_FUNCTION_NCC:
             self._timed_operation(
@@ -154,9 +196,10 @@ class TaichiBackend:
         self._timed_operation(
             "populate_omega", lambda: tk.populate_omega(nnf_ti, omega_map, patch_size)
         )
+        acc0, wsum0 = self._vote_get_scratch(target_style_prev)
         self._timed_operation(
             "initial_vote",
-            lambda: tk.voting_kernel(
+            lambda: tk.run_vote_dispatch(
                 target_style_prev,
                 style_ti,
                 target_style_prev,  # Dummy target style for center
@@ -168,6 +211,8 @@ class TaichiBackend:
                 sigma_spatial,
                 sigma_color,
                 n_size_step,
+                acc0,
+                wsum0,
             ),
         )
 
@@ -269,9 +314,10 @@ class TaichiBackend:
                 ),
             )
 
+            acc_i, wsum_i = self._vote_get_scratch(output_image)
             self._timed_operation(
                 f"vote_{iter_idx}",
-                lambda: tk.voting_kernel(
+                lambda: tk.run_vote_dispatch(
                     output_image,
                     style_ti,
                     target_style_prev,
@@ -283,6 +329,8 @@ class TaichiBackend:
                     sigma_spatial,
                     sigma_color,
                     n_size_step,
+                    acc_i,
+                    wsum_i,
                 ),
             )
 
@@ -294,10 +342,35 @@ class TaichiBackend:
                 mask.copy_(mask2)
             target_style_prev.copy_(output_image)
 
-        if orig_device.type == "cuda":
-            return (
-                output_image.to("cuda"),
-                error_map.to("cuda"),
-                nnf_ti.to("cuda"),
-            )
+        if search_vote_iters == 0:
+            output_image.copy_(target_style_prev)
+        if cost_function_mode == COST_FUNCTION_NCC:
+            tk.compute_integral_image(output_image, t_sat, 0)
+            tk.compute_integral_image(output_image, t_sq_sat, 1)
+        self._timed_operation(
+            "final_error_map",
+            lambda: tk.compute_error_map_kernel(
+                nnf_ti,
+                error_map,
+                style_ti,
+                output_image,
+                s_guide_ti,
+                t_guide_ti,
+                modulation_ti,
+                use_mod,
+                patch_size,
+                s_weights_ti,
+                g_weights_ti,
+                cost_function_mode,
+                s_sat,
+                s_sq_sat,
+                t_sat,
+                t_sq_sat,
+                use_bilateral,
+                sigma_spatial,
+                sigma_color,
+                n_size_step,
+            ),
+        )
+
         return output_image, error_map, nnf_ti
