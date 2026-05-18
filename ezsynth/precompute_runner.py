@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .config import DebugConfig, PipelineConfig, PrecomputationConfig, ProjectConfig
+from .edge.batch import compute_edge
 from .flow.run import (
     compute_backward_optical_flow_sequence,
     compute_bidirectional_optical_flow_sequence,
@@ -261,10 +262,4 @@ class PrecomputeRunner:
 def compute_edge_maps(
     content_frames: List[np.ndarray], edge_method: str
 ) -> List[np.ndarray]:
-    from .engines.edge_engine import EdgeEngine
-
-    engine = EdgeEngine(method=edge_method)
-    try:
-        return engine.compute(content_frames)
-    finally:
-        del engine
+    return compute_edge(content_frames, edge_method)
