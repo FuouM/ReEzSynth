@@ -1,4 +1,3 @@
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,13 +8,6 @@ from ezsynth.utils import io_utils
 from ezsynth.utils.image_utils import assert_uniform_image_shapes, resize_image_to_match
 
 from .config import ProjectConfig
-
-
-def _save_frame_worker(args: tuple):
-    """Helper function for multiprocessing pool to save a single frame."""
-    i, frame, output_dir_str = args
-    filename = Path(output_dir_str) / f"{i:05d}.png"
-    io_utils.write_image(filename, frame)
 
 
 class ProjectData:
@@ -119,33 +111,20 @@ class ProjectData:
         return None
 
     def save_output_frames(self, frames: list[np.ndarray]):
-        """Saves the final stylized frames to the output directory in parallel."""
+        """Saves the final stylized frames to the output directory."""
         num_frames = len(frames)
         if num_frames == 0:
             print("No frames to save.")
             return
 
-        print(
-            f"Saving {num_frames} frames to {self.output_dir} using parallel processing..."
-        )
+        print(f"Saving {num_frames} frames to {self.output_dir}...")
 
-        # Prepare arguments for the worker processes.
-        # Passing the output directory as a string is safer for pickling.
-        tasks = [(i, frame, str(self.output_dir)) for i, frame in enumerate(frames)]
-
-        # Use a sensible number of processes to avoid I/O bottlenecks.
-        # Capped at 12 workers, which is a reasonable upper limit for this task.
-        num_workers = min(cpu_count(), 12, num_frames)
-
-        with Pool(processes=num_workers) as pool:
-            # Use tqdm to show a progress bar for the saving process.
-            # imap_unordered is generally faster as it yields results as they complete.
-            list(
-                tqdm(
-                    pool.imap_unordered(_save_frame_worker, tasks),
-                    total=num_frames,
-                    desc="Saving Output Frames",
-                )
-            )
+        for i, frame in tqdm(
+            enumerate(frames),
+            total=num_frames,
+            desc="Saving Output Frames",
+        ):
+            filename = self.output_dir / f"{i:05d}.png"
+            io_utils.write_image(filename, frame)
 
         print("All frames saved successfully.")
