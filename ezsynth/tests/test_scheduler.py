@@ -8,16 +8,27 @@ from ezsynth.utils.sequence_utils import SynthesisSequence
 
 
 class _FakeEngine:
-    def __init__(self):
+    def __init__(self, pipeline_config=None):
         self.ebsynth_config = EbsynthParamsConfig(backend="torch")
-        self.pipeline_config = PipelineConfig(use_temporal_nnf_propagation=False)
+        self.pipeline_config = pipeline_config or PipelineConfig(
+            use_temporal_nnf_propagation=False
+        )
         self.calls = []
 
-    def run(self, style_img, guides, initial_nnf=None, output_nnf=False):
+    def run(
+        self,
+        style_img,
+        guides,
+        modulation_map=None,
+        initial_nnf=None,
+        output_nnf=False,
+        **kwargs,
+    ):
         self.calls.append(
             {
                 "style_img": style_img,
                 "guides": guides,
+                "modulation_map": modulation_map,
                 "initial_nnf": initial_nnf,
                 "output_nnf": output_nnf,
             }
@@ -36,6 +47,7 @@ def test_pass_runner_uses_precomputed_guides_and_flow(monkeypatch):
         def run_frame(
             self,
             guides,
+            modulation_map=None,
             initial_nnf=None,
             return_error=True,
             output_nnf=False,
@@ -43,6 +55,7 @@ def test_pass_runner_uses_precomputed_guides_and_flow(monkeypatch):
             return self.engine.run(
                 self.style_img,
                 guides=guides,
+                modulation_map=modulation_map,
                 initial_nnf=initial_nnf,
                 output_nnf=output_nnf,
             )
@@ -79,6 +92,66 @@ def test_pass_runner_uses_precomputed_guides_and_flow(monkeypatch):
     assert len(engine.calls[0]["guides"]) == 4
     assert engine.calls[0]["guides"][0].weight == engine.ebsynth_config.edge_weight
     np.testing.assert_array_equal(frames[-1], content[-1])
+
+
+def test_pass_runner_uses_occlusion_modulation(monkeypatch):
+    class _FakeContext:
+        def __init__(self, engine, style_img, guides):
+            self.engine = engine
+            self.style_img = style_img
+
+        def run_frame(
+            self,
+            guides,
+            modulation_map=None,
+            initial_nnf=None,
+            return_error=True,
+            output_nnf=False,
+        ):
+            return self.engine.run(
+                self.style_img,
+                guides=guides,
+                modulation_map=modulation_map,
+                initial_nnf=initial_nnf,
+                output_nnf=output_nnf,
+            )
+
+    monkeypatch.setattr("ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext)
+
+    style = np.full((2, 2, 3), 255, dtype=np.uint8)
+    content = [
+        np.zeros((2, 2, 3), dtype=np.uint8),
+        np.full((2, 2, 3), 10, dtype=np.uint8),
+    ]
+    mask = np.array([[0, 255], [0, 0]], dtype=np.uint8)
+    state = PrecomputeState(
+        edge_maps=[frame.copy() for frame in content],
+        fwd_flows=[np.zeros((2, 2, 2), dtype=np.float32)],
+        fwd_occlusion_masks=[mask],
+    )
+    engine = _FakeEngine(
+        PipelineConfig(
+            use_temporal_nnf_propagation=False,
+            use_flow_occlusion_modulation=True,
+            occlusion_modulation_floor=32,
+        )
+    )
+    runner = SynthesisPassRunner(
+        engine=engine,
+        precompute_state=state,
+        debug_cfg=DebugConfig(),
+    )
+
+    runner.run(
+        seq=SynthesisSequence(0, 1, SynthesisSequence.MODE_FWD, [0]),
+        style_img=style,
+        is_forward=True,
+        content_frames=content,
+    )
+
+    modulation = engine.calls[0]["modulation_map"]
+    assert modulation[0, 0, 0] == 255
+    assert modulation[0, 1, 0] == 32
 
 
 def test_scheduler_removes_duplicate_sequence_boundaries(monkeypatch):

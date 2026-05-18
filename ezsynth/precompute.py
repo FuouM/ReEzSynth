@@ -15,6 +15,9 @@ class PrecomputeState:
 
     edge_maps: List[np.ndarray] = field(default_factory=list)
     fwd_flows: List[np.ndarray] = field(default_factory=list)
+    bwd_flows: List[np.ndarray] = field(default_factory=list)
+    fwd_occlusion_masks: List[np.ndarray] = field(default_factory=list)
+    bwd_occlusion_masks: List[np.ndarray] = field(default_factory=list)
     sparse_guides: List[np.ndarray] = field(default_factory=list)
 
 

@@ -35,6 +35,20 @@ def load_cached_flow(cache_dir: Path):
     return fwd_flows
 
 
+def load_cached_arrays(cache_dir: Path):
+    print(f"Loading arrays from cache: {cache_dir}")
+    array_paths = sorted(cache_dir.glob("*.npy"))
+    return [np.load(p) for p in tqdm(array_paths, desc="Loading Cached Arrays")]
+
+
+def save_array_cache(arrays, cache_dir: Path):
+    print(f"Saving {len(arrays)} arrays to cache: {cache_dir}")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    _clear_cache_files(cache_dir, ["npy"])
+    for i, array in enumerate(tqdm(arrays, desc="Saving Array Cache")):
+        np.save(cache_dir / f"{i:05d}.npy", array)
+
+
 def save_flow_cache(fwd_flows, cache_dir: Path):
     print(f"Saving {len(fwd_flows)} flow fields to cache: {cache_dir}")
     cache_dir.mkdir(parents=True, exist_ok=True)

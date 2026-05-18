@@ -82,6 +82,50 @@ def test_precompute_runner_populates_state_without_heavy_engines(tmp_path, monke
     np.testing.assert_array_equal(state.sparse_guides[0], sparse)
 
 
+def test_precompute_runner_populates_occlusion_masks(tmp_path, monkeypatch):
+    fwd_flow = np.zeros((3, 3, 2), dtype=np.float32)
+    bwd_flow = np.zeros((3, 3, 2), dtype=np.float32)
+    edge = np.zeros((3, 3, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(
+        "ezsynth.precompute_runner.compute_bidirectional_optical_flow_sequence",
+        lambda frames, precomputation_cfg: ([fwd_flow], [bwd_flow]),
+    )
+    monkeypatch.setattr(
+        "ezsynth.precompute_runner.compute_edge_maps",
+        lambda frames, edge_method: [edge, edge.copy()],
+    )
+
+    frames = [np.zeros((3, 3, 3), dtype=np.uint8) for _ in range(2)]
+    runner = PrecomputeRunner(
+        project_cfg=ProjectConfig(
+            content_dir="content",
+            style_path="style.png",
+            style_indices=[0],
+            output_dir=str(tmp_path / "output"),
+            cache_dir=str(tmp_path / "cache"),
+            force_recompute_flow=True,
+            force_recompute_edge=True,
+        ),
+        precomputation_cfg=PrecomputationConfig(),
+        pipeline_cfg=PipelineConfig(
+            use_flow_occlusion_modulation=True,
+            occlusion_mask_dilate=0,
+            occlusion_use_coverage_mask=False,
+        ),
+        debug_cfg=DebugConfig(),
+    )
+
+    state = runner.run(frames)
+
+    assert state.fwd_flows[0] is fwd_flow
+    assert state.bwd_flows[0] is bwd_flow
+    assert len(state.fwd_occlusion_masks) == 1
+    assert len(state.bwd_occlusion_masks) == 1
+    assert not np.any(state.fwd_occlusion_masks[0])
+    assert not np.any(state.bwd_occlusion_masks[0])
+
+
 def test_compute_optical_flow_sequence_supports_opencv_engine(monkeypatch):
     monkeypatch.setattr(
         "ezsynth.flow.run.compute_opencv_flow_sequence",
