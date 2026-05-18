@@ -1,8 +1,8 @@
 import numpy as np
 
+from ezsynth.config import PrecomputationConfig
 from ezsynth.flow.pad import pad_bgr_to_stride
 from ezsynth.flow.run import compute_optical_flow_sequence
-from ezsynth.config import PrecomputationConfig
 
 
 def test_pad_bgr_to_stride_pads_bottom_and_right_with_edge_values():

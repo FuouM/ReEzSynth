@@ -2,7 +2,12 @@ from pathlib import Path
 
 import numpy as np
 
-from ezsynth.config import DebugConfig, PipelineConfig, PrecomputationConfig, ProjectConfig
+from ezsynth.config import (
+    DebugConfig,
+    PipelineConfig,
+    PrecomputationConfig,
+    ProjectConfig,
+)
 from ezsynth.flow.run import (
     compute_backward_optical_flow_sequence,
     compute_bidirectional_optical_flow_sequence,

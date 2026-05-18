@@ -68,7 +68,9 @@ class SynthesisPipeline:
         """
         print("Loading project data for pipeline...")
         content_frames = self.data.get_content_frames()
-        style_frames = self.data.get_style_frames()  # Ensure styles are loaded and resized if needed
+        style_frames = (
+            self.data.get_style_frames()
+        )  # Ensure styles are loaded and resized if needed
         use_pseudo_endpoint_styles = self.pipeline_cfg.use_pseudo_endpoint_styles
 
         self._precompute(content_frames)

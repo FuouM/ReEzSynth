@@ -66,7 +66,9 @@ class RAFTFlowEngine:
         print("RAFT Flow Engine initialized.")
 
     def compute(self, frames: List[np.ndarray]) -> List[np.ndarray]:
-        return compute_custom_raft_sequence(frames, cast(RaftCheckpointName, self.model_name))
+        return compute_custom_raft_sequence(
+            frames, cast(RaftCheckpointName, self.model_name)
+        )
 
 
 class NeuFlowEngine:
@@ -80,4 +82,6 @@ class NeuFlowEngine:
         print("NeuFlow Engine initialized.")
 
     def compute(self, frames: List[np.ndarray]) -> List[np.ndarray]:
-        return compute_neuflow_sequence(frames, cast(NeuFlowCheckpointName, self.model_name))
+        return compute_neuflow_sequence(
+            frames, cast(NeuFlowCheckpointName, self.model_name)
+        )

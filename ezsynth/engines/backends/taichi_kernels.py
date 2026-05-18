@@ -4,6 +4,7 @@ import taichi as ti
 
 from ...consts import COST_FUNCTION_NCC, EBSYNTH_VOTEMODE_WEIGHTED
 
+
 @ti.func
 def get_omega(
     omega_map: ti.template(),
@@ -21,6 +22,7 @@ def get_omega(
         sum_val += omega_map[cur_y, cur_x]
     return float(sum_val)
 
+
 @ti.func
 def patch_omega_atomic_add(
     omega_map: ti.template(),
@@ -37,10 +39,9 @@ def patch_omega_atomic_add(
         cur_y = ti.max(0, ti.min(cy + py, sh - 1))
         ti.atomic_add(omega_map[cur_y, cur_x], delta)
 
+
 @ti.func
-def query_sat(
-    sat: ti.template(), x1: int, y1: int, x2: int, y2: int, w: int, h: int
-):
+def query_sat(sat: ti.template(), x1: int, y1: int, x2: int, y2: int, w: int, h: int):
     x1 = ti.max(x1, 0)
     y1 = ti.max(y1, 0)
     x2 = ti.min(x2, w - 1)
@@ -50,6 +51,7 @@ def query_sat(
     tr = sat[y1 - 1, x2] if y1 > 0 else 0.0
     tl = sat[y1 - 1, x1 - 1] if (x1 > 0 and y1 > 0) else 0.0
     return br - bl - tr + tl
+
 
 @ti.func
 def compute_patch_ncc(
@@ -88,15 +90,11 @@ def compute_patch_ncc(
     if use_bilateral == 0 and n_size_step == 1:
         # Optimized non-bilateral path using SAT
         N = float(patch_size * patch_size)
-        sum_s = query_sat(
-            source_style_sat, sx - r, sy - r, sx + r, sy + r, sw, sh
-        )
+        sum_s = query_sat(source_style_sat, sx - r, sy - r, sx + r, sy + r, sw, sh)
         sum_sq_s = query_sat(
             source_style_sq_sat, sx - r, sy - r, sx + r, sy + r, sw, sh
         )
-        sum_t = query_sat(
-            target_style_sat, tx - r, ty - r, tx + r, ty + r, tw, th
-        )
+        sum_t = query_sat(target_style_sat, tx - r, ty - r, tx + r, ty + r, tw, th)
         sum_sq_t = query_sat(
             target_style_sq_sat, tx - r, ty - r, tx + r, ty + r, tw, th
         )
@@ -136,9 +134,7 @@ def compute_patch_ncc(
                 guide_error += guide_weights[c] * mod * diff * diff
 
         cov = sum_st / N - mean_s * mean_t
-        ncc = (
-            cov / (std_s * std_t) if (std_s > epsilon and std_t > epsilon) else 0.0
-        )
+        ncc = cov / (std_s * std_t) if (std_s > epsilon and std_t > epsilon) else 0.0
         ncc = ti.min(1.0, ti.max(-1.0, ncc))
         final_error = (1.0 - ncc) * style_weights[0] * N + guide_error
 
@@ -222,9 +218,7 @@ def compute_patch_ncc(
 
             cov = sum_st / sum_weight - mean_s * mean_t
             ncc = (
-                cov / (std_s * std_t)
-                if (std_s > epsilon and std_t > epsilon)
-                else 0.0
+                cov / (std_s * std_t) if (std_s > epsilon and std_t > epsilon) else 0.0
             )
             ncc = ti.min(1.0, ti.max(-1.0, ncc))
             final_error = (1.0 - ncc) * style_weights[0] * sum_weight + guide_error
@@ -232,6 +226,7 @@ def compute_patch_ncc(
             final_error = guide_error
 
     return float(final_error)
+
 
 @ti.func
 def compute_patch_ssd(
@@ -338,10 +333,9 @@ def compute_patch_ssd(
             break
     return error
 
+
 @ti.kernel
-def compute_integral_image(
-    src: ti.types.ndarray(), dst: ti.types.ndarray(), sqr: int
-):
+def compute_integral_image(src: ti.types.ndarray(), dst: ti.types.ndarray(), sqr: int):
     h, w = src.shape[0], src.shape[1]
     NSC = src.shape[2]
     # Rows
@@ -363,6 +357,7 @@ def compute_integral_image(
             s += dst[y, x]
             dst[y, x] = s
 
+
 @ti.kernel
 def populate_omega(
     nnf: ti.types.ndarray(), omega_map: ti.types.ndarray(), patch_size: int
@@ -372,6 +367,7 @@ def populate_omega(
         patch_omega_atomic_add(
             omega_map, nnf[ty, tx, 0], nnf[ty, tx, 1], patch_size, sw, sh, 1
         )
+
 
 @ti.kernel
 def compute_error_map_kernel(
@@ -458,6 +454,7 @@ def compute_error_map_kernel(
                 sigma_color,
                 n_size_step,
             )
+
 
 @ti.kernel
 def patchmatch_step_kernel(
@@ -574,9 +571,7 @@ def patchmatch_step_kernel(
                         )
 
                     new_total_err = new_err + uniformity_weight * (
-                        get_omega(
-                            omega_map, cand_sx, cand_sy, patch_size, sw, sh
-                        )
+                        get_omega(omega_map, cand_sx, cand_sy, patch_size, sw, sh)
                         / pixel_count
                         / omega_best
                     )
@@ -594,6 +589,7 @@ def patchmatch_step_kernel(
                             new_total_err,
                         )
         nnf[ty, tx, 0], nnf[ty, tx, 1] = best_sx, best_sy
+
 
 @ti.kernel
 def random_search_kernel(
@@ -730,6 +726,7 @@ def random_search_kernel(
             r //= 2
         nnf[ty, tx, 0], nnf[ty, tx, 1] = best_sx, best_sy
 
+
 @ti.kernel
 def voting_kernel(
     output_image: ti.types.ndarray(),
@@ -813,6 +810,7 @@ def voting_kernel(
                 if c < 4:
                     output_image[ty, tx, c] = source_style[sy, sx, c]
 
+
 @ti.kernel
 def vote_plain_kernel(
     source_style: ti.types.ndarray(dtype=ti.u8, ndim=3),
@@ -841,6 +839,7 @@ def vote_plain_kernel(
             val = ti.max(0.0, ti.min(255.0, acc[ty, tx, c] / weight))
             output_image[ty, tx, c] = ti.u8(ti.cast(val, ti.i32))
 
+
 @ti.kernel
 def vote_weighted_kernel(
     source_style: ti.types.ndarray(dtype=ti.u8, ndim=3),
@@ -865,13 +864,12 @@ def vote_weighted_kernel(
                 weight = 1.0 / (1.0 + error_map[oy, ox])
                 wsum[ty, tx] += weight
                 for c in range(NSC):
-                    acc[ty, tx, c] += (
-                        weight * ti.cast(source_style[sy, sx, c], ti.f32)
-                    )
+                    acc[ty, tx, c] += weight * ti.cast(source_style[sy, sx, c], ti.f32)
         weight_sum = ti.max(wsum[ty, tx], 1e-6)
         for c in range(NSC):
             val = ti.max(0.0, ti.min(255.0, acc[ty, tx, c] / weight_sum))
             output_image[ty, tx, c] = ti.u8(ti.cast(val, ti.i32))
+
 
 def run_vote_dispatch(
     output_image,
@@ -922,6 +920,7 @@ def run_vote_dispatch(
             int(patch_size),
         )
 
+
 @ti.kernel
 def eval_mask_kernel(
     mask: ti.types.ndarray(),
@@ -937,6 +936,7 @@ def eval_mask_kernel(
             if d > max_diff:
                 max_diff = d
         mask[y, x] = ti.u8(255) if max_diff >= threshold else ti.u8(0)
+
 
 @ti.kernel
 def dilate_mask_kernel(

@@ -3,8 +3,8 @@
 import numpy as np
 import taichi as ti
 
-
 # --- Color Conversion Kernels ---
+
 
 @ti.func
 def bgr_to_lab_func(bgr):
@@ -41,6 +41,7 @@ def bgr_to_lab_func(bgr):
 
     return ti.Vector([L, a, b_])
 
+
 @ti.func
 def lab_to_bgr_func(lab):
     L, a, b_ = lab[0], lab[1], lab[2]
@@ -69,13 +70,17 @@ def lab_to_bgr_func(lab):
     g = 1.055 * ti.pow(g, 1 / 2.4) - 0.055 if g > 0.0031308 else 12.92 * g
     b = 1.055 * ti.pow(b, 1 / 2.4) - 0.055 if b > 0.0031308 else 12.92 * b
 
-    return ti.Vector([
-        ti.max(0, ti.min(255, b * 255.0)),
-        ti.max(0, ti.min(255, g * 255.0)),
-        ti.max(0, ti.min(255, r * 255.0)),
-    ])
+    return ti.Vector(
+        [
+            ti.max(0, ti.min(255, b * 255.0)),
+            ti.max(0, ti.min(255, g * 255.0)),
+            ti.max(0, ti.min(255, r * 255.0)),
+        ]
+    )
+
 
 # --- Histogram Blending Kernels ---
+
 
 @ti.kernel
 def compute_stats_kernel(
@@ -100,6 +105,7 @@ def compute_stats_kernel(
     for c in ti.static(range(3)):
         mean[c] = m[c]
         std[c] = s[c]
+
 
 @ti.kernel
 def hist_blend_apply_kernel(
@@ -143,6 +149,7 @@ def hist_blend_apply_kernel(
         out[i, j, 1] = ab_lab[1]
         out[i, j, 2] = ab_lab[2]
 
+
 @ti.kernel
 def hist_blend_final_pass_kernel(
     ab_lab_temp: ti.types.ndarray(),
@@ -159,23 +166,25 @@ def hist_blend_final_pass_kernel(
     s_me = ti.Vector([min_e_std[0], min_e_std[1], min_e_std[2]])
 
     for i, j in ti.ndrange(h, w):
-        lab = ti.Vector([
-            ab_lab_temp[i, j, 0],
-            ab_lab_temp[i, j, 1],
-            ab_lab_temp[i, j, 2],
-        ])
+        lab = ti.Vector(
+            [
+                ab_lab_temp[i, j, 0],
+                ab_lab_temp[i, j, 1],
+                ab_lab_temp[i, j, 2],
+            ]
+        )
         lab_final = (lab - m_ab) * s_me / (s_ab + 1e-6) + m_me
         res = lab_to_bgr_func(lab_final)
         out[i, j, 0] = res[0]
         out[i, j, 1] = res[1]
         out[i, j, 2] = res[2]
 
+
 # --- Warping Kernels ---
 
+
 @ti.func
-def get_val_reflect(
-    src: ti.template(), y: int, x: int, c: int, h: int, w: int
-):
+def get_val_reflect(src: ti.template(), y: int, x: int, c: int, h: int, w: int):
     ry = y
     rx = x
     if ry < 0:
@@ -195,6 +204,7 @@ def get_val_reflect(
     else:
         val = src[ry, rx]
     return float(val)
+
 
 @ti.kernel
 def bilinear_warp_kernel(
@@ -234,9 +244,8 @@ def bilinear_warp_kernel(
             v01 = get_val_reflect(src, y0, x1, 0, h, w)
             v10 = get_val_reflect(src, y1, x0, 0, h, w)
             v11 = get_val_reflect(src, y1, x1, 0, h, w)
-            dst[i, j] = wy0 * (wx0 * v00 + wx1 * v01) + wy1 * (
-                wx0 * v10 + wx1 * v11
-            )
+            dst[i, j] = wy0 * (wx0 * v00 + wx1 * v01) + wy1 * (wx0 * v10 + wx1 * v11)
+
 
 @ti.func
 def finite_or_zero(value: float) -> float:
@@ -244,6 +253,7 @@ def finite_or_zero(value: float) -> float:
     if value != value or value > 1.0e20 or value < -1.0e20:
         out = 0.0
     return out
+
 
 @ti.kernel
 def soft_splat_kernel(
@@ -307,6 +317,7 @@ def soft_splat_kernel(
                             weight * src_val,
                         )
 
+
 @ti.kernel
 def normalize_splat_kernel(
     dst_color: ti.types.ndarray(),
@@ -344,6 +355,7 @@ def normalize_splat_kernel(
                 else:
                     out[i, j] = 0.0
 
+
 @ti.kernel
 def pull_kernel(
     src_color: ti.types.ndarray(),
@@ -363,13 +375,9 @@ def pull_kernel(
                     if 0 <= si < h_src and 0 <= sj < w_src:
                         dist_sq = di * di + dj * dj
                         gw = ti.exp(-dist_sq / 2.0)
-                        sum_c += finite_or_zero(
-                            float(src_color[si, sj, c])
-                        ) * gw
+                        sum_c += finite_or_zero(float(src_color[si, sj, c])) * gw
                         if c == 0:
-                            sum_w += finite_or_zero(
-                                float(src_weight[si, sj])
-                            ) * gw
+                            sum_w += finite_or_zero(float(src_weight[si, sj])) * gw
                 dst_color[i, j, c] = sum_c
         else:
             sum_c = 0.0
@@ -382,6 +390,7 @@ def pull_kernel(
                     sum_w += finite_or_zero(float(src_weight[si, sj])) * gw
             dst_color[i, j] = sum_c
         dst_weight[i, j] = finite_or_zero(sum_w)
+
 
 @ti.kernel
 def push_kernel(
@@ -400,24 +409,20 @@ def push_kernel(
                 alpha = ti.max(0.0, ti.min(1.0, 1.0 - dw))
                 if ti.static(len(src_color.shape) > 2):
                     for c in range(src_color.shape[2]):
-                        coarse = finite_or_zero(
-                            float(src_color[si, sj, c]) / sw
-                        )
+                        coarse = finite_or_zero(float(src_color[si, sj, c]) / sw)
                         current = finite_or_zero(
                             float(dst_color[i, j, c]) / ti.max(dw, 1e-6)
                         )
-                        dst_color[i, j, c] = dw * (
-                            current
-                        ) + alpha * coarse
+                        dst_color[i, j, c] = dw * (current) + alpha * coarse
                 else:
                     coarse = finite_or_zero(float(src_color[si, sj]) / sw)
-                    current = finite_or_zero(
-                        float(dst_color[i, j]) / ti.max(dw, 1e-6)
-                    )
+                    current = finite_or_zero(float(dst_color[i, j]) / ti.max(dw, 1e-6))
                     dst_color[i, j] = dw * current + alpha * coarse
                 dst_weight[i, j] = 1.0
 
+
 # --- Poisson CG Solver ---
+
 
 @ti.kernel
 def compute_laplacian_kernel(
@@ -440,6 +445,7 @@ def compute_laplacian_kernel(
 
         lap[i, j] = weight_sq * (gx_sq + gy_sq) + center
 
+
 @ti.kernel
 def compute_rhs_kernel(
     gx: ti.types.ndarray(),
@@ -459,6 +465,7 @@ def compute_rhs_kernel(
             val_gy -= gy[i - 1, j]
 
         rhs[i, j] = weight_sq * (val_gx + val_gy) + target[i, j]
+
 
 def poisson_solver_cg(gx, gy, target, weight, max_iter=100, tol=1e-5):
     h, w = target.shape

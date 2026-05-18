@@ -1,6 +1,11 @@
 import numpy as np
 
-from ezsynth.config import BlendingConfig, DebugConfig, EbsynthParamsConfig, PipelineConfig
+from ezsynth.config import (
+    BlendingConfig,
+    DebugConfig,
+    EbsynthParamsConfig,
+    PipelineConfig,
+)
 from ezsynth.engines.pass_runner import SynthesisPassRunner
 from ezsynth.precompute import PrecomputeState
 from ezsynth.scheduler import SynthesisScheduler
@@ -64,7 +69,9 @@ def test_pass_runner_uses_precomputed_guides_and_flow(monkeypatch):
                 output_nnf=output_nnf,
             )
 
-    monkeypatch.setattr("ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext)
+    monkeypatch.setattr(
+        "ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext
+    )
 
     style = np.full((2, 2, 3), 255, dtype=np.uint8)
     content = [
@@ -120,7 +127,9 @@ def test_pass_runner_uses_occlusion_modulation(monkeypatch):
                 output_nnf=output_nnf,
             )
 
-    monkeypatch.setattr("ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext)
+    monkeypatch.setattr(
+        "ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext
+    )
 
     style = np.full((2, 2, 3), 255, dtype=np.uint8)
     content = [
@@ -186,7 +195,9 @@ def test_pass_runner_uses_forward_warping_when_enabled(monkeypatch):
         calls.append(flow.copy())
         return img.copy()
 
-    monkeypatch.setattr("ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext)
+    monkeypatch.setattr(
+        "ezsynth.engines.pass_runner.PreparedSynthesisContext", _FakeContext
+    )
     monkeypatch.setattr(Warp, "run_forward_warping", _fake_forward)
 
     style = np.full((2, 2, 3), 255, dtype=np.uint8)

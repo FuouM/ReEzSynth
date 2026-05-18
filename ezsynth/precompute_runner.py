@@ -73,7 +73,9 @@ class PrecomputeRunner:
         return self.state
 
     def uses_bidirectional_flow(self) -> bool:
-        return self.pipeline_cfg.use_pseudo_endpoint_styles or self.uses_flow_occlusion()
+        return (
+            self.pipeline_cfg.use_pseudo_endpoint_styles or self.uses_flow_occlusion()
+        )
 
     def uses_flow_occlusion(self) -> bool:
         pc = self.pipeline_cfg
@@ -124,10 +126,14 @@ class PrecomputeRunner:
         if self.debug_cfg.save_flow_viz and self.state.bwd_flows:
             self._save_flow_visualizations(self.state.bwd_flows, subdir="bwd")
 
-    def _compute_bidirectional_optical_flow(self, content_frames: List[np.ndarray]) -> None:
+    def _compute_bidirectional_optical_flow(
+        self, content_frames: List[np.ndarray]
+    ) -> None:
         cache_root = Path(self.project_cfg.cache_dir)
         num_expected = len(content_frames) - 1
-        fwd_cache_ready = has_exact_cache_files(cache_root / "flow", "npy", num_expected)
+        fwd_cache_ready = has_exact_cache_files(
+            cache_root / "flow", "npy", num_expected
+        )
         bwd_cache_ready = has_exact_cache_files(
             cache_root / "flow_bwd",
             "npy",
@@ -258,6 +264,7 @@ class PrecomputeRunner:
             tqdm(self.state.bwd_occlusion_masks, desc="Bwd occlusion debug")
         ):
             write_image(bwd_dir / f"{i:05d}.png", mask_to_bgr(mask))
+
 
 def compute_edge_maps(
     content_frames: List[np.ndarray], edge_method: str

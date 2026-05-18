@@ -86,9 +86,10 @@ class SynthesisService:
     """Small orchestration layer reusable by CLI, API, and future integrations."""
 
     def run(self, request: SynthesisRequest) -> SynthesisResult:
-        with _temp_dir_if_missing(request.output_dir) as output_dir, _temp_dir_if_missing(
-            request.cache_dir
-        ) as cache_dir:
+        with (
+            _temp_dir_if_missing(request.output_dir) as output_dir,
+            _temp_dir_if_missing(request.cache_dir) as cache_dir,
+        ):
             configs = request.build_configs(output_dir=output_dir, cache_dir=cache_dir)
             data = ProjectData.from_config(configs.project)
             pipeline = self.build_pipeline(configs, data)

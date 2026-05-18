@@ -45,7 +45,9 @@ class SynthesisScheduler:
         style_indices: List[int],
         force_directional: bool = False,
     ) -> List[np.ndarray]:
-        sequence_builder = create_directional_sequences if force_directional else create_sequences
+        sequence_builder = (
+            create_directional_sequences if force_directional else create_sequences
+        )
         sequences = sequence_builder(
             num_frames=len(content_frames),
             style_indices=style_indices,

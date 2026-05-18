@@ -14,8 +14,8 @@ class Warp:
 
         if self.use_taichi:
             try:
-                from ..engines.backends.taichi_backend import ensure_ti_init
                 from ..engines.backends import taichi_ops
+                from ..engines.backends.taichi_backend import ensure_ti_init
 
                 ensure_ti_init()
                 self._taichi_ops = taichi_ops
@@ -32,9 +32,15 @@ class Warp:
         if flo.shape[:2] == (self.H, self.W):
             flo_resized = flo
         else:
-            flo_resized = cv2.resize(flo, (self.W, self.H), interpolation=cv2.INTER_LINEAR)
+            flo_resized = cv2.resize(
+                flo, (self.W, self.H), interpolation=cv2.INTER_LINEAR
+            )
 
-        if self.use_taichi and self._taichi_available and interpolation == cv2.INTER_LINEAR:
+        if (
+            self.use_taichi
+            and self._taichi_available
+            and interpolation == cv2.INTER_LINEAR
+        ):
             dst = np.zeros_like(img)
             self._taichi_ops.bilinear_warp_kernel(img, flo_resized, dst)
             return dst
@@ -155,7 +161,9 @@ class Warp:
             return out, raw_weight
         return out
 
-    def run_pull_push(self, color: np.ndarray, weight: np.ndarray, levels: int = 5) -> None:
+    def run_pull_push(
+        self, color: np.ndarray, weight: np.ndarray, levels: int = 5
+    ) -> None:
         """Hierarchical hole filling using pull-push accumulation."""
         pyramid_color = [color]
         pyramid_weight = [weight]

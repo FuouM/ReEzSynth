@@ -35,9 +35,8 @@ def compute_guide(
     compute_kwargs: Optional[dict] = None,
 ):
     cache_path = Path(cache_dir) / prefix
-    if (
-        not force_recompute
-        and has_exact_cache_files(cache_path, extension, num_expected)
+    if not force_recompute and has_exact_cache_files(
+        cache_path, extension, num_expected
     ):
         result = load_cache_fn(cache_path)
     else:

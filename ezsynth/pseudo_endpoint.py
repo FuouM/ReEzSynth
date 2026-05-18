@@ -57,7 +57,9 @@ class PseudoEndpointGenerator:
         last_idx = max(augmented)
 
         if first_idx > 0:
-            print(f"Generating pseudo start style at frame 0 from style frame {first_idx}...")
+            print(
+                f"Generating pseudo start style at frame 0 from style frame {first_idx}..."
+            )
             augmented[0] = self.generate(
                 target_idx=0,
                 source_idx=first_idx,
@@ -111,7 +113,9 @@ class PseudoEndpointGenerator:
                 is_forward=target_idx > source_idx,
                 content_frames=content_frames,
             )
-            return pseudo_sequence[-1] if target_idx > source_idx else pseudo_sequence[0]
+            return (
+                pseudo_sequence[-1] if target_idx > source_idx else pseudo_sequence[0]
+            )
 
         h, w = content_frames[target_idx].shape[:2]
         source_coords, valid_coords = accumulate_target_to_source_coords(
@@ -138,7 +142,9 @@ class PseudoEndpointGenerator:
             out_dir = self._occlusion_debug_output_dir() / "pseudo_endpoints"
             out_dir.mkdir(parents=True, exist_ok=True)
             write_image(out_dir / f"{target_idx:05d}_style.png", pseudo)
-            write_image(out_dir / f"{target_idx:05d}_confidence.png", mask_to_bgr(confidence))
+            write_image(
+                out_dir / f"{target_idx:05d}_confidence.png", mask_to_bgr(confidence)
+            )
 
         assigned_ratio = float((confidence > 0).mean())
         print(

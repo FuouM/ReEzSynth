@@ -8,10 +8,14 @@ from ...consts import EBSYNTH_VOTEMODE_WEIGHTED
 from ...torch_ops.device_cache import clear_torch_device_cache
 from ...torch_ops.mask_ops import dilate_mask, evaluate_mask
 from ...torch_ops.omega_ops import populate_omega_map
-from ...torch_ops.patchmatch_ops import propagation_step, random_search_step, try_patch_batch
+from ...torch_ops.patch_ops import extract_patches
+from ...torch_ops.patchmatch_ops import (
+    propagation_step,
+    random_search_step,
+    try_patch_batch,
+)
 from ...torch_ops.voting_ops import vote_plain, vote_weighted
 from ...utils.timer import SynthesisTimer
-from ...torch_ops.patch_ops import extract_patches
 from .common import get_auto_torch_device, resample_tensor
 
 

@@ -57,9 +57,7 @@ def create_directional_sequences(
         return _default_sequence(num_frames)
 
     sequences = _endpoint_sequences(keyframes)
-    for (left_style_idx, left_frame), (_, right_frame) in zip(
-        keyframes, keyframes[1:]
-    ):
+    for (left_style_idx, left_frame), (_, right_frame) in zip(keyframes, keyframes[1:]):
         sequences.append(
             SynthesisSequence(
                 left_frame,

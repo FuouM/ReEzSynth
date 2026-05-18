@@ -1,8 +1,8 @@
 import numpy as np
 
 from ezsynth.config import DebugConfig, EbsynthParamsConfig, PipelineConfig
-from ezsynth.pseudo_endpoint import PseudoEndpointGenerator
 from ezsynth.precompute import PrecomputeState
+from ezsynth.pseudo_endpoint import PseudoEndpointGenerator
 from ezsynth.utils.occlusion import (
     accumulate_target_to_source_coords,
     build_dfs_pseudo_style,

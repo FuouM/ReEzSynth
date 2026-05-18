@@ -7,7 +7,6 @@ import numpy as np
 from tqdm import tqdm
 
 from ezsynth.utils.io_utils import get_sorted_image_paths, read_image, write_image
-
 from FastBlend.src.api import create_config
 from FastBlend.src.config import FastBlendConfig
 from FastBlend.src.engine import FastBlendEngine, FastBlendInput_Keyframes

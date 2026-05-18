@@ -339,9 +339,7 @@ class EbsynthEngine:
             if hasattr(self.backend, "init_rand_states"):
                 self.backend.init_rand_states(self.rand_states)
 
-    def _determine_num_pyramid_levels(
-        self, sh: int, sw: int, th: int, tw: int
-    ) -> int:
+    def _determine_num_pyramid_levels(self, sh: int, sw: int, th: int, tw: int) -> int:
         max_levels = 0
         min_dim_start = min(sh, sw, th, tw)
         for level in range(32, -1, -1):
@@ -500,7 +498,9 @@ class EbsynthEngine:
             self.backend.timer.print_summary(f"{backend_name} Backend Operations")
 
 
-def _channel_weights(num_channels: int, total_weight: float, device: str) -> torch.Tensor:
+def _channel_weights(
+    num_channels: int, total_weight: float, device: str
+) -> torch.Tensor:
     if num_channels <= 0:
         raise ValueError("Expected at least one channel when building weights.")
     return torch.full(

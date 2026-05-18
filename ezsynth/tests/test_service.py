@@ -46,7 +46,9 @@ def test_service_run_can_skip_saving_for_in_memory_consumers(
         save_outputs=False,
     )
     service = SynthesisService()
-    monkeypatch.setattr(service, "build_pipeline", lambda configs, data: _FakePipeline())
+    monkeypatch.setattr(
+        service, "build_pipeline", lambda configs, data: _FakePipeline()
+    )
 
     result = service.run(request)
 

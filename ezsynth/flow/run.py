@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Callable, Iterator, List
-from typing import cast
+from typing import Callable, Iterator, List, cast
 
 import numpy as np
 import torch
@@ -187,6 +186,8 @@ def compute_bidirectional_optical_flow_sequence(
             bwd_reversed = compute(list(reversed(frames)))
         return fwd, list(reversed(bwd_reversed))
     finally:
-        print("Bidirectional optical flow computation complete. Releasing model from memory...")
+        print(
+            "Bidirectional optical flow computation complete. Releasing model from memory..."
+        )
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

@@ -3,8 +3,8 @@ from typing import Optional, Tuple
 
 import torch
 
-from ...config import EbsynthParamsConfig, PipelineConfig
 from ... import consts
+from ...config import EbsynthParamsConfig, PipelineConfig
 from ...utils.timer import SynthesisTimer
 
 
@@ -15,7 +15,10 @@ class CudaBackend:
     """
 
     def __init__(
-        self, ebsynth_config: EbsynthParamsConfig, pipeline_config: PipelineConfig, device: str = None
+        self,
+        ebsynth_config: EbsynthParamsConfig,
+        pipeline_config: PipelineConfig,
+        device: str = None,
     ):
         self.ebsynth_config = ebsynth_config
         self.pipeline_config = pipeline_config

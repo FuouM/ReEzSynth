@@ -24,9 +24,7 @@ def test_edge_engine_wraps_split_edge_batch(monkeypatch):
 
     monkeypatch.setattr("ezsynth.engines.edge_engine.compute_edge", _fake_compute_edge)
 
-    result = EdgeEngine(method="Classic").compute(
-        [np.zeros((2, 2, 3), dtype=np.uint8)]
-    )
+    result = EdgeEngine(method="Classic").compute([np.zeros((2, 2, 3), dtype=np.uint8)])
 
     assert result is expected
     assert calls == [(1, "Classic")]

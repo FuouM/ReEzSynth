@@ -1,2 +1,1 @@
 """Edge extraction helpers."""
-

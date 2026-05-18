@@ -19,8 +19,8 @@ except ImportError:
 try:
     import taichi  # noqa: F401 — dependency gate before importing taichi_ops
 
-    from ..engines.backends.taichi_backend import ensure_ti_init
     from ..engines.backends import taichi_ops
+    from ..engines.backends.taichi_backend import ensure_ti_init
 
     TAICHI_AVAILABLE = True
 except ImportError:
@@ -174,11 +174,13 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
     out_all = np.zeros((h * w, c), dtype=np.float32)
 
     for ch in range(c):
-        b = np.vstack([
-            gx_reshaped[:, ch : ch + 1] * grad_weights[ch],
-            gy_reshaped[:, ch : ch + 1] * grad_weights[ch],
-            Iab_centered[:, ch : ch + 1],
-        ])
+        b = np.vstack(
+            [
+                gx_reshaped[:, ch : ch + 1] * grad_weights[ch],
+                gy_reshaped[:, ch : ch + 1] * grad_weights[ch],
+                Iab_centered[:, ch : ch + 1],
+            ]
+        )
         if solver == "lsqr":
             A = cache["As"][ch]
             out_all[:, ch] = scipy.sparse.linalg.lsqr(A, b, iter_lim=maxiter)[0]

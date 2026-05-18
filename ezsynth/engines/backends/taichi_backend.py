@@ -1,6 +1,7 @@
 # ezsynth/engines/backends/taichi_backend.py
 import platform
 from typing import Optional, Tuple
+
 import taichi as ti
 import torch
 

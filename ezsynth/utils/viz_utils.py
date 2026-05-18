@@ -83,9 +83,9 @@ def flow_to_image(flow_uv, clip_flow=None, convert_to_bgr=False):
     """
     Converts a 2-channel flow field to a color image for visualization.
     """
-    assert (
-        flow_uv.ndim == 3 and flow_uv.shape[2] == 2
-    ), "Input flow must have shape [H,W,2]"
+    assert flow_uv.ndim == 3 and flow_uv.shape[2] == 2, (
+        "Input flow must have shape [H,W,2]"
+    )
 
     if clip_flow is not None:
         flow_uv = np.clip(flow_uv, -clip_flow, clip_flow)

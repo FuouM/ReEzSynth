@@ -7,7 +7,9 @@ from tqdm import tqdm
 from .io_utils import write_image
 
 
-def expected_cache_paths(cache_dir: Path, extension: str, num_expected: int) -> List[Path]:
+def expected_cache_paths(
+    cache_dir: Path, extension: str, num_expected: int
+) -> List[Path]:
     """Return the exact numbered cache files expected for a complete cache hit."""
     return [cache_dir / f"{i:05d}.{extension}" for i in range(num_expected)]
 

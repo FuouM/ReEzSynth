@@ -219,7 +219,9 @@ def try_patch_batch(
             uf = uniformity_weight * inv_norm
             candidate_total_error = candidate_patch_errors + uf * candidate_omega_scores
             current_total_error = current_errors + uf * current_omega_scores
-            update_mask = (candidate_total_error < current_total_error) & valid_candidates
+            update_mask = (
+                candidate_total_error < current_total_error
+            ) & valid_candidates
     with _mp_region("try_patch:select_write", _dev):
         if update_nnf:
             updated_nnf = torch.where(
@@ -460,9 +462,7 @@ def random_search_step(
         y_coords, x_coords = active_indices
         num_active = y_coords.numel()
 
-        rand_buf_x, rand_buf_y, candidate_buf = _random_search_buffers(
-            num_active, nnf
-        )
+        rand_buf_x, rand_buf_y, candidate_buf = _random_search_buffers(num_active, nnf)
 
         # OPTIMIZATION: Pre-compute constants outside the loop
         patch_pixel_count = patch_size * patch_size

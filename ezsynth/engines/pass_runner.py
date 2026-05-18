@@ -141,7 +141,9 @@ class SynthesisPassRunner:
             )
 
             if synthesis_context is None:
-                synthesis_context = PreparedSynthesisContext(self.engine, style_img, guides)
+                synthesis_context = PreparedSynthesisContext(
+                    self.engine, style_img, guides
+                )
 
             run_output = synthesis_context.run_frame(
                 guides=guides,

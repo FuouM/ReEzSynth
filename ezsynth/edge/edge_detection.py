@@ -1,8 +1,8 @@
-import numpy as np
 from typing import cast
 
-from .batch import compute_edge_frame
-from .batch import EdgeMethod
+import numpy as np
+
+from .batch import EdgeMethod, compute_edge_frame
 from .classic import compute_classic_edge
 from .ops import (
     PageEdgeParams,
@@ -10,8 +10,10 @@ from .ops import (
     create_gaussian_kernel,
     pad_gray_reflect,
     postprocess_pst_page,
-    replace_zeros_tensor as replace_zeros_tensor,
     unpad_gray,
+)
+from .ops import (
+    replace_zeros_tensor as replace_zeros_tensor,
 )
 from .phycv import compute_page_edge, compute_pst_edge
 
