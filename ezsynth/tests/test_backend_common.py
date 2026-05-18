@@ -1,9 +1,13 @@
 import torch
 
+from ezsynth import consts
 import ezsynth.engines.backends as backends
 import ezsynth.torch_ops as torch_ops
 from ezsynth.engines.backends.common import random_init_nnf, resample_tensor
+from ezsynth.engines.backends.taichi_backend import TaichiBackend
+from ezsynth.engines.backends import taichi_kernels
 from ezsynth.torch_ops.device_cache import clear_torch_device_cache
+from ezsynth.torch_ops import microprofile
 
 
 def test_resample_tensor_preserves_uint8_dtype():
@@ -52,3 +56,29 @@ def test_backend_package_does_not_eagerly_export_concrete_backends():
 def test_torch_ops_package_is_lightweight_and_device_cache_accepts_none():
     assert not hasattr(torch_ops, "extract_patches")
     clear_torch_device_cache(None)
+
+
+def test_consts_expose_extension_and_tuning_controls():
+    assert consts.vote_chunk_budget_bytes() >= 8 << 20
+    assert hasattr(consts, "FORCE_EBSYNTH_WHEEL")
+    assert hasattr(consts, "TORCH_MICROPROFILE")
+    assert hasattr(consts, "TAICHI_INIT_VERBOSE")
+    assert callable(consts.ensure_extension_loaded)
+    assert callable(consts.ensure_ebsynth_extension)
+
+
+def test_microprofile_records_regions_when_enabled(monkeypatch):
+    monkeypatch.setattr(consts, "TORCH_MICROPROFILE", "1")
+    microprofile.reset()
+
+    with microprofile.region("unit-test", torch.device("cpu")):
+        pass
+
+    assert microprofile._COUNTS["unit-test"] == 1
+    microprofile.reset()
+    monkeypatch.setattr(consts, "TORCH_MICROPROFILE", "")
+
+
+def test_taichi_backend_imports_kernel_module():
+    assert TaichiBackend.compute_patch_ssd is taichi_kernels.compute_patch_ssd
+    assert TaichiBackend.random_search_kernel is taichi_kernels.random_search_kernel

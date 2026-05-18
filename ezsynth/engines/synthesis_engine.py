@@ -248,8 +248,10 @@ class EbsynthEngine:
         # Create the appropriate backend. Concrete backend imports are kept
         # branch-local so optional dependencies do not affect unrelated backends.
         if self.backend_type == "cuda":
+            from ..consts import ensure_extension_loaded
             from .backends.cuda_backend import CudaBackend
 
+            ensure_extension_loaded()
             # Check if device is specified in config (for CPU mode with C++ extension)
             device = getattr(ebsynth_config, "device", None)
             self.backend = CudaBackend(ebsynth_config, pipeline_config, device=device)

@@ -6,13 +6,13 @@ This module contains vectorized PyTorch implementations of patch-based
 operations that form the core of the PatchMatch algorithm.
 """
 
-import os
 from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 
 from ..consts import TORCH_CUDA_CLEAR_CACHE, TORCH_MPS_CLEAR_CACHE
+from .microprofile import region as _mp_region
 
 
 def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:
@@ -273,3 +273,55 @@ def compute_patch_ncc_vectorized(
     if len(original_shape) > 1:
         return total_error.view(original_shape)
     return total_error
+
+
+_extract_patches_impl = extract_patches
+_compute_patch_ssd_vectorized_impl = compute_patch_ssd_vectorized
+_compute_patch_ncc_vectorized_impl = compute_patch_ncc_vectorized
+
+
+def extract_patches(image: torch.Tensor, patch_size: int) -> torch.Tensor:
+    with _mp_region("extract_patches:unfold", image.device):
+        return _extract_patches_impl(image, patch_size)
+
+
+def compute_patch_ssd_vectorized(
+    source_patches: torch.Tensor,
+    target_patches: torch.Tensor,
+    nnf: torch.Tensor,
+    weights: torch.Tensor,
+) -> torch.Tensor:
+    with _mp_region("patch:ssd_vectorized", source_patches.device):
+        return _compute_patch_ssd_vectorized_impl(
+            source_patches,
+            target_patches,
+            nnf,
+            weights,
+        )
+
+
+def compute_patch_ncc_vectorized(
+    source_style_patches: torch.Tensor,
+    target_style_patches: torch.Tensor,
+    source_guide_patches: torch.Tensor,
+    target_guide_patches: torch.Tensor,
+    nnf: torch.Tensor,
+    patch_size: int,
+    style_weights: torch.Tensor,
+    guide_weights: torch.Tensor,
+    source_stats: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+    target_stats: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+) -> torch.Tensor:
+    with _mp_region("patch:ncc_vectorized", source_style_patches.device):
+        return _compute_patch_ncc_vectorized_impl(
+            source_style_patches,
+            target_style_patches,
+            source_guide_patches,
+            target_guide_patches,
+            nnf,
+            patch_size,
+            style_weights,
+            guide_weights,
+            source_stats,
+            target_stats,
+        )

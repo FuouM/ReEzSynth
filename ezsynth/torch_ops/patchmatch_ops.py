@@ -11,8 +11,9 @@ This module implements the core PatchMatch operations:
 from typing import Tuple
 
 import torch
-from ezsynth.consts import COST_FUNCTION_NCC, COST_FUNCTION_SSD, TORCH_MPS_CLEAR_CACHE
+from ezsynth.consts import COST_FUNCTION_NCC, TORCH_MPS_CLEAR_CACHE
 
+from .microprofile import region as _mp_region
 from .omega_ops import compute_omega_scores, update_omega_map
 from .patch_ops import compute_patch_ncc_vectorized, compute_patch_ssd_vectorized
 
@@ -430,3 +431,26 @@ def random_search_step(
             curr_omega_active[active_update_indices] = cand_omega_v[update_indices_in_v]
 
         radius //= 2
+
+
+_try_patch_batch_impl = try_patch_batch
+_propagation_step_impl = propagation_step
+_random_search_step_impl = random_search_step
+
+
+def try_patch_batch(*args, **kwargs):
+    device = args[0].device if args else None
+    with _mp_region("patchmatch:try_patch_batch", device):
+        return _try_patch_batch_impl(*args, **kwargs)
+
+
+def propagation_step(*args, **kwargs):
+    device = args[0].device if args else None
+    with _mp_region("patchmatch:propagation_step", device):
+        return _propagation_step_impl(*args, **kwargs)
+
+
+def random_search_step(*args, **kwargs):
+    device = args[0].device if args else None
+    with _mp_region("patchmatch:random_search_step", device):
+        return _random_search_step_impl(*args, **kwargs)

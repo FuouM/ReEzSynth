@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
-from ...consts import EXTENSION_AVAILABLE, EXTENSION_CUDA_AVAILABLE, ebsynth_torch
+from ... import consts
 from ...utils.timer import SynthesisTimer
 from .base import BaseSynthesisBackend
 
@@ -19,7 +19,7 @@ class CudaBackend(BaseSynthesisBackend):
         self, ebsynth_config: EbsynthParamsConfig, pipeline_config: PipelineConfig, device: str = None
     ):
         super().__init__(ebsynth_config, pipeline_config)
-        if not EXTENSION_AVAILABLE:
+        if not consts.EXTENSION_AVAILABLE or consts.ebsynth_torch is None:
             raise RuntimeError(
                 "Extension backend selected but ebsynth_torch extension is not available."
             )
@@ -40,7 +40,7 @@ class CudaBackend(BaseSynthesisBackend):
 
     def init_rand_states(self, rand_states: torch.Tensor) -> None:
         """Initialize native RNG state for the tensor's device."""
-        ebsynth_torch.init_rand_states(rand_states)
+        consts.ebsynth_torch.init_rand_states(rand_states)
 
     def run_level(
         self,
@@ -66,7 +66,7 @@ class CudaBackend(BaseSynthesisBackend):
         """
         # Check if we're running on CPU and warn once
         if style_tensor.device.type == "cpu" and not self._warned_cpu_fallback:
-            if not EXTENSION_CUDA_AVAILABLE:
+            if not consts.EXTENSION_CUDA_AVAILABLE:
                 print("[INFO] Running on CPU (CUDA not available in extension).")
             else:
                 print("[INFO] Running on CPU (input tensors are on CPU).")
@@ -80,7 +80,7 @@ class CudaBackend(BaseSynthesisBackend):
 
         if self.benchmark_enabled:
             with self.timer.time_operation(timer_name):
-                return ebsynth_torch.run_level(
+                return consts.ebsynth_torch.run_level(
                     style_tensor,
                     source_guide_tensor,
                     target_guide_tensor,
@@ -104,7 +104,7 @@ class CudaBackend(BaseSynthesisBackend):
                     self.ebsynth_config.n_size_step,
                 )
         else:
-            return ebsynth_torch.run_level(
+            return consts.ebsynth_torch.run_level(
                 style_tensor,
                 source_guide_tensor,
                 target_guide_tensor,

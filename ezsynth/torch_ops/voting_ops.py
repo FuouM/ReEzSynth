@@ -6,12 +6,10 @@ These functions reconstruct the target image by averaging all source patches
 that contribute to each target pixel according to the current NNF.
 """
 
-import os
-
 import torch
-import torch.nn.functional as F
 
 from ..consts import TORCH_MPS_CLEAR_CACHE
+from .microprofile import region as _mp_region
 
 
 def vote_plain(
@@ -212,3 +210,26 @@ def vote_weighted(
         torch.mps.empty_cache()
 
     return target_style
+
+
+_vote_plain_impl = vote_plain
+_vote_weighted_impl = vote_weighted
+
+
+def vote_plain(
+    source_style: torch.Tensor,
+    nnf: torch.Tensor,
+    patch_size: int,
+) -> torch.Tensor:
+    with _mp_region("vote:plain", source_style.device):
+        return _vote_plain_impl(source_style, nnf, patch_size)
+
+
+def vote_weighted(
+    source_style: torch.Tensor,
+    nnf: torch.Tensor,
+    error_map: torch.Tensor,
+    patch_size: int,
+) -> torch.Tensor:
+    with _mp_region("vote:weighted", source_style.device):
+        return _vote_weighted_impl(source_style, nnf, error_map, patch_size)

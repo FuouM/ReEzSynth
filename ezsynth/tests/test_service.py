@@ -2,6 +2,11 @@ from pathlib import Path
 
 import numpy as np
 
+from ezsynth.integration_io import (
+    bgr_uint8_to_rgb_float,
+    rgb_float_to_bgr_uint8,
+    write_rgb_frame_sequence,
+)
 from ezsynth.output import OutputManager
 from ezsynth.service import SynthesisRequest, SynthesisService
 
@@ -68,3 +73,17 @@ def test_output_manager_can_return_frames_without_saving(tmp_path: Path):
     assert result.frames is frames
     assert result.output_dir is None
     assert not result.saved
+
+
+def test_integration_io_converts_rgb_float_and_writes_sequence(tmp_path: Path):
+    rgb = np.array([[[1.0, 0.0, 0.5]]], dtype=np.float32)
+
+    bgr = rgb_float_to_bgr_uint8(rgb)
+    roundtrip = bgr_uint8_to_rgb_float(bgr)
+    paths = write_rgb_frame_sequence([rgb], tmp_path / "frames")
+
+    assert bgr.tolist() == [[[128, 0, 255]]]
+    np.testing.assert_allclose(roundtrip, np.array([[[1.0, 0.0, 128 / 255]]]))
+    assert paths.directory == tmp_path / "frames"
+    assert len(paths.frame_paths) == 1
+    assert paths.frame_paths[0].exists()
