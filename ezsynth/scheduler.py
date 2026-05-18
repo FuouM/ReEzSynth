@@ -9,7 +9,11 @@ from .engines.pass_runner import SynthesisPassRunner
 from .engines.synthesis_engine import EbsynthEngine
 from .precompute import PrecomputeState
 from .utils.blend_utils import Blender
-from .utils.sequence_utils import SynthesisSequence, create_sequences
+from .utils.sequence_utils import (
+    SynthesisSequence,
+    create_directional_sequences,
+    create_sequences,
+)
 
 
 class SynthesisScheduler:
@@ -39,8 +43,10 @@ class SynthesisScheduler:
         content_frames: List[np.ndarray],
         style_frames: List[np.ndarray],
         style_indices: List[int],
+        force_directional: bool = False,
     ) -> List[np.ndarray]:
-        sequences = create_sequences(
+        sequence_builder = create_directional_sequences if force_directional else create_sequences
+        sequences = sequence_builder(
             num_frames=len(content_frames),
             style_indices=style_indices,
         )

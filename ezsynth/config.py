@@ -56,6 +56,13 @@ class PipelineConfig(BaseModel):
     alpha: float = Field(0.75, ge=0.0, le=1.0)
     use_temporal_nnf_propagation: bool = False
     use_sparse_feature_guide: bool = False
+    use_pseudo_endpoint_styles: bool = False
+    pseudo_endpoint_use_blending: bool = False
+    pseudo_endpoint_mode: Literal["dfs", "synthesis"] = "dfs"
+    pseudo_endpoint_dfs_content_threshold: float = 35.0
+    pseudo_endpoint_dfs_offset_threshold: float = 3.0
+    pseudo_endpoint_dfs_min_region_size: int = 16
+    pseudo_endpoint_dfs_inpaint_radius: int = 3
     use_flow_occlusion_masks: bool = False
     use_flow_occlusion_modulation: bool = False
     use_flow_occlusion_fill: bool = False

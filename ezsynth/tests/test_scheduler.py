@@ -4,7 +4,10 @@ from ezsynth.config import BlendingConfig, DebugConfig, EbsynthParamsConfig, Pip
 from ezsynth.engines.pass_runner import SynthesisPassRunner
 from ezsynth.precompute import PrecomputeState
 from ezsynth.scheduler import SynthesisScheduler
-from ezsynth.utils.sequence_utils import SynthesisSequence
+from ezsynth.utils.sequence_utils import (
+    SynthesisSequence,
+    create_directional_sequences,
+)
 
 
 class _FakeEngine:
@@ -182,3 +185,13 @@ def test_scheduler_removes_duplicate_sequence_boundaries(monkeypatch):
     )
 
     assert [int(frame[0, 0, 0]) for frame in frames] == [0, 2]
+
+
+def test_directional_sequences_replace_blend_intervals():
+    sequences = create_directional_sequences(num_frames=4, style_indices=[0, 2, 3])
+
+    assert [seq.mode for seq in sequences] == [
+        SynthesisSequence.MODE_FWD,
+        SynthesisSequence.MODE_FWD,
+    ]
+    assert [seq.style_indices for seq in sequences] == [[0], [1]]

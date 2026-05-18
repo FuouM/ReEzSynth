@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import List, Tuple
 
 import cv2
@@ -190,3 +191,132 @@ def composite_masked_regions(
 
     out = base.astype(np.float32) * (1.0 - alpha) + overlay.astype(np.float32) * alpha
     return out.clip(0, 255).astype(np.uint8)
+
+
+def accumulate_target_to_source_coords(
+    *,
+    height: int,
+    width: int,
+    target_idx: int,
+    source_idx: int,
+    fwd_flows: List[np.ndarray],
+    bwd_flows: List[np.ndarray],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compose adjacent flows to map target-frame pixels into a source frame."""
+    coords = _grid(height, width)
+    valid = np.ones((height, width), dtype=bool)
+
+    if target_idx < source_idx:
+        for i in range(target_idx, source_idx):
+            delta = _sample_flow(fwd_flows[i], coords)
+            coords = coords + delta
+            valid &= ~_outside(coords, height, width)
+    elif target_idx > source_idx:
+        for i in range(target_idx - 1, source_idx - 1, -1):
+            delta = _sample_flow(bwd_flows[i], coords)
+            coords = coords + delta
+            valid &= ~_outside(coords, height, width)
+
+    return coords.astype(np.float32), valid
+
+
+def build_dfs_pseudo_style(
+    *,
+    style_img: np.ndarray,
+    source_content: np.ndarray,
+    target_content: np.ndarray,
+    source_coords: np.ndarray,
+    valid_coords: np.ndarray,
+    content_error_threshold: float = 35.0,
+    offset_error_threshold: float = 3.0,
+    min_region_size: int = 16,
+    inpaint_radius: int = 3,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Build a pseudo style by growing coherent target-to-source offset regions.
+
+    Confident seeds grow across connected pixels while their accumulated-flow
+    offset stays coherent. Remaining holes are inpainted from neighboring style.
+    """
+    h, w = target_content.shape[:2]
+    grid = _grid(h, w)
+    offsets = source_coords - grid
+
+    sampled_content = cv2.remap(
+        source_content,
+        source_coords[..., 0],
+        source_coords[..., 1],
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    sampled_style = cv2.remap(
+        style_img,
+        source_coords[..., 0],
+        source_coords[..., 1],
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+
+    content_error = np.mean(
+        np.abs(sampled_content.astype(np.float32) - target_content.astype(np.float32)),
+        axis=2,
+    )
+    confident = valid_coords & (content_error <= content_error_threshold)
+
+    pseudo = sampled_style.copy()
+    assigned = np.zeros((h, w), dtype=bool)
+    visited = np.zeros((h, w), dtype=bool)
+    neighbors = ((-1, 0), (1, 0), (0, -1), (0, 1))
+
+    for sy in range(h):
+        for sx in range(w):
+            if visited[sy, sx] or not confident[sy, sx]:
+                continue
+
+            region: list[tuple[int, int]] = []
+            q: deque[tuple[int, int]] = deque([(sy, sx)])
+            visited[sy, sx] = True
+            offset_sum = np.zeros(2, dtype=np.float64)
+
+            while q:
+                y, x = q.popleft()
+                region.append((y, x))
+                offset_sum += offsets[y, x]
+                mean_offset = offset_sum / float(len(region))
+
+                for dy, dx in neighbors:
+                    ny, nx = y + dy, x + dx
+                    if ny < 0 or ny >= h or nx < 0 or nx >= w:
+                        continue
+                    if visited[ny, nx] or not confident[ny, nx]:
+                        continue
+                    if (
+                        np.linalg.norm(offsets[ny, nx] - mean_offset)
+                        > offset_error_threshold
+                    ):
+                        continue
+                    visited[ny, nx] = True
+                    q.append((ny, nx))
+
+            if len(region) < min_region_size:
+                continue
+
+            ys = np.array([p[0] for p in region], dtype=np.int32)
+            xs = np.array([p[1] for p in region], dtype=np.int32)
+            median_offset = np.median(offsets[ys, xs], axis=0).astype(np.float32)
+            map_x = np.rint(xs.astype(np.float32) + median_offset[0]).astype(np.int32)
+            map_y = np.rint(ys.astype(np.float32) + median_offset[1]).astype(np.int32)
+            map_x = np.clip(map_x, 0, w - 1)
+            map_y = np.clip(map_y, 0, h - 1)
+            pseudo[ys, xs] = style_img[map_y, map_x]
+            assigned[ys, xs] = True
+
+    if np.any(assigned):
+        hole_mask = (~assigned).astype(np.uint8) * 255
+        if np.any(hole_mask):
+            pseudo = cv2.inpaint(pseudo, hole_mask, inpaint_radius, cv2.INPAINT_TELEA)
+
+    confidence = assigned.astype(np.uint8) * 255
+    return pseudo.astype(np.uint8), confidence

@@ -48,11 +48,13 @@ class PrecomputeRunner:
         self.state = state if state is not None else PrecomputeState()
 
     def run(self, content_frames: List[np.ndarray]) -> PrecomputeState:
-        if self.uses_flow_occlusion():
+        if self.uses_bidirectional_flow():
             self._compute_bidirectional_optical_flow(content_frames)
-            self._compute_occlusion_masks()
         else:
             self._compute_optical_flow(content_frames)
+
+        if self.uses_flow_occlusion():
+            self._compute_occlusion_masks()
 
         self._compute_edge_maps(content_frames)
 
@@ -68,6 +70,9 @@ class PrecomputeRunner:
 
         print("\nAll pre-computation finished.")
         return self.state
+
+    def uses_bidirectional_flow(self) -> bool:
+        return self.pipeline_cfg.use_pseudo_endpoint_styles or self.uses_flow_occlusion()
 
     def uses_flow_occlusion(self) -> bool:
         pc = self.pipeline_cfg
