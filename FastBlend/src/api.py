@@ -10,8 +10,7 @@ from typing import Callable, List, Optional
 import numpy as np
 
 from .config import FastBlendConfig, get_default_config
-from .interpolation_runner import InterpolationModeRunner
-from .runner import FastBlendRunner
+from .engine import FastBlendEngine, FastBlendInput_Keyframes, FastBlendInput_Sequence
 
 
 def smooth_video(
@@ -34,7 +33,7 @@ def smooth_video(
         window_size: Temporal window size for blending. Uses default if None.
         batch_size: Batch size for processing. Uses default if None.
         progress_callback: Optional callback function called with (current_frame, total_frames)
-        backend: Backend to use ("auto", "cuda", "cupy")
+        backend: Backend to use ("auto", "cuda", "cupy", "taichi")
         config: Optional FastBlendConfig. If provided, other parameters are ignored.
 
     Returns:
@@ -42,7 +41,7 @@ def smooth_video(
 
     Example:
         >>> import numpy as np
-        >>> from fastblend import smooth_video
+        >>> from FastBlend.src.api import smooth_video
         >>>
         >>> # Create dummy frames (replace with your actual frames)
         >>> guide_frames = [np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8) for _ in range(10)]
@@ -60,9 +59,13 @@ def smooth_video(
         if batch_size is not None:
             config.batch_size = batch_size
 
-    # Create and run the processor
-    runner = FastBlendRunner(config)
-    return runner.run(frames_guide, frames_style, progress_callback, backend)
+    engine = FastBlendEngine()
+    return engine.smooth_sequence(
+        FastBlendInput_Sequence(frames_guide, frames_style),
+        config,
+        progress_callback,
+        backend,
+    )
 
 
 def create_config(
@@ -85,14 +88,14 @@ def create_config(
         minimum_patch_size: Minimum patch size for matching
         num_iter: Number of patch matching iterations
         guide_weight: Weight for guide matching
-        backend: Backend to use ("auto", "cuda", "cupy")
+        backend: Backend to use ("auto", "cuda", "cupy", "taichi")
         gpu_id: GPU device ID
 
     Returns:
         FastBlendConfig instance
 
     Example:
-        >>> from fastblend import create_config, smooth_video
+        >>> from FastBlend.src.api import create_config, smooth_video
         >>>
         >>> config = create_config(
         ...     accuracy=2,
@@ -172,7 +175,7 @@ def interpolate_video(
         window_size: Temporal window size for blending. Uses default if None.
         batch_size: Batch size for processing. Uses default if None.
         progress_callback: Optional callback function called with (current_frame, total_frames)
-        backend: Backend to use ("auto", "cuda", "cupy"). Default: "auto"
+        backend: Backend to use ("auto", "cuda", "cupy", "taichi"). Default: "auto"
         config: Optional FastBlendConfig. If provided, other parameters are ignored.
 
     Returns:
@@ -180,7 +183,7 @@ def interpolate_video(
 
     Example:
         >>> import numpy as np
-        >>> from fastblend import interpolate_video
+        >>> from FastBlend.src.api import interpolate_video
         >>>
         >>> # Load all frames and keyframes
         >>> all_frames = load_frames_from_dir("path/to/all/frames")
@@ -228,39 +231,9 @@ def interpolate_video(
 
     config.backend = backend
 
-    # Convert frames to float32 for patch matching engine
-    guide_frames_float = [frame.astype(np.float32) for frame in frames_guide]
-    keyframes_style_float = [frame.astype(np.float32) for frame in keyframes_style]
-
-    # Create interpolation runner
-    interpolation_runner = InterpolationModeRunner()
-
-    # Get ebsynth config from FastBlend config
-    ebsynth_config = config.get_ebsynth_config()
-
-    # Run interpolation
-    result_frames_float = interpolation_runner.run(
-        guide_frames_float,
-        keyframes_style_float,
-        keyframe_indices,
-        batch_size=config.batch_size,
-        ebsynth_config=ebsynth_config,
-        progress_callback=progress_callback,
+    engine = FastBlendEngine()
+    return engine.interpolate_keyframes(
+        FastBlendInput_Keyframes(frames_guide, keyframes_style, keyframe_indices),
+        config,
+        progress_callback,
     )
-
-    # Convert back to uint8
-    result_frames = [
-        np.clip(frame, 0, 255).astype(np.uint8) if frame is not None else None
-        for frame in result_frames_float
-    ]
-
-    # Fill any None values (shouldn't happen with proper implementation)
-    for i in range(len(result_frames)):
-        if result_frames[i] is None:
-            # Find nearest keyframe
-            distances = [(abs(i - kf_idx), kf_idx) for kf_idx in keyframe_indices]
-            nearest_kf_idx = min(distances)[1]
-            kf_style_idx = keyframe_indices.index(nearest_kf_idx)
-            result_frames[i] = keyframes_style[kf_style_idx]
-
-    return result_frames

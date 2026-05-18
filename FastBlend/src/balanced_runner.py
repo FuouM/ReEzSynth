@@ -4,11 +4,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# Lazy imports handled inside the class or function to avoid top-level dependency
-try:
-    from .patch_match import create_pyramid_patch_matcher
-except ImportError:
-    pass
+from .patch_match import build_pyramid_patch_matcher, resolve_fastblend_backend
+from .runtime.torch_device import balanced_mode_torch_device
 
 
 class GPUAccumulator:
@@ -159,7 +156,7 @@ class BalancedModeRunner:
         frames_style,
         batch_size,
         window_size,
-        ebsynth_config,
+        patch_matcher_config,
         desc="Balanced Mode",
         save_path=None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
@@ -168,69 +165,23 @@ class BalancedModeRunner:
         """
         Run FastBlend processing with progress tracking.
         """
-        # Check backend availability
-        cuda_available = False
-        cupy_available = False
+        resolved = resolve_fastblend_backend(backend)
 
-        try:
-            from .fastblend_extension import is_available as cuda_is_available
+        suffix = " (auto)" if backend == "auto" else ""
+        print(f"FastBlend: Using {resolved} backend{suffix}")
 
-            cuda_available = cuda_is_available()
-        except ImportError:
-            cuda_available = False
-
-        try:
-            import cupy
-
-            cupy_available = True
-        except ImportError:
-            cupy_available = False
-
-        taichi_available = False
-        try:
-            from .patch_match import taichi_available as taichi_is_avail
-
-            taichi_available = taichi_is_avail
-        except ImportError:
-            taichi_available = False
-
-        # Select backend based on preference
-        if backend == "cuda" and cuda_available:
-            print("FastBlend: Using CUDA backend")
-        elif backend == "cupy" and cupy_available:
-            print("FastBlend: Using CuPy backend")
-        elif backend == "taichi" and taichi_available:
-            print("FastBlend: Using Taichi backend")
-        elif backend == "auto":
-            if cuda_available:
-                print("FastBlend: Using CUDA backend (auto-selected)")
-            elif taichi_available:
-                print("FastBlend: Using Taichi backend (auto-selected)")
-            elif cupy_available:
-                print("FastBlend: Using CuPy backend (fallback)")
-            else:
-                raise ImportError("No FastBlend backend available")
-        else:
-            available_backends = []
-            if cuda_available:
-                available_backends.append("cuda")
-            if taichi_available:
-                available_backends.append("taichi")
-            if cupy_available:
-                available_backends.append("cupy")
-            raise ImportError(
-                f"Requested backend '{backend}' not available. Available: {available_backends}"
-            )
-
+        pm_cfg = {k: v for k, v in patch_matcher_config.items() if k != "backend"}
         # Setup Engine
-        patch_match_engine = create_pyramid_patch_matcher(
+        patch_match_engine = build_pyramid_patch_matcher(
             image_height=frames_style[0].shape[0],
             image_width=frames_style[0].shape[1],
             channel=3,
-            backend=backend,
-            **ebsynth_config,
+            backend=resolved,
+            **pm_cfg,
         )
-        device = torch.device("cuda", ebsynth_config.get("gpu_id", 0))
+        device = balanced_mode_torch_device(
+            resolved, int(patch_matcher_config.get("gpu_id", 0))
+        )
 
         # Generate all tasks
         n = len(frames_style)

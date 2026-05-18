@@ -1,3 +1,5 @@
+"""CuPy RawKernels — must stay aligned with ``fastblend_extension/kernels.cu``."""
+
 import cupy as cp
 
 remapping_kernel = cp.RawKernel(

@@ -1,5 +1,13 @@
 # FastBlend
 
+Implementation code lives in [`FastBlend/src/`](./src/) (same layout idea as `FaceBlit/src/`). Import concrete modules, e.g. `from FastBlend.src.engine import FastBlendEngine` (the `FastBlend` package root only exposes `__version__`).
+
+Layout:
+
+- [`src/backends/`](./src/backends/) — CUDA extension bridge, CuPy/Taichi matchers, backend resolution, factories
+- [`src/runtime/`](./src/runtime/) — PyTorch device helpers for balanced mode
+- [`src/patch_match.py`](./src/patch_match.py) — public re-exports + `PyramidPatchMatcher` interpolation wrapper
+
 CUDA Extension for FastBlend. Based on the original implementation by AInseven and Artiprocher.
 
 Included both CUDA and CuPy implementations (original).
@@ -108,7 +116,12 @@ When `--keyframe_interval N` is specified, FastBlend uses every Nth frame from t
 #### Main Functions
 
 ```python
-from fastblend import smooth_video, create_config, check_frames_compatibility, interpolate_video
+from FastBlend.src.api import (
+    check_frames_compatibility,
+    create_config,
+    interpolate_video,
+    smooth_video,
+)
 
 # Basic frame blending
 smoothed_frames = smooth_video(guide_frames, style_frames)
@@ -193,7 +206,7 @@ Check compatibility of guide and style frames.
 #### Configuration Class
 
 ```python
-from fastblend import FastBlendConfig, get_default_config
+from FastBlend.src.config import FastBlendConfig, get_default_config
 
 # Get default configuration
 config = get_default_config(accuracy=2)  # 1=Fast, 2=Balanced, 3=Accurate
@@ -214,7 +227,7 @@ config = FastBlendConfig(
 #### Runner Class
 
 ```python
-from fastblend import FastBlendRunner
+from FastBlend.src.runner import FastBlendRunner
 
 # Create runner with configuration
 runner = FastBlendRunner(config)

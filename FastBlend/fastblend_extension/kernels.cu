@@ -1,4 +1,25 @@
-// FastBlend CUDA Kernels
+// FastBlend CUDA kernels (remap / patch_error / pairwise_patch_error).
+//
+// Implementation relationships:
+// - Shared Python orchestration lives in ``src/backends/patch_matcher_core.py``
+//   (``FaceBlitPatchMatcherCore`` / ``PyramidPatchMatcherCore``). Only the hooks
+//   ``_kernel_remap``, ``_kernel_patch_error``, ``_kernel_pairwise_patch_error``
+//   differ per backend (CUDA here, CuPy RawKernels, Taichi in ``taichi_kernels.py``).
+// - ``remap_kernel`` is the same *algorithmic family* as plain voting in
+//   ``ebsynth_extension/voting.cu`` (``krnlVotePlain``): for each target pixel,
+//   accumulate source colors over a patch via the NNF, uniform weights, then
+//   average. Layout differs: float HWC with explicit padding here vs uint8 HWC
+//   packed tensors in ebsynth; loop indexing conventions also differ.
+// - ``patch_error_kernel`` is a straight per-pixel patch SSD (sum of squared
+//   channel differences). EBSynth costs live in ``ebsynth_extension/cost_functions.cu``
+//   (weighted style+guide, NCC, bilateral, early-out); FastBlend combines a
+//   separate guide SSD and style SSD in Python (``cuda_patch_match.py``) with
+//   ``guide_weight``, instead of fusing inside one CUDA cost kernel.
+//
+// PatchMatch *iteration* (propagation, random search, omega map, pruning) for
+// full synthesis is implemented inside ``ebsynth_extension/patchmatch.cu`` and
+// mirrored in PyTorch in ``ezsynth/torch_ops/patchmatch_ops.py``. FastBlend does
+// not use that stack; it drives a smaller FaceBlit-style loop in Python.
 
 #include "kernels.h"
 

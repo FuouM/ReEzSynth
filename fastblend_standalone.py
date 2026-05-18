@@ -12,73 +12,23 @@ Usage:
     python fastblend_standalone.py --content_dir PATH_TO_CONTENT_FRAMES \
                                   --style_dir PATH_TO_STYLIZED_FRAMES \
                                   --output_dir PATH_TO_SAVE_FASTBLENDED_FRAMES
+
+    Optional MP4 (same pattern as run.py): add ``--export-mp4``; use ``--mp4-fps`` and
+    ``--mp4-output`` to override defaults (requires ffmpeg on PATH).
 """
 
 import argparse
-import os
 from pathlib import Path
-from typing import List
 
-import numpy as np
-
-# Import after setting up environment
 import torch
-from tqdm import tqdm
+from FastBlend.src.engine import FastBlendEngine, FastBlendInput_Sequence
 
-from FastBlend import FastBlendRunner, FastBlendConfig, create_config
-from ezsynth.utils.io_utils import load_frames_from_dir, write_image
-
-
-def create_fastblend_config(fastblend_params: dict = None) -> FastBlendConfig:
-    """Create a FastBlend configuration for standalone processing."""
-
-    # Default FastBlend parameters
-    default_params = {
-        "enabled": True,
-        "accuracy": 2,  # Balanced mode
-        "window_size": 5,  # Increased default for better temporal smoothing
-        "batch_size": 16,
-        "minimum_patch_size": 5,
-        "num_iter": 5,
-        "guide_weight": 10.0,
-        "backend": "auto",
-    }
-
-    if fastblend_params:
-        default_params.update(fastblend_params)
-
-    # Create FastBlend config using the helper function
-    return create_config(
-        accuracy=default_params["accuracy"],
-        window_size=default_params["window_size"],
-        batch_size=default_params["batch_size"],
-        minimum_patch_size=default_params["minimum_patch_size"],
-        num_iter=default_params["num_iter"],
-        guide_weight=default_params["guide_weight"],
-        backend=default_params["backend"],
-    )
-
-
-def load_frames_sorted(directory: str) -> List[np.ndarray]:
-    """Load frames from directory, sorted by filename."""
-    path = Path(directory)
-
-    # Use the existing load_frames_from_dir function which handles sorting and loading
-    frames = load_frames_from_dir(path)
-    print(f"Loaded {len(frames)} frames from {directory}")
-
-    return frames
-
-
-def save_frames(frames: List[np.ndarray], output_dir: str, prefix: str = "fastblend_"):
-    """Save frames to output directory."""
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    print(f"Saving {len(frames)} frames to {output_dir}")
-    for i, frame in enumerate(tqdm(frames, desc="Saving frames")):
-        output_filename = f"{prefix}{i:05d}.png"
-        write_image(output_path / output_filename, frame)
+from ezsynth.utils.fastblend_cli import (
+    create_fastblend_config,
+    load_frames_sorted,
+    save_frames,
+)
+from ezsynth.utils.video import export_frames_to_browser_h264_mp4
 
 
 def main():
@@ -139,6 +89,24 @@ def main():
         help="Backend to use for FastBlend processing: auto=prefer CUDA, fallback to cupy; cuda=CUDA only; cupy=CuPy only",
     )
 
+    parser.add_argument(
+        "--export-mp4",
+        action="store_true",
+        help="After saving frames, export H.264 MP4 (yuv420p, browser-friendly; requires ffmpeg).",
+    )
+    parser.add_argument(
+        "--mp4-fps",
+        type=float,
+        default=30.0,
+        help="Frame rate for --export-mp4.",
+    )
+    parser.add_argument(
+        "--mp4-output",
+        type=str,
+        default=None,
+        help="Output .mp4 path. Default: next to the frame folder (<output_dir parent>/<output_dir name>.mp4).",
+    )
+
     args = parser.parse_args()
 
     # Welcome message
@@ -189,7 +157,7 @@ def main():
         return
 
     print(f"Processing {len(content_frames)} frames with FastBlend...")
-    print(f"FastBlend Configuration:")
+    print("FastBlend Configuration:")
     print(f"  - Accuracy: {fastblend_config.accuracy}")
     print(f"  - Window size: {fastblend_config.window_size}")
     print(f"  - Batch size: {fastblend_config.batch_size}")
@@ -198,28 +166,46 @@ def main():
     print(f"  - Guide weight: {fastblend_config.guide_weight}")
     print(f"  - Backend: {fastblend_config.backend}")
 
-    # Create and run FastBlend
-    fastblend_runner = FastBlendRunner(fastblend_config)
-
     if not fastblend_config.enabled:
         print("FastBlend is disabled in configuration")
         return
 
-    # Progress callback for FastBlend
-    def progress_callback(current_frame, total_frames):
-        progress_percent = (current_frame / total_frames) * 100
-        # print(f"FastBlend Progress: {current_frame}/{total_frames} frames completed ({progress_percent:.1f}%)")
+    def progress_callback(_current_frame, _total_frames):
+        pass
 
-    # Run FastBlend
-    fastblend_frames = fastblend_runner.run(
-        content_frames, style_frames, progress_callback=progress_callback
+    engine = FastBlendEngine()
+    fastblend_frames = engine.smooth_sequence(
+        FastBlendInput_Sequence(content_frames, style_frames),
+        fastblend_config,
+        progress_callback=progress_callback,
+        backend=fastblend_config.backend,
     )
 
     # Save results
-    print(f"\nSaving FastBlend results...")
+    print("\nSaving FastBlend results...")
     save_frames(fastblend_frames, args.output_dir, args.prefix)
 
-    print(f"\nFastBlend processing complete!")
+    if args.export_mp4:
+        try:
+            if args.mp4_output:
+                mp4_path = Path(args.mp4_output)
+            else:
+                od = Path(args.output_dir)
+                mp4_path = od.parent / f"{od.name}.mp4"
+            export_frames_to_browser_h264_mp4(
+                fastblend_frames, mp4_path, args.mp4_fps
+            )
+        except FileNotFoundError as e:
+            print(f"\n[ERROR] {e}")
+            if "ffmpeg" not in str(e).lower():
+                print("Please check --output_dir, --mp4-output, and related paths.")
+        except Exception as e:
+            print(f"\n[ERROR] MP4 export failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    print("\nFastBlend processing complete!")
     print(f"Results saved to: {args.output_dir}")
     print(f"Total frames processed: {len(fastblend_frames)}")
 

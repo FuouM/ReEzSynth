@@ -1,18 +1,7 @@
-import os
-import sys
-import time
-
-import numpy as np
 import torch
 
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from FastBlend.patch_match import (
-    create_patch_matcher_cupy,
-    create_patch_matcher_taichi,
-    taichi_available,
-)
+from FastBlend.src.backends import taichi_backend
+from FastBlend.src.patch_match import taichi_available
 
 
 def test_parity():
@@ -46,9 +35,7 @@ def test_parity():
     )
 
     # Create Taichi matcher
-    matcher_taichi = create_patch_matcher_taichi(
-        H, W, C, minimum_patch_size=patch_size, num_iter=1
-    )
+    matcher_taichi = taichi_backend.PatchMatcherTaichi(H, W, C, patch_size, num_iter=1)
 
     # 1. Test remap
     print("Testing remap...")
