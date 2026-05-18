@@ -243,6 +243,168 @@ class TaichiOps:
                     wx0 * v10 + wx1 * v11
                 )
 
+    @ti.kernel
+    def soft_splat_kernel(
+        self,
+        src: ti.types.ndarray(),
+        flow: ti.types.ndarray(),
+        dst_color: ti.types.ndarray(),
+        dst_weight: ti.types.ndarray(),
+        src_guide: ti.types.ndarray(),
+        tgt_guide: ti.types.ndarray(),
+        use_bilateral: ti.template(),
+    ):
+        h, w = src.shape[0], src.shape[1]
+        for i, j in ti.ndrange(h, w):
+            fx = flow[i, j, 0]
+            fy = flow[i, j, 1]
+
+            tx = float(j) + fx
+            ty = float(i) + fy
+
+            ix = int(ti.floor(tx))
+            iy = int(ti.floor(ty))
+
+            flow_mag = ti.sqrt(fx * fx + fy * fy)
+            sigma = 0.35 + 0.15 * ti.exp(-flow_mag / 10.0)
+
+            src_g = ti.Vector([0.0, 0.0, 0.0])
+            if ti.static(use_bilateral):
+                for c in ti.static(range(3)):
+                    src_g[c] = float(src_guide[i, j, c])
+
+            for dy, dx in ti.static(ti.ndrange((-1, 2), (-1, 2))):
+                target_x = ix + dx
+                target_y = iy + dy
+                if 0 <= target_x < w and 0 <= target_y < h:
+                    dist_sq = (float(target_x) - tx) ** 2 + (float(target_y) - ty) ** 2
+                    weight = ti.exp(-dist_sq / (2 * sigma * sigma))
+
+                    if ti.static(use_bilateral):
+                        color_dist_sq = 0.0
+                        for c in ti.static(range(3)):
+                            tgt_val = float(tgt_guide[target_y, target_x, c])
+                            color_dist_sq += (src_g[c] - tgt_val) ** 2
+                        tau = 30.0
+                        weight *= ti.exp(-color_dist_sq / (2 * tau * tau))
+
+                    if weight > 1e-4:
+                        ti.atomic_add(dst_weight[target_y, target_x], weight)
+                        if ti.static(len(src.shape) > 2):
+                            for c in range(src.shape[2]):
+                                ti.atomic_add(
+                                    dst_color[target_y, target_x, c],
+                                    weight * float(src[i, j, c]),
+                                )
+                        else:
+                            ti.atomic_add(
+                                dst_color[target_y, target_x],
+                                weight * float(src[i, j]),
+                            )
+
+    @ti.kernel
+    def normalize_splat_kernel(
+        self,
+        dst_color: ti.types.ndarray(),
+        dst_weight: ti.types.ndarray(),
+        out: ti.types.ndarray(),
+        is_uint8: ti.template(),
+    ):
+        h, w = dst_color.shape[0], dst_color.shape[1]
+        for i, j in ti.ndrange(h, w):
+            weight = dst_weight[i, j]
+            if weight > 1e-4:
+                if ti.static(len(out.shape) > 2):
+                    for c in range(out.shape[2]):
+                        val = dst_color[i, j, c] / weight
+                        if ti.static(is_uint8):
+                            out[i, j, c] = ti.u8(ti.max(0.0, ti.min(255.0, val)))
+                        else:
+                            out[i, j, c] = val
+                else:
+                    val = dst_color[i, j] / weight
+                    if ti.static(is_uint8):
+                        out[i, j] = ti.u8(ti.max(0.0, ti.min(255.0, val)))
+                    else:
+                        out[i, j] = val
+            else:
+                if ti.static(len(out.shape) > 2):
+                    for c in range(out.shape[2]):
+                        if ti.static(is_uint8):
+                            out[i, j, c] = ti.u8(0)
+                        else:
+                            out[i, j, c] = 0.0
+                else:
+                    if ti.static(is_uint8):
+                        out[i, j] = ti.u8(0)
+                    else:
+                        out[i, j] = 0.0
+
+    @ti.kernel
+    def pull_kernel(
+        self,
+        src_color: ti.types.ndarray(),
+        src_weight: ti.types.ndarray(),
+        dst_color: ti.types.ndarray(),
+        dst_weight: ti.types.ndarray(),
+    ):
+        h_dst, w_dst = dst_color.shape[0], dst_color.shape[1]
+        h_src, w_src = src_color.shape[0], src_color.shape[1]
+        for i, j in ti.ndrange(h_dst, w_dst):
+            sum_w = 0.0
+            if ti.static(len(src_color.shape) > 2):
+                for c in range(src_color.shape[2]):
+                    sum_c = 0.0
+                    for di, dj in ti.static(ti.ndrange((-2, 3), (-2, 3))):
+                        si, sj = i * 2 + di, j * 2 + dj
+                        if 0 <= si < h_src and 0 <= sj < w_src:
+                            dist_sq = di * di + dj * dj
+                            gw = ti.exp(-dist_sq / 2.0)
+                            sum_c += src_color[si, sj, c] * gw
+                            if c == 0:
+                                sum_w += src_weight[si, sj] * gw
+                    dst_color[i, j, c] = sum_c
+            else:
+                sum_c = 0.0
+                for di, dj in ti.static(ti.ndrange((-2, 3), (-2, 3))):
+                    si, sj = i * 2 + di, j * 2 + dj
+                    if 0 <= si < h_src and 0 <= sj < w_src:
+                        dist_sq = di * di + dj * dj
+                        gw = ti.exp(-dist_sq / 2.0)
+                        sum_c += src_color[si, sj] * gw
+                        sum_w += src_weight[si, sj] * gw
+                dst_color[i, j] = sum_c
+            dst_weight[i, j] = sum_w
+
+    @ti.kernel
+    def push_kernel(
+        self,
+        src_color: ti.types.ndarray(),
+        src_weight: ti.types.ndarray(),
+        dst_color: ti.types.ndarray(),
+        dst_weight: ti.types.ndarray(),
+    ):
+        h_dst, w_dst = dst_color.shape[0], dst_color.shape[1]
+        for i, j in ti.ndrange(h_dst, w_dst):
+            dw = dst_weight[i, j]
+            if dw < 0.95:
+                si, sj = i // 2, j // 2
+                sw = src_weight[si, sj]
+                if sw > 1e-4:
+                    alpha = 1.0 - dw
+                    if ti.static(len(src_color.shape) > 2):
+                        for c in range(src_color.shape[2]):
+                            coarse = src_color[si, sj, c] / sw
+                            dst_color[i, j, c] = dw * (
+                                dst_color[i, j, c] / ti.max(dw, 1e-6)
+                            ) + alpha * coarse
+                    else:
+                        coarse = src_color[si, sj] / sw
+                        dst_color[i, j] = dw * (
+                            dst_color[i, j] / ti.max(dw, 1e-6)
+                        ) + alpha * coarse
+                    dst_weight[i, j] = 1.0
+
     # --- Poisson CG Solver ---
 
     @ti.kernel

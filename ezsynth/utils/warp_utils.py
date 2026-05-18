@@ -91,19 +91,103 @@ class Warp:
         src_guide: np.ndarray = None,
         tgt_guide: np.ndarray = None,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        """
-        Warp an image using forward splatting when available.
+        """Warp an image using forward splatting, falling back to regular warping."""
+        if not (
+            self.use_taichi
+            and self._taichi_available
+            and hasattr(self.ops, "soft_splat_kernel")
+        ):
+            del fill_holes, src_guide, tgt_guide
+            if return_weight:
+                return (
+                    self.run_warping(img, flow),
+                    np.ones((self.H, self.W), dtype=np.float32),
+                )
+            return self.run_warping(img, flow)
 
-        The current Taichi backend does not expose splat kernels yet, so this
-        falls back to regular warping while preserving the refactor API.
-        """
-        del fill_holes, src_guide, tgt_guide
-        if return_weight:
-            return (
-                self.run_warping(img, flow),
-                np.ones((self.H, self.W), dtype=np.float32),
+        if _is_identity_flow(flow, self.H, self.W):
+            out = (
+                _as_uint8_array(img).copy()
+                if img.dtype == np.uint8
+                else _as_float32_array(img).copy()
             )
-        return self.run_warping(img, flow)
+            if return_weight:
+                return out, np.ones((self.H, self.W), dtype=np.float32)
+            return out
+
+        was_uint8 = img.dtype == np.uint8
+        img_float = img.astype(np.float32) if was_uint8 else _as_float32_array(img)
+        flow_f32 = _as_float32_array(flow)
+
+        dst_color = np.zeros_like(img_float)
+        dst_weight = np.zeros((self.H, self.W), dtype=np.float32)
+        use_bilateral = src_guide is not None and tgt_guide is not None
+        src_guide_f32 = (
+            _as_float32_array(src_guide)
+            if use_bilateral
+            else np.zeros((1, 1, 3), dtype=np.float32)
+        )
+        tgt_guide_f32 = (
+            _as_float32_array(tgt_guide)
+            if use_bilateral
+            else np.zeros((1, 1, 3), dtype=np.float32)
+        )
+
+        self.ops.soft_splat_kernel(
+            img_float,
+            flow_f32,
+            dst_color,
+            dst_weight,
+            src_guide_f32,
+            tgt_guide_f32,
+            use_bilateral,
+        )
+
+        raw_weight = dst_weight.copy()
+        if fill_holes:
+            self.run_pull_push(dst_color, dst_weight)
+
+        out = np.zeros_like(img, dtype=np.uint8 if was_uint8 else np.float32)
+        self.ops.normalize_splat_kernel(dst_color, dst_weight, out, was_uint8)
+        if return_weight:
+            return out, raw_weight
+        return out
+
+    def run_pull_push(self, color: np.ndarray, weight: np.ndarray, levels: int = 5) -> None:
+        """Hierarchical hole filling using pull-push accumulation."""
+        pyramid_color = [color]
+        pyramid_weight = [weight]
+
+        for _ in range(levels - 1):
+            h, w = pyramid_color[-1].shape[:2]
+            if h <= 2 or w <= 2:
+                break
+            h_next, w_next = h // 2, w // 2
+            color_shape = pyramid_color[-1].shape[2:]
+            next_color = np.zeros((h_next, w_next, *color_shape), dtype=np.float32)
+            next_weight = np.zeros((h_next, w_next), dtype=np.float32)
+            self.ops.pull_kernel(
+                pyramid_color[-1],
+                pyramid_weight[-1],
+                next_color,
+                next_weight,
+            )
+            pyramid_color.append(next_color)
+            pyramid_weight.append(next_weight)
+
+        for i in range(len(pyramid_color) - 2, -1, -1):
+            self.ops.push_kernel(
+                pyramid_color[i + 1],
+                pyramid_weight[i + 1],
+                pyramid_color[i],
+                pyramid_weight[i],
+            )
+
+
+def _as_uint8_array(array: np.ndarray) -> np.ndarray:
+    if array.dtype == np.uint8:
+        return np.ascontiguousarray(array) if not array.flags.c_contiguous else array
+    return array.clip(0, 255).astype(np.uint8)
 
 
 def _as_float32_array(array: np.ndarray) -> np.ndarray:
