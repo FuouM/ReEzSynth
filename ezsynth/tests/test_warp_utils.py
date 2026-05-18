@@ -27,6 +27,19 @@ def test_forward_warping_fallback_returns_weight_when_requested():
     np.testing.assert_array_equal(weight, np.ones((2, 2), dtype=np.float32))
 
 
+def test_warp_float_map_replaces_non_finite_values():
+    warp = Warp(2, 2)
+    data = np.array([[np.nan, np.inf], [-np.inf, 1.0]], dtype=np.float32)
+    flow = np.zeros((2, 2, 2), dtype=np.float32)
+
+    warped = warp.run_warping_float_map(data, flow)
+
+    np.testing.assert_array_equal(
+        warped,
+        np.array([[0.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+    )
+
+
 def test_forward_warping_uses_splat_ops_when_available():
     class _FakeOps:
         def soft_splat_kernel(

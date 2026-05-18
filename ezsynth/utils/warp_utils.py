@@ -187,13 +187,18 @@ class Warp:
 def _as_uint8_array(array: np.ndarray) -> np.ndarray:
     if array.dtype == np.uint8:
         return np.ascontiguousarray(array) if not array.flags.c_contiguous else array
-    return array.clip(0, 255).astype(np.uint8)
+    safe = np.nan_to_num(array, nan=0.0, posinf=255.0, neginf=0.0)
+    return safe.clip(0, 255).astype(np.uint8)
 
 
 def _as_float32_array(array: np.ndarray) -> np.ndarray:
     if array.dtype == np.float32:
-        return np.ascontiguousarray(array) if not array.flags.c_contiguous else array
-    return array.astype(np.float32)
+        out = np.ascontiguousarray(array) if not array.flags.c_contiguous else array
+    else:
+        out = array.astype(np.float32)
+    if not np.isfinite(out).all():
+        out = np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+    return out
 
 
 def _is_identity_flow(flow: np.ndarray, height: int, width: int) -> bool:

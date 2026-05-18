@@ -243,6 +243,13 @@ class TaichiOps:
                     wx0 * v10 + wx1 * v11
                 )
 
+    @ti.func
+    def finite_or_zero(self, value: float) -> float:
+        out = value
+        if value != value or value > 1.0e20 or value < -1.0e20:
+            out = 0.0
+        return out
+
     @ti.kernel
     def soft_splat_kernel(
         self,
@@ -256,8 +263,8 @@ class TaichiOps:
     ):
         h, w = src.shape[0], src.shape[1]
         for i, j in ti.ndrange(h, w):
-            fx = flow[i, j, 0]
-            fy = flow[i, j, 1]
+            fx = self.finite_or_zero(float(flow[i, j, 0]))
+            fy = self.finite_or_zero(float(flow[i, j, 1]))
 
             tx = float(j) + fx
             ty = float(i) + fy
@@ -271,7 +278,7 @@ class TaichiOps:
             src_g = ti.Vector([0.0, 0.0, 0.0])
             if ti.static(use_bilateral):
                 for c in ti.static(range(3)):
-                    src_g[c] = float(src_guide[i, j, c])
+                    src_g[c] = self.finite_or_zero(float(src_guide[i, j, c]))
 
             for dy, dx in ti.static(ti.ndrange((-1, 2), (-1, 2))):
                 target_x = ix + dx
@@ -283,23 +290,27 @@ class TaichiOps:
                     if ti.static(use_bilateral):
                         color_dist_sq = 0.0
                         for c in ti.static(range(3)):
-                            tgt_val = float(tgt_guide[target_y, target_x, c])
+                            tgt_val = self.finite_or_zero(
+                                float(tgt_guide[target_y, target_x, c])
+                            )
                             color_dist_sq += (src_g[c] - tgt_val) ** 2
                         tau = 30.0
                         weight *= ti.exp(-color_dist_sq / (2 * tau * tau))
 
-                    if weight > 1e-4:
+                    if weight == weight and weight > 1e-4 and weight < 1.0e20:
                         ti.atomic_add(dst_weight[target_y, target_x], weight)
                         if ti.static(len(src.shape) > 2):
                             for c in range(src.shape[2]):
+                                src_val = self.finite_or_zero(float(src[i, j, c]))
                                 ti.atomic_add(
                                     dst_color[target_y, target_x, c],
-                                    weight * float(src[i, j, c]),
+                                    weight * src_val,
                                 )
                         else:
+                            src_val = self.finite_or_zero(float(src[i, j]))
                             ti.atomic_add(
                                 dst_color[target_y, target_x],
-                                weight * float(src[i, j]),
+                                weight * src_val,
                             )
 
     @ti.kernel
@@ -312,17 +323,17 @@ class TaichiOps:
     ):
         h, w = dst_color.shape[0], dst_color.shape[1]
         for i, j in ti.ndrange(h, w):
-            weight = dst_weight[i, j]
-            if weight > 1e-4:
+            weight = self.finite_or_zero(float(dst_weight[i, j]))
+            if weight > 1e-4 and weight < 1.0e20:
                 if ti.static(len(out.shape) > 2):
                     for c in range(out.shape[2]):
-                        val = dst_color[i, j, c] / weight
+                        val = self.finite_or_zero(float(dst_color[i, j, c]) / weight)
                         if ti.static(is_uint8):
                             out[i, j, c] = ti.u8(ti.max(0.0, ti.min(255.0, val)))
                         else:
                             out[i, j, c] = val
                 else:
-                    val = dst_color[i, j] / weight
+                    val = self.finite_or_zero(float(dst_color[i, j]) / weight)
                     if ti.static(is_uint8):
                         out[i, j] = ti.u8(ti.max(0.0, ti.min(255.0, val)))
                     else:
@@ -360,9 +371,13 @@ class TaichiOps:
                         if 0 <= si < h_src and 0 <= sj < w_src:
                             dist_sq = di * di + dj * dj
                             gw = ti.exp(-dist_sq / 2.0)
-                            sum_c += src_color[si, sj, c] * gw
+                            sum_c += self.finite_or_zero(
+                                float(src_color[si, sj, c])
+                            ) * gw
                             if c == 0:
-                                sum_w += src_weight[si, sj] * gw
+                                sum_w += self.finite_or_zero(
+                                    float(src_weight[si, sj])
+                                ) * gw
                     dst_color[i, j, c] = sum_c
             else:
                 sum_c = 0.0
@@ -371,10 +386,10 @@ class TaichiOps:
                     if 0 <= si < h_src and 0 <= sj < w_src:
                         dist_sq = di * di + dj * dj
                         gw = ti.exp(-dist_sq / 2.0)
-                        sum_c += src_color[si, sj] * gw
-                        sum_w += src_weight[si, sj] * gw
+                        sum_c += self.finite_or_zero(float(src_color[si, sj])) * gw
+                        sum_w += self.finite_or_zero(float(src_weight[si, sj])) * gw
                 dst_color[i, j] = sum_c
-            dst_weight[i, j] = sum_w
+            dst_weight[i, j] = self.finite_or_zero(sum_w)
 
     @ti.kernel
     def push_kernel(
@@ -386,23 +401,29 @@ class TaichiOps:
     ):
         h_dst, w_dst = dst_color.shape[0], dst_color.shape[1]
         for i, j in ti.ndrange(h_dst, w_dst):
-            dw = dst_weight[i, j]
+            dw = ti.max(0.0, ti.min(1.0, self.finite_or_zero(float(dst_weight[i, j]))))
             if dw < 0.95:
                 si, sj = i // 2, j // 2
-                sw = src_weight[si, sj]
+                sw = self.finite_or_zero(float(src_weight[si, sj]))
                 if sw > 1e-4:
-                    alpha = 1.0 - dw
+                    alpha = ti.max(0.0, ti.min(1.0, 1.0 - dw))
                     if ti.static(len(src_color.shape) > 2):
                         for c in range(src_color.shape[2]):
-                            coarse = src_color[si, sj, c] / sw
+                            coarse = self.finite_or_zero(
+                                float(src_color[si, sj, c]) / sw
+                            )
+                            current = self.finite_or_zero(
+                                float(dst_color[i, j, c]) / ti.max(dw, 1e-6)
+                            )
                             dst_color[i, j, c] = dw * (
-                                dst_color[i, j, c] / ti.max(dw, 1e-6)
+                                current
                             ) + alpha * coarse
                     else:
-                        coarse = src_color[si, sj] / sw
-                        dst_color[i, j] = dw * (
-                            dst_color[i, j] / ti.max(dw, 1e-6)
-                        ) + alpha * coarse
+                        coarse = self.finite_or_zero(float(src_color[si, sj]) / sw)
+                        current = self.finite_or_zero(
+                            float(dst_color[i, j]) / ti.max(dw, 1e-6)
+                        )
+                        dst_color[i, j] = dw * current + alpha * coarse
                     dst_weight[i, j] = 1.0
 
     # --- Poisson CG Solver ---
