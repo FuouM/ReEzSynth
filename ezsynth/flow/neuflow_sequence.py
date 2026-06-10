@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from typing import List
 
 import numpy as np
@@ -14,9 +14,11 @@ from ..neuflow.neuflow import NeuFlow
 from .pad import pad_bgr_to_stride
 from .types import FlowTorchDevice, NeuFlowCheckpointName
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-def _neuflow_model_path(model_name: NeuFlowCheckpointName) -> str:
-    return f"models/neuflow/{model_name}.pth"
+
+def _neuflow_model_path(model_name: NeuFlowCheckpointName) -> Path:
+    return _PROJECT_ROOT / "models" / "neuflow" / f"{model_name}.pth"
 
 
 def compute_neuflow_sequence(
@@ -66,7 +68,7 @@ def _load_neuflow_model(
     use_half = dev.type == "cuda"
     model = NeuFlow()
     model_path = _neuflow_model_path(model_name)
-    if not os.path.exists(model_path):
+    if not model_path.exists():
         raise FileNotFoundError(f"NeuFlow model file not found: '{model_path}'")
     checkpoint = torch.load(model_path, map_location=dev)
     model.load_state_dict(checkpoint["model"], strict=True)

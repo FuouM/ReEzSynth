@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 from argparse import Namespace
+from pathlib import Path
 from typing import List
 
 import numpy as np
@@ -16,9 +16,11 @@ from ..raft.raft import RAFT
 from ..raft.utils import InputPadder
 from .types import FlowTorchDevice, RaftCheckpointName
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-def _raft_model_path(model_name: RaftCheckpointName) -> str:
-    return f"models/raft/raft-{model_name}.pth"
+
+def _raft_model_path(model_name: RaftCheckpointName) -> Path:
+    return _PROJECT_ROOT / "models" / "raft" / f"raft-{model_name}.pth"
 
 
 def compute_custom_raft_sequence(
@@ -64,7 +66,7 @@ def _load_raft_model(
     args = Namespace(model=model_name, small=False, mixed_precision=False)
     model = nn.DataParallel(RAFT(args))
     model_path = _raft_model_path(model_name)
-    if not os.path.exists(model_path):
+    if not model_path.exists():
         raise FileNotFoundError(f"RAFT model file not found: '{model_path}'")
     state_dict = torch.load(model_path, map_location=dev)
     model.load_state_dict(state_dict)

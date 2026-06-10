@@ -195,10 +195,9 @@ class SynthesisPassRunner:
         key = (height, width)
         tools = self._warp_tools_cache.get(key)
         if tools is None:
-            use_taichi = (
-                self.engine.ebsynth_config.backend == "taichi"
-                or self.engine.pipeline_config.use_forward_warping
-            )
+            # Keep the default pass on OpenCV remap; the Taichi warp path is only
+            # needed for explicit forward splatting.
+            use_taichi = self.engine.pipeline_config.use_forward_warping
             tools = (
                 Warp(height, width, use_taichi=use_taichi),
                 PositionalGuide(

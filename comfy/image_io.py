@@ -28,12 +28,38 @@ def image_tensor_to_bgr_uint8(tensor: torch.Tensor) -> np.ndarray:
     return np.ascontiguousarray(bgr)
 
 
+def image_tensor_to_rgb_float_sequence(tensor: torch.Tensor) -> list[np.ndarray]:
+    """Convert a ComfyUI IMAGE batch to RGB float HWC frames."""
+    if tensor.ndim != 4:
+        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape {tuple(tensor.shape)}.")
+    if tensor.shape[0] < 1:
+        raise ValueError("Expected at least one IMAGE frame.")
+
+    frames = tensor.detach().cpu().numpy()
+    if frames.dtype != np.float32 and frames.dtype != np.float64:
+        frames = frames.astype(np.float32)
+    frames = np.clip(frames, 0.0, 1.0)
+    return [np.ascontiguousarray(frame[..., :3].astype(np.float32)) for frame in frames]
+
+
 def bgr_uint8_to_image_tensor(image: np.ndarray) -> torch.Tensor:
     """Convert internal BGR uint8 HWC to ComfyUI RGB float IMAGE [1,H,W,C]."""
     if image.ndim != 3 or image.shape[2] < 3:
         raise ValueError(f"Expected BGR HWC image, got shape {image.shape}.")
     rgb = image[..., :3][..., ::-1].astype(np.float32) / 255.0
     return torch.from_numpy(np.ascontiguousarray(rgb)).unsqueeze(0)
+
+
+def bgr_uint8_sequence_to_image_tensor(frames: list[np.ndarray]) -> torch.Tensor:
+    """Convert internal BGR uint8 frames to a ComfyUI IMAGE batch."""
+    if not frames:
+        raise ValueError("Expected at least one synthesized frame.")
+    rgb_frames = []
+    for frame in frames:
+        if frame.ndim != 3 or frame.shape[2] < 3:
+            raise ValueError(f"Expected BGR HWC image, got shape {frame.shape}.")
+        rgb_frames.append(frame[..., :3][..., ::-1].astype(np.float32) / 255.0)
+    return torch.from_numpy(np.ascontiguousarray(np.stack(rgb_frames, axis=0)))
 
 
 def error_map_to_image_tensor(error_map: np.ndarray) -> torch.Tensor:
