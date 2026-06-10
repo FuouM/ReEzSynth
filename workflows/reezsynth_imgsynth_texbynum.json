@@ -1,0 +1,684 @@
+{
+    "id": "098bc9e5-b6ce-433a-96e5-a036cdfaf646",
+    "revision": 0,
+    "last_node_id": 10,
+    "last_link_id": 9,
+    "nodes": [
+        {
+            "id": 1,
+            "type": "ReEzSynthGuide",
+            "pos": [
+                2060.9828348886263,
+                1043.606344809933
+            ],
+            "size": [
+                270,
+                128.23333740234375
+            ],
+            "flags": {},
+            "order": 4,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "source",
+                    "name": "source",
+                    "type": "IMAGE",
+                    "link": 1
+                },
+                {
+                    "localized_name": "target",
+                    "name": "target",
+                    "type": "IMAGE",
+                    "link": 2
+                },
+                {
+                    "localized_name": "weight",
+                    "name": "weight",
+                    "type": "FLOAT",
+                    "widget": {
+                        "name": "weight"
+                    },
+                    "link": null
+                }
+            ],
+            "outputs": [
+                {
+                    "localized_name": "guide",
+                    "name": "guide",
+                    "type": "REEZ_GUIDES",
+                    "links": [
+                        3
+                    ]
+                }
+            ],
+            "properties": {
+                "aux_id": "FuouM/ReEzSynth",
+                "ver": "dab3c41d83b885d6cbda2bdd5f4c21b9db71e8a4",
+                "Node name for S&R": "ReEzSynthGuide"
+            },
+            "widgets_values": [
+                1
+            ]
+        },
+        {
+            "id": 2,
+            "type": "LoadImage",
+            "pos": [
+                1292.2623174433818,
+                1109.1369189041186
+            ],
+            "size": [
+                282.6333312988281,
+                364.23333740234375
+            ],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "image",
+                    "name": "image",
+                    "type": "COMBO",
+                    "widget": {
+                        "name": "image"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "choose file to upload",
+                    "name": "upload",
+                    "type": "IMAGEUPLOAD",
+                    "widget": {
+                        "name": "upload"
+                    },
+                    "link": null
+                }
+            ],
+            "outputs": [
+                {
+                    "localized_name": "IMAGE",
+                    "name": "IMAGE",
+                    "type": "IMAGE",
+                    "links": [
+                        1
+                    ]
+                },
+                {
+                    "localized_name": "MASK",
+                    "name": "MASK",
+                    "type": "MASK",
+                    "links": null
+                }
+            ],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.24.0",
+                "Node name for S&R": "LoadImage"
+            },
+            "widgets_values": [
+                "source_segment.png",
+                "image"
+            ]
+        },
+        {
+            "id": 3,
+            "type": "LoadImage",
+            "pos": [
+                1611.4032573744823,
+                1112.064782932831
+            ],
+            "size": [
+                282.6333312988281,
+                364.23333740234375
+            ],
+            "flags": {},
+            "order": 1,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "image",
+                    "name": "image",
+                    "type": "COMBO",
+                    "widget": {
+                        "name": "image"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "choose file to upload",
+                    "name": "upload",
+                    "type": "IMAGEUPLOAD",
+                    "widget": {
+                        "name": "upload"
+                    },
+                    "link": null
+                }
+            ],
+            "outputs": [
+                {
+                    "localized_name": "IMAGE",
+                    "name": "IMAGE",
+                    "type": "IMAGE",
+                    "links": [
+                        2
+                    ]
+                },
+                {
+                    "localized_name": "MASK",
+                    "name": "MASK",
+                    "type": "MASK",
+                    "links": null
+                }
+            ],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.24.0",
+                "Node name for S&R": "LoadImage"
+            },
+            "widgets_values": [
+                "target_segment.png",
+                "image"
+            ]
+        },
+        {
+            "id": 4,
+            "type": "ReEzSynthGuidesAppend",
+            "pos": [
+                2183.1177852788423,
+                1273.3469090558615
+            ],
+            "size": [
+                225,
+                96.23332977294922
+            ],
+            "flags": {},
+            "order": 5,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "guide",
+                    "name": "guide",
+                    "type": "REEZ_GUIDES",
+                    "link": 3
+                },
+                {
+                    "localized_name": "guides",
+                    "name": "guides",
+                    "shape": 7,
+                    "type": "REEZ_GUIDES",
+                    "link": null
+                }
+            ],
+            "outputs": [
+                {
+                    "localized_name": "guides",
+                    "name": "guides",
+                    "type": "REEZ_GUIDES",
+                    "links": [
+                        5
+                    ]
+                }
+            ],
+            "properties": {
+                "aux_id": "FuouM/ReEzSynth",
+                "ver": "dab3c41d83b885d6cbda2bdd5f4c21b9db71e8a4",
+                "Node name for S&R": "ReEzSynthGuidesAppend"
+            },
+            "widgets_values": []
+        },
+        {
+            "id": 5,
+            "type": "ReEzSynthImageSynthConfig",
+            "pos": [
+                2106.9924003362203,
+                1615.9110012678157
+            ],
+            "size": [
+                304.1166687011719,
+                513.566650390625
+            ],
+            "flags": {},
+            "order": 2,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "backend",
+                    "name": "backend",
+                    "type": "COMBO",
+                    "widget": {
+                        "name": "backend"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "cost_function",
+                    "name": "cost_function",
+                    "type": "COMBO",
+                    "widget": {
+                        "name": "cost_function"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "use_residual_transfer",
+                    "name": "use_residual_transfer",
+                    "type": "BOOLEAN",
+                    "widget": {
+                        "name": "use_residual_transfer"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "use_optimization",
+                    "name": "use_optimization",
+                    "type": "BOOLEAN",
+                    "widget": {
+                        "name": "use_optimization"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "use_bilateral",
+                    "name": "use_bilateral",
+                    "type": "BOOLEAN",
+                    "widget": {
+                        "name": "use_bilateral"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "sigma_spatial",
+                    "name": "sigma_spatial",
+                    "type": "FLOAT",
+                    "widget": {
+                        "name": "sigma_spatial"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "sigma_color",
+                    "name": "sigma_color",
+                    "type": "FLOAT",
+                    "widget": {
+                        "name": "sigma_color"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "n_size_step",
+                    "name": "n_size_step",
+                    "type": "INT",
+                    "widget": {
+                        "name": "n_size_step"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "image_weight",
+                    "name": "image_weight",
+                    "type": "FLOAT",
+                    "widget": {
+                        "name": "image_weight"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "uniformity",
+                    "name": "uniformity",
+                    "type": "FLOAT",
+                    "widget": {
+                        "name": "uniformity"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "patch_size",
+                    "name": "patch_size",
+                    "type": "INT",
+                    "widget": {
+                        "name": "patch_size"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "pyramid_levels",
+                    "name": "pyramid_levels",
+                    "type": "INT",
+                    "widget": {
+                        "name": "pyramid_levels"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "search_vote_iters",
+                    "name": "search_vote_iters",
+                    "type": "INT",
+                    "widget": {
+                        "name": "search_vote_iters"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "patch_match_iters",
+                    "name": "patch_match_iters",
+                    "type": "INT",
+                    "widget": {
+                        "name": "patch_match_iters"
+                    },
+                    "link": null
+                }
+            ],
+            "outputs": [
+                {
+                    "localized_name": "config",
+                    "name": "config",
+                    "type": "REEZ_IMG_SYNTH_CONFIG",
+                    "links": [
+                        4
+                    ]
+                }
+            ],
+            "properties": {
+                "aux_id": "FuouM/ReEzSynth",
+                "ver": "dab3c41d83b885d6cbda2bdd5f4c21b9db71e8a4",
+                "Node name for S&R": "ReEzSynthImageSynthConfig"
+            },
+            "widgets_values": [
+                "taichi",
+                "ssd",
+                true,
+                true,
+                false,
+                4,
+                10,
+                1,
+                6,
+                3500,
+                7,
+                6,
+                12,
+                6
+            ]
+        },
+        {
+            "id": 6,
+            "type": "ReEzSynthImageSynth",
+            "pos": [
+                2130.098938287415,
+                1416.5663026990549
+            ],
+            "size": [
+                270,
+                148.23333740234375
+            ],
+            "flags": {},
+            "order": 6,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "style_image",
+                    "name": "style_image",
+                    "type": "IMAGE",
+                    "link": 6
+                },
+                {
+                    "localized_name": "guides",
+                    "name": "guides",
+                    "type": "REEZ_GUIDES",
+                    "link": 5
+                },
+                {
+                    "localized_name": "config",
+                    "name": "config",
+                    "type": "REEZ_IMG_SYNTH_CONFIG",
+                    "link": 4
+                },
+                {
+                    "localized_name": "benchmark",
+                    "name": "benchmark",
+                    "shape": 7,
+                    "type": "BOOLEAN",
+                    "widget": {
+                        "name": "benchmark"
+                    },
+                    "link": null
+                }
+            ],
+            "outputs": [
+                {
+                    "localized_name": "image",
+                    "name": "image",
+                    "type": "IMAGE",
+                    "links": [
+                        9
+                    ]
+                },
+                {
+                    "localized_name": "error_map",
+                    "name": "error_map",
+                    "type": "IMAGE",
+                    "links": [
+                        8
+                    ]
+                }
+            ],
+            "properties": {
+                "aux_id": "FuouM/ReEzSynth",
+                "ver": "dab3c41d83b885d6cbda2bdd5f4c21b9db71e8a4",
+                "Node name for S&R": "ReEzSynthImageSynth"
+            },
+            "widgets_values": [
+                true
+            ]
+        },
+        {
+            "id": 7,
+            "type": "LoadImage",
+            "pos": [
+                1615.105462280524,
+                1532.465936249152
+            ],
+            "size": [
+                282.6333312988281,
+                364.23333740234375
+            ],
+            "flags": {},
+            "order": 3,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "image",
+                    "name": "image",
+                    "type": "COMBO",
+                    "widget": {
+                        "name": "image"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "choose file to upload",
+                    "name": "upload",
+                    "type": "IMAGEUPLOAD",
+                    "widget": {
+                        "name": "upload"
+                    },
+                    "link": null
+                }
+            ],
+            "outputs": [
+                {
+                    "localized_name": "IMAGE",
+                    "name": "IMAGE",
+                    "type": "IMAGE",
+                    "links": [
+                        6
+                    ]
+                },
+                {
+                    "localized_name": "MASK",
+                    "name": "MASK",
+                    "type": "MASK",
+                    "links": null
+                }
+            ],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.24.0",
+                "Node name for S&R": "LoadImage"
+            },
+            "widgets_values": [
+                "source_photo.png",
+                "image"
+            ]
+        },
+        {
+            "id": 9,
+            "type": "PreviewImage",
+            "pos": [
+                2889.0111148827323,
+                1180.8703477695656
+            ],
+            "size": [
+                383.1000061035156,
+                611.6666870117188
+            ],
+            "flags": {},
+            "order": 8,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "images",
+                    "name": "images",
+                    "type": "IMAGE",
+                    "link": 8
+                }
+            ],
+            "outputs": [],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.24.0",
+                "Node name for S&R": "PreviewImage"
+            },
+            "widgets_values": []
+        },
+        {
+            "id": 10,
+            "type": "SaveImage",
+            "pos": [
+                2516.581591057949,
+                1186.7261758483055
+            ],
+            "size": [
+                350.51666259765625,
+                611.0499877929688
+            ],
+            "flags": {},
+            "order": 7,
+            "mode": 0,
+            "inputs": [
+                {
+                    "localized_name": "images",
+                    "name": "images",
+                    "type": "IMAGE",
+                    "link": 9
+                },
+                {
+                    "localized_name": "filename_prefix",
+                    "name": "filename_prefix",
+                    "type": "STRING",
+                    "widget": {
+                        "name": "filename_prefix"
+                    },
+                    "link": null
+                }
+            ],
+            "outputs": [],
+            "properties": {
+                "cnr_id": "comfy-core",
+                "ver": "0.24.0",
+                "Node name for S&R": "SaveImage"
+            },
+            "widgets_values": [
+                "ReEzSynth"
+            ]
+        }
+    ],
+    "links": [
+        [
+            1,
+            2,
+            0,
+            1,
+            0,
+            "IMAGE"
+        ],
+        [
+            2,
+            3,
+            0,
+            1,
+            1,
+            "IMAGE"
+        ],
+        [
+            3,
+            1,
+            0,
+            4,
+            0,
+            "REEZ_GUIDES"
+        ],
+        [
+            4,
+            5,
+            0,
+            6,
+            2,
+            "REEZ_IMG_SYNTH_CONFIG"
+        ],
+        [
+            5,
+            4,
+            0,
+            6,
+            1,
+            "REEZ_GUIDES"
+        ],
+        [
+            6,
+            7,
+            0,
+            6,
+            0,
+            "IMAGE"
+        ],
+        [
+            8,
+            6,
+            1,
+            9,
+            0,
+            "IMAGE"
+        ],
+        [
+            9,
+            6,
+            0,
+            10,
+            0,
+            "IMAGE"
+        ]
+    ],
+    "groups": [],
+    "config": {},
+    "extra": {
+        "ds": {
+            "scale": 0.7627768444385489,
+            "offset": [
+                -1308.060091710771,
+                -845.220712493193
+            ]
+        }
+    },
+    "version": 0.4
+}
