@@ -232,7 +232,7 @@ class BalancedModeRunner:
                 )
 
                 # Accumulate
-                for i, (source, target) in enumerate(tasks_batch):
+                for i, (_source, target) in enumerate(tasks_batch):
                     result = target_style_t[i]
                     accumulator.update(target, result)
 

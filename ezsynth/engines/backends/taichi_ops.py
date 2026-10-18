@@ -484,7 +484,7 @@ def poisson_solver_cg(gx, gy, target, weight, max_iter=100, tol=1e-5):
     if rsold < tol:
         return x
 
-    for i in range(max_iter):
+    for _i in range(max_iter):
         compute_laplacian_kernel(p, Ap, weight_sq)
         alpha = rsold / (np.sum(p * Ap) + 1e-10)
         x += alpha * p

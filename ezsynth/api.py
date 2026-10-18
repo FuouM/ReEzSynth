@@ -105,7 +105,7 @@ class Ezsynth:
         cache_dir: str | None = None,
         mask_dir: str | None = None,
         modulation_dir: str | None = None,
-        config: RunConfig = RunConfig(),
+        config: RunConfig | None = None,
         edge_method: str = "Classic",
         flow_engine: str = "RAFT",
         flow_model: str = "sintel",
@@ -126,6 +126,7 @@ class Ezsynth:
             flow_engine (str): The optical flow engine to use ('RAFT', 'NeuFlow').
             flow_model (str): The specific model for the chosen flow engine.
         """
+        config = config if config is not None else RunConfig()
         self.output_dir_path = Path(output_dir) if output_dir else None
         self._temp_output_dir = None
         self._temp_cache_dir = None
@@ -244,7 +245,7 @@ class ImageSynth:
     def __init__(
         self,
         style_image: str | np.ndarray,
-        config: RunConfig = RunConfig(),
+        config: RunConfig | None = None,
     ):
         """
         Initializes the ImageSynth engine.
@@ -253,6 +254,7 @@ class ImageSynth:
             style_image (Union[str, np.ndarray]): Path to the style image or the image as a NumPy array.
             config (RunConfig): An object containing detailed synthesis parameters.
         """
+        config = config if config is not None else RunConfig()
         self.style = GuideObject.load_guide(style_image, style_image).keyframe
 
         ebsynth_params_cfg = EbsynthParamsConfig(

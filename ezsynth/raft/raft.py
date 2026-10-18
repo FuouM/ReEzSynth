@@ -112,7 +112,7 @@ class RAFT(nn.Module):
             coords1 = coords1 + flow_init
 
         flow_predictions = []
-        for itr in range(iters):
+        for _itr in range(iters):
             coords1 = coords1.detach()
             corr = corr_fn(coords1)  # index correlation volume
 
