@@ -9,13 +9,12 @@ from __future__ import annotations
 import heapq
 from collections import deque
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 
 from src.utils_io import ensure_grayscale, to_uint8
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 def compute_guided_error(

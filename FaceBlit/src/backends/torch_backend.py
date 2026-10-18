@@ -6,7 +6,6 @@ Guide adapter lives in ``torch_guide.py`` (mirrors ``taichi_backend`` + ``taichi
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 import torch
@@ -18,7 +17,7 @@ from src.utils_io import (
     get_torch_device,
 )
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 def _denoise_nnf_torch(

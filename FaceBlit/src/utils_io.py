@@ -2,7 +2,6 @@ import datetime
 import platform
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 import taichi as ti
@@ -10,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 def to_path(path: PathLike) -> str:

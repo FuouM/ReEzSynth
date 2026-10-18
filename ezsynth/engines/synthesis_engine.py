@@ -1,5 +1,4 @@
 # ezsynth/engines/synthesis_engine.py
-from typing import Union
 
 import numpy as np
 import torch
@@ -16,10 +15,10 @@ from ..guide import GuideObject
 from ..utils.timer import SynthesisTimer
 from .backends.common import random_init_nnf, resample_tensor
 
-EngineRunResult = Union[
-    tuple[np.ndarray, np.ndarray | None],
-    tuple[np.ndarray, np.ndarray | None, np.ndarray],
-]
+EngineRunResult = (
+    tuple[np.ndarray, np.ndarray | None]
+    | tuple[np.ndarray, np.ndarray | None, np.ndarray]
+)
 
 
 class PreparedSynthesisContext:

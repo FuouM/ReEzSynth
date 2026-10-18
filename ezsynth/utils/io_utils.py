@@ -22,7 +22,7 @@ def read_image(path: str | Path) -> np.ndarray:
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         return img
     except Exception as e:
-        raise OSError(f"Error reading image at {path}: {e}")
+        raise OSError(f"Error reading image at {path}: {e}") from e
 
 
 def read_mask(path: str | Path) -> np.ndarray:
@@ -34,7 +34,7 @@ def read_mask(path: str | Path) -> np.ndarray:
             raise OSError(f"Could not read mask at {path}")
         return mask
     except Exception as e:
-        raise OSError(f"Error reading mask at {path}: {e}")
+        raise OSError(f"Error reading mask at {path}: {e}") from e
 
 
 def write_image(path: str | Path, image: np.ndarray):
@@ -44,7 +44,7 @@ def write_image(path: str | Path, image: np.ndarray):
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         imageio.imwrite(path, image_rgb)
     except Exception as e:
-        raise OSError(f"Error writing image to {path}: {e}")
+        raise OSError(f"Error writing image to {path}: {e}") from e
 
 
 def get_sorted_image_paths(dir_path: Path) -> list[Path]:

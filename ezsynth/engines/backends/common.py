@@ -1,10 +1,9 @@
 import gc
-from typing import Union
 
 import torch
 import torch.nn.functional as F
 
-DeviceLike = Union[str, torch.device]
+DeviceLike = str | torch.device
 
 
 def resample_tensor(

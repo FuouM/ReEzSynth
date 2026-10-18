@@ -212,11 +212,13 @@ class Reconstructor:
         self,
         solver: str = "lsqr",
         poisson_maxiter: int | None = None,
-        grad_weights: list[float] = [2.5, 0.5, 0.5],
+        grad_weights: list[float] | None = None,
     ):
         self.solver = solver
         self.poisson_maxiter = poisson_maxiter
-        self.grad_weights = grad_weights
+        self.grad_weights = (
+            list(grad_weights) if grad_weights is not None else [2.5, 0.5, 0.5]
+        )
         self._cache = {}
 
         if self.solver == "amg" and not PYAMG_AVAILABLE:
