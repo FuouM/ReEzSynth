@@ -1,6 +1,5 @@
 # ezsynth/project.py
 from pathlib import Path
-from typing import List
 
 import numpy as np
 
@@ -50,7 +49,7 @@ class Project:
     def _load_config(self) -> SynthesisConfigs:
         return configs_from_yaml(self.config_path)
 
-    def run(self) -> List[np.ndarray]:
+    def run(self) -> list[np.ndarray]:
         """
         Executes the synthesis pipeline and saves the output frames.
         This is the main entry point for the command-line run.py script.

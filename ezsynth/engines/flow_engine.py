@@ -1,4 +1,4 @@
-from typing import List, cast
+from typing import cast
 
 import numpy as np
 
@@ -28,7 +28,7 @@ class OpenCVFlowEngine:
             )
         print("OpenCV Flow Engine initialized.")
 
-    def compute(self, frames: List[np.ndarray]) -> List[np.ndarray]:
+    def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_opencv_flow_sequence(frames, cast(OpenCvFlowMethod, self.method))
 
 
@@ -46,7 +46,7 @@ class TorchVisionFlowEngine:
         self.model_name = model_name
         print("TorchVision Flow Engine initialized.")
 
-    def compute(self, frames: List[np.ndarray]) -> List[np.ndarray]:
+    def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_torchvision_raft_sequence(
             frames,
             cast(TorchVisionRaftModel, self.model_name),
@@ -65,7 +65,7 @@ class RAFTFlowEngine:
         self.model_name = model_name
         print("RAFT Flow Engine initialized.")
 
-    def compute(self, frames: List[np.ndarray]) -> List[np.ndarray]:
+    def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_custom_raft_sequence(
             frames, cast(RaftCheckpointName, self.model_name)
         )
@@ -81,7 +81,7 @@ class NeuFlowEngine:
         self.model_name = model_name
         print("NeuFlow Engine initialized.")
 
-    def compute(self, frames: List[np.ndarray]) -> List[np.ndarray]:
+    def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_neuflow_sequence(
             frames, cast(NeuFlowCheckpointName, self.model_name)
         )

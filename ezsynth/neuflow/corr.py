@@ -56,7 +56,7 @@ class CorrBlock:
         corr = corr.view(b * h * w, 1, h, w) / math.sqrt(c)
 
         corr_pyramid = [corr]
-        for i in range(self.levels - 1):
+        for _i in range(self.levels - 1):
             corr = F.avg_pool2d(corr, kernel_size=2, stride=2)
             corr_pyramid.append(corr)
 

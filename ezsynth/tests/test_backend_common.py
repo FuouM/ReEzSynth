@@ -1,12 +1,11 @@
 import torch
 
-from ezsynth import consts
-import ezsynth.engines.backends as backends
-import ezsynth.torch_ops as torch_ops
-from ezsynth.engines.backends.common import random_init_nnf, resample_tensor
+from ezsynth import consts, torch_ops
+from ezsynth.engines import backends
 from ezsynth.engines.backends import taichi_kernels
-from ezsynth.torch_ops.device_cache import clear_torch_device_cache
+from ezsynth.engines.backends.common import random_init_nnf, resample_tensor
 from ezsynth.torch_ops import microprofile
+from ezsynth.torch_ops.device_cache import clear_torch_device_cache
 
 
 def test_resample_tensor_preserves_uint8_dtype():

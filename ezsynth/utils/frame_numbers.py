@@ -1,10 +1,9 @@
 """Parse frame indices from filenames; align keyframe files to ordered frame lists."""
 
 import re
-from typing import List, Optional, Tuple
 
 
-def extract_frame_number_from_filename(filename: str) -> Optional[int]:
+def extract_frame_number_from_filename(filename: str) -> int | None:
     """Extract a frame index from ``filename`` using common naming patterns."""
     patterns = [
         r"(\d{5,})\.png$",
@@ -27,8 +26,8 @@ def extract_frame_number_from_filename(filename: str) -> Optional[int]:
 
 
 def match_keyframes_to_frames(
-    frame_files: List[str], keyframe_files: List[str]
-) -> Tuple[List[Optional[str]], List[int]]:
+    frame_files: list[str], keyframe_files: list[str]
+) -> tuple[list[str | None], list[int]]:
     """
     Match keyframe filenames to ordered frame filenames by parsed frame number.
 
@@ -45,8 +44,8 @@ def match_keyframes_to_frames(
         if num is not None
     }
 
-    matched_keyframes: List[Optional[str]] = []
-    keyframe_indices: List[int] = []
+    matched_keyframes: list[str | None] = []
+    keyframe_indices: list[int] = []
 
     for i, frame_num in enumerate(frame_numbers):
         if frame_num in keyframe_map:

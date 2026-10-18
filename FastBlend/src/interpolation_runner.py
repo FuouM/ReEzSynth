@@ -123,11 +123,6 @@ class InterpolationModeRunner:
                 if not tasks:
                     continue
 
-                index_start, index_end = (
-                    min([i[1] for i in tasks]),
-                    max([i[1] for i in tasks]),
-                )
-
                 # Process tasks in batches
                 for batch_id in range(0, len(tasks), batch_size):
                     tasks_batch = tasks[
@@ -239,7 +234,6 @@ class InterpolationModeSingleFrameRunner:
         result_frames[index_style[0]] = keyframe
 
         # Process frames in batches
-        frame_id = 0
         n = len(frames_guide)
         frames_to_process = n - 1  # Subtract 1 for the keyframe
 

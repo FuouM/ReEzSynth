@@ -35,13 +35,12 @@ if not FORCE_JIT:
 
         _module_source = "pre-compiled"
         _log("Loaded pre-compiled extension.")
-    except ImportError:
+    except ImportError as err:
         if FORCE_WHEEL:
             raise ImportError(
                 "ezsynth.consts.FORCE_EBSYNTH_WHEEL is True but failed to import ebsynth_torch. "
                 "Please install the pre-compiled wheel."
-            )
-        pass
+            ) from err
 
 # If pre-compiled not available or FORCE_JIT is set, use JIT compilation
 if ebsynth_torch is None and not FORCE_WHEEL:

@@ -1,5 +1,4 @@
 # ezsynth/utils/mask_utils.py
-from typing import List
 
 import cv2
 import numpy as np
@@ -12,8 +11,8 @@ def apply_mask(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
 
 
 def apply_masks_to_sequence(
-    images: List[np.ndarray], masks: List[np.ndarray]
-) -> List[np.ndarray]:
+    images: list[np.ndarray], masks: list[np.ndarray]
+) -> list[np.ndarray]:
     """Applies a sequence of masks to a sequence of images."""
     if len(images) != len(masks):
         raise ValueError(
@@ -53,11 +52,11 @@ def composite_masked_image(
 
 
 def composite_sequence(
-    originals: List[np.ndarray],
-    processeds: List[np.ndarray],
-    masks: List[np.ndarray],
+    originals: list[np.ndarray],
+    processeds: list[np.ndarray],
+    masks: list[np.ndarray],
     feather: int = 0,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Composites a sequence of processed images back onto their originals."""
     if not (len(originals) == len(processeds) == len(masks)):
         raise ValueError("All sequence lengths must match for compositing.")

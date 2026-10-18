@@ -1,4 +1,3 @@
-from typing import List
 
 import numpy as np
 
@@ -53,7 +52,7 @@ class SynthesisPipeline:
 
         self.precompute_state = PrecomputeState()
 
-    def _precompute(self, content_frames: List[np.ndarray]) -> None:
+    def _precompute(self, content_frames: list[np.ndarray]) -> None:
         self.precompute_state = PrecomputeRunner(
             project_cfg=self.project_cfg,
             precomputation_cfg=self.precomputation_cfg,
@@ -62,7 +61,7 @@ class SynthesisPipeline:
             state=self.precompute_state,
         ).run(content_frames)
 
-    def run(self) -> List[np.ndarray]:
+    def run(self) -> list[np.ndarray]:
         """
         Main entry point for the synthesis pipeline.
         """

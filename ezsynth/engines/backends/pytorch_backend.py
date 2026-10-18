@@ -1,5 +1,4 @@
 # ezsynth/engines/backends/pytorch_backend.py
-from typing import Optional, Tuple
 
 import torch
 
@@ -66,7 +65,7 @@ class PyTorchBackend:
             clear_device_cache=clear_device_cache,
         )
 
-    def _make_random_generator(self, device: torch.device) -> Optional[torch.Generator]:
+    def _make_random_generator(self, device: torch.device) -> torch.Generator | None:
         """Return a deterministic generator when PyTorch supports one for the device."""
         device_type = torch.device(device).type
         if device_type == "mps":
@@ -91,10 +90,10 @@ class PyTorchBackend:
         search_vote_iters: int,
         patch_match_iters: int,
         stop_threshold: float,
-        rand_states: Optional[torch.Tensor],
+        rand_states: torch.Tensor | None,
         cost_function_mode: int,
         benchmark: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Run a single level using PyTorch operations.
         """
@@ -487,8 +486,7 @@ class PyTorchBackend:
             nonlocal omega_map, omega_best
             omega_map = populate_omega_map(nnf, (H_s, W_s), patch_size)
             omega_best = (H_t * W_t) / (H_s * W_s)
-            if omega_best < 1e-6:
-                omega_best = 1e-6
+            omega_best = max(omega_best, 1e-6)
 
         self._timed_operation("omega_initialization", _init_omega_iterative)
         clear_torch_device_cache(self.device)

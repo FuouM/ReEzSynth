@@ -933,8 +933,7 @@ def eval_mask_kernel(
         max_diff = 0
         for c in range(NSC):
             d = ti.abs(int(current_img[y, x, c]) - int(previous_img[y, x, c]))
-            if d > max_diff:
-                max_diff = d
+            max_diff = max(max_diff, d)
         mask[y, x] = ti.u8(255) if max_diff >= threshold else ti.u8(0)
 
 

@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 from tqdm import tqdm
@@ -45,17 +44,17 @@ class ProjectData:
         if self.modulation_dir:  # New
             print(f"  - Modulations: {self.modulation_dir}")
 
-        self._content_frames: Optional[List[np.ndarray]] = None
-        self._style_frames: Optional[List[np.ndarray]] = None
-        self._mask_frames: Optional[List[np.ndarray]] = None
-        self._modulation_frames: Optional[List[np.ndarray]] = None  # New
+        self._content_frames: list[np.ndarray] | None = None
+        self._style_frames: list[np.ndarray] | None = None
+        self._mask_frames: list[np.ndarray] | None = None
+        self._modulation_frames: list[np.ndarray] | None = None  # New
 
     @classmethod
     def from_config(cls, config: ProjectConfig) -> "ProjectData":
         """Build a data manager from a project config."""
         return cls(config)
 
-    def get_content_frames(self, force_reload: bool = False) -> List[np.ndarray]:
+    def get_content_frames(self, force_reload: bool = False) -> list[np.ndarray]:
         """Loads, validates, and caches the content frames from disk."""
         if self._content_frames is None or force_reload:
             frames = io_utils.load_frames_from_dir(self.content_dir)
@@ -66,7 +65,7 @@ class ProjectData:
             self._content_frames = frames
         return self._content_frames
 
-    def get_style_frames(self, force_reload: bool = False) -> List[np.ndarray]:
+    def get_style_frames(self, force_reload: bool = False) -> list[np.ndarray]:
         """Loads and caches the style frames, optionally resizing them to match content."""
         if self._style_frames is None or force_reload:
             raw_styles = [io_utils.read_image(p) for p in self.style_paths]
@@ -89,7 +88,7 @@ class ProjectData:
 
         return self._style_frames
 
-    def get_mask_frames(self, force_reload: bool = False) -> Optional[List[np.ndarray]]:
+    def get_mask_frames(self, force_reload: bool = False) -> list[np.ndarray] | None:
         """Loads and caches the mask frames if a mask directory is specified."""
         if self.mask_dir:
             if self._mask_frames is None or force_reload:
@@ -99,7 +98,7 @@ class ProjectData:
 
     def get_modulation_frames(
         self, force_reload: bool = False
-    ) -> Optional[List[np.ndarray]]:
+    ) -> list[np.ndarray] | None:
         """Loads and caches modulation frames if a directory is specified."""
         if self.modulation_dir:
             if self._modulation_frames is None or force_reload:

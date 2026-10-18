@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -11,7 +11,7 @@ from .runtime.torch_device import balanced_mode_torch_device
 class GPUAccumulator:
     def __init__(self, device):
         self.device = device
-        self.buffer: Dict[int, Tuple[torch.Tensor, float]] = {}
+        self.buffer: dict[int, tuple[torch.Tensor, float]] = {}
 
     def update(self, target_idx: int, result_tensor, weight_inc: float = 1.0):
         """
@@ -93,11 +93,11 @@ class GPUAccumulator:
 
 
 class FrameCache:
-    def __init__(self, frames: List[np.ndarray], device, max_size_mb=2000):
+    def __init__(self, frames: list[np.ndarray], device, max_size_mb=2000):
         self.frames = frames
         self.device = device
-        self.cache: Dict[int, torch.Tensor] = {}
-        self.lru: List[int] = []
+        self.cache: dict[int, torch.Tensor] = {}
+        self.lru: list[int] = []
         self.max_size_mb = max_size_mb
 
         # Estimate size of one frame in MB
@@ -107,7 +107,7 @@ class FrameCache:
         else:
             self.frame_size_mb = 1
 
-    def get_batch(self, indices: List[int]) -> torch.Tensor:
+    def get_batch(self, indices: list[int]) -> torch.Tensor:
         """
         Get a batch of frames as a single GPU tensor (B, H, W, C).
         """
@@ -159,7 +159,7 @@ class BalancedModeRunner:
         patch_matcher_config,
         desc="Balanced Mode",
         save_path=None,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
         backend="auto",
     ):
         """
@@ -232,7 +232,7 @@ class BalancedModeRunner:
                 )
 
                 # Accumulate
-                for i, (source, target) in enumerate(tasks_batch):
+                for i, (_source, target) in enumerate(tasks_batch):
                     result = target_style_t[i]
                     accumulator.update(target, result)
 

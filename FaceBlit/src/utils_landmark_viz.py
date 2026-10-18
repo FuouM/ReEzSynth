@@ -7,8 +7,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import cv2
 import numpy as np
@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 # Open polyline index lists for iBUG 68 / dlib ordering
 _DLIB_68_OPEN_CHAINS: tuple[list[int], ...] = (
-    list(range(0, 17)),  # jaw
+    list(range(17)),  # jaw
     list(range(17, 22)),  # right brow
     list(range(22, 27)),  # left brow
     list(range(27, 31)),  # nose bridge

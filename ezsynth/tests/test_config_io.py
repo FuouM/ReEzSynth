@@ -2,8 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from ezsynth.config import BlendingConfig, DebugConfig, EbsynthParamsConfig
-from ezsynth.config import PrecomputationConfig
+from ezsynth.config import (
+    BlendingConfig,
+    DebugConfig,
+    EbsynthParamsConfig,
+    PrecomputationConfig,
+)
 from ezsynth.config_io import configs_from_mapping, configs_from_yaml
 from ezsynth.service import SynthesisConfigs
 

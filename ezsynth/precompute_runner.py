@@ -3,7 +3,6 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 from tqdm import tqdm
@@ -40,7 +39,7 @@ class PrecomputeRunner:
         precomputation_cfg: PrecomputationConfig,
         pipeline_cfg: PipelineConfig,
         debug_cfg: DebugConfig,
-        state: Optional[PrecomputeState] = None,
+        state: PrecomputeState | None = None,
     ) -> None:
         self.project_cfg = project_cfg
         self.precomputation_cfg = precomputation_cfg
@@ -48,7 +47,7 @@ class PrecomputeRunner:
         self.debug_cfg = debug_cfg
         self.state = state if state is not None else PrecomputeState()
 
-    def run(self, content_frames: List[np.ndarray]) -> PrecomputeState:
+    def run(self, content_frames: list[np.ndarray]) -> PrecomputeState:
         if self.uses_bidirectional_flow():
             self._compute_bidirectional_optical_flow(content_frames)
         else:
@@ -87,7 +86,7 @@ class PrecomputeRunner:
             or self.debug_cfg.save_occlusion_debug
         )
 
-    def _compute_optical_flow(self, content_frames: List[np.ndarray]) -> None:
+    def _compute_optical_flow(self, content_frames: list[np.ndarray]) -> None:
         self.state.fwd_flows = compute_guide(
             content_frames=content_frames,
             cache_dir=self.project_cfg.cache_dir,
@@ -108,7 +107,7 @@ class PrecomputeRunner:
                 subdir="fwd" if self.uses_flow_occlusion() else None,
             )
 
-    def _compute_backward_optical_flow(self, content_frames: List[np.ndarray]) -> None:
+    def _compute_backward_optical_flow(self, content_frames: list[np.ndarray]) -> None:
         self.state.bwd_flows = compute_guide(
             content_frames=content_frames,
             cache_dir=self.project_cfg.cache_dir,
@@ -127,7 +126,7 @@ class PrecomputeRunner:
             self._save_flow_visualizations(self.state.bwd_flows, subdir="bwd")
 
     def _compute_bidirectional_optical_flow(
-        self, content_frames: List[np.ndarray]
+        self, content_frames: list[np.ndarray]
     ) -> None:
         cache_root = Path(self.project_cfg.cache_dir)
         num_expected = len(content_frames) - 1
@@ -199,7 +198,7 @@ class PrecomputeRunner:
         if self.debug_cfg.save_occlusion_debug:
             self._save_occlusion_debug()
 
-    def _compute_edge_maps(self, content_frames: List[np.ndarray]) -> None:
+    def _compute_edge_maps(self, content_frames: list[np.ndarray]) -> None:
         self.state.edge_maps = compute_guide(
             content_frames=content_frames,
             cache_dir=self.project_cfg.cache_dir,
@@ -220,9 +219,9 @@ class PrecomputeRunner:
 
     def _save_flow_visualizations(
         self,
-        flows: List[np.ndarray],
+        flows: list[np.ndarray],
         *,
-        subdir: Optional[str] = None,
+        subdir: str | None = None,
     ) -> None:
         out_dir = self._flow_viz_output_dir()
         if subdir:
@@ -267,6 +266,6 @@ class PrecomputeRunner:
 
 
 def compute_edge_maps(
-    content_frames: List[np.ndarray], edge_method: str
-) -> List[np.ndarray]:
+    content_frames: list[np.ndarray], edge_method: str
+) -> list[np.ndarray]:
     return compute_edge(content_frames, edge_method)

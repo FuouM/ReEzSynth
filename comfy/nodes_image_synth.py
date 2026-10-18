@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gc
-from typing import Tuple
 
 import torch
 
@@ -219,7 +218,7 @@ class ReEzSynthImageSynth:
         guides: ReEzGuideList,
         config: ReEzImgSynthConfig,
         benchmark: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if not guides.guides:
             raise ValueError("At least one guide is required. Chain ReEzSynth Guide nodes.")
 

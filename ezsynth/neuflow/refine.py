@@ -3,7 +3,7 @@ import torch
 
 class ConvBlock(torch.nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, stride, padding):
-        super(ConvBlock, self).__init__()
+        super().__init__()
 
         self.conv = torch.nn.Conv2d(
             in_planes,
@@ -24,7 +24,7 @@ class Refine(torch.nn.Module):
     def __init__(
         self, context_dim, iter_context_dim, num_layers, levels, radius, inter_dim
     ):
-        super(Refine, self).__init__()
+        super().__init__()
 
         self.radius = radius
 

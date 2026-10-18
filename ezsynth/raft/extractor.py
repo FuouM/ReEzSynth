@@ -1,10 +1,10 @@
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_planes, planes, norm_fn="group", stride=1):
-        super(ResidualBlock, self).__init__()
+        super().__init__()
 
         self.conv1 = nn.Conv2d(
             in_planes, planes, kernel_size=3, padding=1, stride=stride
@@ -59,7 +59,7 @@ class ResidualBlock(nn.Module):
 
 class BottleneckBlock(nn.Module):
     def __init__(self, in_planes, planes, norm_fn="group", stride=1):
-        super(BottleneckBlock, self).__init__()
+        super().__init__()
 
         self.conv1 = nn.Conv2d(in_planes, planes // 4, kernel_size=1, padding=0)
         self.conv2 = nn.Conv2d(
@@ -120,7 +120,7 @@ class BottleneckBlock(nn.Module):
 
 class BasicEncoder(nn.Module):
     def __init__(self, output_dim=128, norm_fn="batch", dropout=0.0):
-        super(BasicEncoder, self).__init__()
+        super().__init__()
         self.norm_fn = norm_fn
 
         if self.norm_fn == "group":
@@ -195,7 +195,7 @@ class BasicEncoder(nn.Module):
 
 class SmallEncoder(nn.Module):
     def __init__(self, output_dim=128, norm_fn="batch", dropout=0.0):
-        super(SmallEncoder, self).__init__()
+        super().__init__()
         self.norm_fn = norm_fn
 
         if self.norm_fn == "group":
@@ -270,7 +270,7 @@ class PositionalEncoding(nn.Module):
     """Positional encoding."""
 
     def __init__(self, num_hiddens, dropout=0.0, max_len=10000):
-        super(PositionalEncoding, self).__init__()
+        super().__init__()
         self.dropout = nn.Dropout(dropout)
         # Create a long enough P
         self.P = torch.zeros((1, max_len, num_hiddens))
@@ -300,7 +300,7 @@ class PositionalEncoding(nn.Module):
 
 class CoordinateAttention(nn.Module):
     def __init__(self, feature_size=128, enc_size=128, heads=4, bias=True, dropout=0.0):
-        super(CoordinateAttention, self).__init__()
+        super().__init__()
         self.feature_size = feature_size
         self.enc_size = enc_size
         self.att = nn.MultiheadAttention(

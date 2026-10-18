@@ -146,7 +146,7 @@ def _load_extension():
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             jit_ebsynth_torch = getattr(mod, "ebsynth_torch", None)
-            is_cuda_available = getattr(mod, "is_cuda_available")
+            is_cuda_available = mod.is_cuda_available
 
             EXTENSION_AVAILABLE = jit_ebsynth_torch is not None
             EXTENSION_CUDA_AVAILABLE = (

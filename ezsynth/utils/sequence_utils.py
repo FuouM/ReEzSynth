@@ -1,7 +1,6 @@
 """Keyframe ranges and synthesis modes for multi-pass blending."""
 
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
@@ -13,15 +12,15 @@ class SynthesisSequence:
     start_frame: int
     end_frame: int
     mode: str
-    style_indices: List[int]
+    style_indices: list[int]
 
     def __repr__(self) -> str:
         return f"Sequence(start={self.start_frame}, end={self.end_frame}, mode='{self.mode}', styles={self.style_indices})"
 
 
 def create_sequences(
-    num_frames: int, style_indices: List[int]
-) -> List[SynthesisSequence]:
+    num_frames: int, style_indices: list[int]
+) -> list[SynthesisSequence]:
     """Build ``SynthesisSequence`` objects covering the full frame range from style keyframes."""
     keyframes = _valid_keyframes(num_frames, style_indices)
     if keyframes is None:
@@ -49,8 +48,8 @@ def create_sequences(
 
 
 def create_directional_sequences(
-    num_frames: int, style_indices: List[int]
-) -> List[SynthesisSequence]:
+    num_frames: int, style_indices: list[int]
+) -> list[SynthesisSequence]:
     """Build a fast no-blend schedule: each interval runs from its left anchor."""
     keyframes = _valid_keyframes(num_frames, style_indices)
     if keyframes is None:
@@ -77,8 +76,8 @@ def create_directional_sequences(
 
 def _valid_keyframes(
     num_frames: int,
-    style_indices: List[int],
-) -> List[tuple[int, int]] | None:
+    style_indices: list[int],
+) -> list[tuple[int, int]] | None:
     keyframes = list(enumerate(sorted(set(style_indices))))
     if not keyframes or keyframes[0][1] < 0 or keyframes[-1][1] >= num_frames:
         print(
@@ -88,12 +87,12 @@ def _valid_keyframes(
     return keyframes
 
 
-def _default_sequence(num_frames: int) -> List[SynthesisSequence]:
+def _default_sequence(num_frames: int) -> list[SynthesisSequence]:
     return [SynthesisSequence(0, num_frames - 1, SynthesisSequence.MODE_FWD, [0])]
 
 
-def _endpoint_sequences(keyframes: List[tuple[int, int]]) -> List[SynthesisSequence]:
-    sequences: List[SynthesisSequence] = []
+def _endpoint_sequences(keyframes: list[tuple[int, int]]) -> list[SynthesisSequence]:
+    sequences: list[SynthesisSequence] = []
     _, first_frame = keyframes[0]
     if first_frame > 0:
         sequences.append(
@@ -103,9 +102,9 @@ def _endpoint_sequences(keyframes: List[tuple[int, int]]) -> List[SynthesisSeque
 
 
 def _append_tail_sequence(
-    sequences: List[SynthesisSequence],
+    sequences: list[SynthesisSequence],
     num_frames: int,
-    keyframes: List[tuple[int, int]],
+    keyframes: list[tuple[int, int]],
 ) -> None:
     last_style_idx, last_frame = keyframes[-1]
     if last_frame < num_frames - 1:

@@ -1,7 +1,6 @@
 # ezsynth/utils/io_utils.py
 import re
 from pathlib import Path
-from typing import List, Union
 
 import cv2
 import imageio.v2 as imageio
@@ -11,7 +10,7 @@ from tqdm import tqdm
 IMG_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 
-def read_image(path: Union[str, Path]) -> np.ndarray:
+def read_image(path: str | Path) -> np.ndarray:
     """Reads an image and converts it to BGR format."""
     try:
         img = imageio.imread(path)
@@ -23,32 +22,32 @@ def read_image(path: Union[str, Path]) -> np.ndarray:
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         return img
     except Exception as e:
-        raise IOError(f"Error reading image at {path}: {e}")
+        raise OSError(f"Error reading image at {path}: {e}") from e
 
 
-def read_mask(path: Union[str, Path]) -> np.ndarray:
+def read_mask(path: str | Path) -> np.ndarray:
     """Reads a mask as a single-channel grayscale image."""
     try:
         # IMREAD_GRAYSCALE ensures a 2D array
         mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if mask is None:
-            raise IOError(f"Could not read mask at {path}")
+            raise OSError(f"Could not read mask at {path}")
         return mask
     except Exception as e:
-        raise IOError(f"Error reading mask at {path}: {e}")
+        raise OSError(f"Error reading mask at {path}: {e}") from e
 
 
-def write_image(path: Union[str, Path], image: np.ndarray):
+def write_image(path: str | Path, image: np.ndarray):
     """Writes an image in BGR format to disk."""
     try:
         # Convert back to RGB for standard image viewers
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         imageio.imwrite(path, image_rgb)
     except Exception as e:
-        raise IOError(f"Error writing image to {path}: {e}")
+        raise OSError(f"Error writing image to {path}: {e}") from e
 
 
-def get_sorted_image_paths(dir_path: Path) -> List[Path]:
+def get_sorted_image_paths(dir_path: Path) -> list[Path]:
     """Gets all image paths from a directory, sorted naturally."""
     if not dir_path.is_dir():
         raise NotADirectoryError(f"Path is not a directory: {dir_path}")
@@ -67,7 +66,7 @@ def get_sorted_image_paths(dir_path: Path) -> List[Path]:
     return paths
 
 
-def load_frames_from_dir(dir_path: Path) -> List[np.ndarray]:
+def load_frames_from_dir(dir_path: Path) -> list[np.ndarray]:
     """Loads a sequence of frames from a directory."""
     paths = get_sorted_image_paths(dir_path)
     frames = [
@@ -76,7 +75,7 @@ def load_frames_from_dir(dir_path: Path) -> List[np.ndarray]:
     return frames
 
 
-def load_masks_from_dir(dir_path: Path) -> List[np.ndarray]:
+def load_masks_from_dir(dir_path: Path) -> list[np.ndarray]:
     """Loads a sequence of masks from a directory."""
     paths = get_sorted_image_paths(dir_path)
     masks = [

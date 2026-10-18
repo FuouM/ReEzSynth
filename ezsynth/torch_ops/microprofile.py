@@ -6,7 +6,6 @@ import atexit
 import contextlib
 import time
 from collections import defaultdict
-from typing import Optional
 
 import torch
 
@@ -30,7 +29,7 @@ def sync_mode() -> bool:
     return _mode_value() in ("sync", "2", "gpu")
 
 
-def _sync_device(device: Optional[torch.device]) -> None:
+def _sync_device(device: torch.device | None) -> None:
     if device is None:
         return
     if device.type == "cuda" and torch.cuda.is_available():
@@ -76,7 +75,7 @@ def _ensure_atexit() -> None:
 
 
 @contextlib.contextmanager
-def region(name: str, device: Optional[torch.device] = None):
+def region(name: str, device: torch.device | None = None):
     if not enabled():
         yield
         return

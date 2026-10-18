@@ -1,7 +1,8 @@
-import torch
-from typing import Any, Optional
+from typing import Any
 
-_extension_module: Optional[Any] = None
+import torch
+
+_extension_module: Any | None = None
 _extension_load_attempted = False
 
 

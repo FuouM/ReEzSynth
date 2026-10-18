@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Union
 
 import torch
 
 from ..consts import TORCH_CUDA_CLEAR_CACHE, TORCH_MPS_CLEAR_CACHE
 
-DeviceLike = Union[str, torch.device, None]
+DeviceLike = str | torch.device | None
 
 
 def clear_torch_device_cache(device: DeviceLike) -> None:

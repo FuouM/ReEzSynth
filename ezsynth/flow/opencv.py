@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 import cv2
 import numpy as np
 from tqdm import tqdm
@@ -12,9 +10,9 @@ from .types import OpenCvFlowMethod
 
 
 def compute_opencv_flow_sequence(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     method: OpenCvFlowMethod,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     if len(frames) < 2:
         return []
 
@@ -27,7 +25,7 @@ def compute_opencv_flow_sequence(
         )
 
     gray_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames]
-    optical_flows: List[np.ndarray] = []
+    optical_flows: list[np.ndarray] = []
     for i in tqdm(
         range(len(frames) - 1),
         desc=f"Computing Optical Flow (CV2 {method})",

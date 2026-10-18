@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 import numpy as np
 import torch
@@ -22,10 +21,10 @@ def _neuflow_model_path(model_name: NeuFlowCheckpointName) -> Path:
 
 
 def compute_neuflow_sequence(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model_name: NeuFlowCheckpointName = "neuflow_sintel",
     device: FlowTorchDevice = "auto",
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     if len(frames) < 2:
         return []
 
@@ -34,10 +33,10 @@ def compute_neuflow_sequence(
 
 
 def compute_neuflow_bidirectional(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model_name: NeuFlowCheckpointName = "neuflow_sintel",
     device: FlowTorchDevice = "auto",
-) -> tuple[List[np.ndarray], List[np.ndarray]]:
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     if len(frames) < 2:
         return [], []
 
@@ -78,7 +77,7 @@ def _load_neuflow_model(
 
 
 def _compute_neuflow_sequence_with_model(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model: NeuFlow,
     dev: torch.device,
     dtype: torch.dtype,
@@ -86,7 +85,7 @@ def _compute_neuflow_sequence_with_model(
     *,
     desc: str = "Computing Optical Flow (NeuFlow)",
     show_progress: bool = True,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     if len(frames) < 2:
         return []
 
@@ -100,7 +99,7 @@ def _compute_neuflow_sequence_with_model(
             f"(padded to {pw}x{ph} for alignment)"
         )
         model.init_bhwd(1, ph, pw, dev, amp=use_amp)
-        setattr(model, "_ezsynth_bhwd_key", init_key)
+        model._ezsynth_bhwd_key = init_key
 
     def preprocess_image(img: np.ndarray) -> torch.Tensor:
         padded, _ = pad_bgr_to_stride(img)

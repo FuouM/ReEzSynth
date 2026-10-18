@@ -1,7 +1,7 @@
 import datetime
 import platform
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence, Tuple, Union
 
 import numpy as np
 import taichi as ti
@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 def to_path(path: PathLike) -> str:
@@ -39,13 +39,13 @@ def read_image_pil(path: PathLike, convert="RGB") -> np.ndarray:
     return arr[..., ::-1].copy()
 
 
-def normalize_landmarks(landmarks: Sequence[Tuple[int, int]]) -> list[Tuple[int, int]]:
+def normalize_landmarks(landmarks: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
     return [(int(x), int(y)) for x, y in landmarks]
 
 
 def clamp_landmarks(
-    landmarks: Sequence[Tuple[int, int]], size: Tuple[int, int]
-) -> list[Tuple[int, int]]:
+    landmarks: Sequence[tuple[int, int]], size: tuple[int, int]
+) -> list[tuple[int, int]]:
     h, w = size
     clamped = []
     for x, y in landmarks:
@@ -107,9 +107,9 @@ def ensure_grayscale(image: np.ndarray) -> np.ndarray:
     raise ValueError("Expected grayscale or BGR image")
 
 
-def read_landmarks_file(path: Path | str) -> list[Tuple[int, int]]:
+def read_landmarks_file(path: Path | str) -> list[tuple[int, int]]:
     text = Path(path).read_text().strip().splitlines()
-    pts: list[Tuple[int, int]] = []
+    pts: list[tuple[int, int]] = []
     start_idx = 1 if text and text[0].strip() == "68" else 0
     for line in text[start_idx:]:
         parts = line.strip().split()
@@ -258,7 +258,7 @@ def get_taichi_arch(device: str | None = None):
     return ti.cpu
 
 
-def resize_torch(image: np.ndarray, size: Tuple[int, int]) -> np.ndarray:
+def resize_torch(image: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     """Resize image using PyTorch. size is (width, height)."""
     # Convert to tensor (H, W, C) -> (1, C, H, W)
     if image.ndim == 2:

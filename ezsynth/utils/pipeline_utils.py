@@ -1,5 +1,5 @@
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List
 
 import numpy as np
 from tqdm import tqdm
@@ -9,7 +9,7 @@ from .io_utils import write_image
 
 def expected_cache_paths(
     cache_dir: Path, extension: str, num_expected: int
-) -> List[Path]:
+) -> list[Path]:
     """Return the exact numbered cache files expected for a complete cache hit."""
     return [cache_dir / f"{i:05d}.{extension}" for i in range(num_expected)]
 

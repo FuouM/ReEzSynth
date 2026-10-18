@@ -1,5 +1,4 @@
 # ezsynth/engines/synthesis_engine.py
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -16,10 +15,10 @@ from ..guide import GuideObject
 from ..utils.timer import SynthesisTimer
 from .backends.common import random_init_nnf, resample_tensor
 
-EngineRunResult = Union[
-    Tuple[np.ndarray, Optional[np.ndarray]],
-    Tuple[np.ndarray, Optional[np.ndarray], np.ndarray],
-]
+EngineRunResult = (
+    tuple[np.ndarray, np.ndarray | None]
+    | tuple[np.ndarray, np.ndarray | None, np.ndarray]
+)
 
 
 class PreparedSynthesisContext:
@@ -29,7 +28,7 @@ class PreparedSynthesisContext:
         self,
         engine: "EbsynthEngine",
         style_img: np.ndarray,
-        guides: List[GuideObject],
+        guides: list[GuideObject],
     ) -> None:
         _validate_image_array(style_img, "style_img")
         _validate_guides(guides)
@@ -61,20 +60,20 @@ class PreparedSynthesisContext:
         self._target_guide_cat_np = np.empty(
             (self.th, self.tw, self.total_guide_channels), dtype=np.uint8
         )
-        self._target_guide_cat_tensor: Optional[torch.Tensor] = None
+        self._target_guide_cat_tensor: torch.Tensor | None = None
         if self.device_type != "cpu":
             self._target_guide_cat_tensor = torch.empty(
                 (self.th, self.tw, self.total_guide_channels),
                 dtype=torch.uint8,
                 device=engine.device,
             )
-        self._modulation_tensor: Optional[torch.Tensor] = None
-        self._modulation_shape: Optional[Tuple[int, int, int]] = None
-        self._initial_nnf_tensor: Optional[torch.Tensor] = None
-        self._initial_nnf_shape: Optional[Tuple[int, int, int]] = None
+        self._modulation_tensor: torch.Tensor | None = None
+        self._modulation_shape: tuple[int, int, int] | None = None
+        self._initial_nnf_tensor: torch.Tensor | None = None
+        self._initial_nnf_shape: tuple[int, int, int] | None = None
 
-        self.p_style: List[torch.Tensor] = []
-        self.p_source_guide: List[torch.Tensor] = []
+        self.p_style: list[torch.Tensor] = []
+        self.p_source_guide: list[torch.Tensor] = []
 
         def _prepare_source_pyramid() -> None:
             for p_sh, p_sw, _, _ in self.pyramid_shapes:
@@ -87,9 +86,9 @@ class PreparedSynthesisContext:
 
     def run_frame(
         self,
-        guides: List[GuideObject],
-        modulation_map: Optional[np.ndarray] = None,
-        initial_nnf: Optional[np.ndarray] = None,
+        guides: list[GuideObject],
+        modulation_map: np.ndarray | None = None,
+        initial_nnf: np.ndarray | None = None,
         return_error: bool = True,
         output_nnf: bool = False,
     ) -> EngineRunResult:
@@ -107,8 +106,8 @@ class PreparedSynthesisContext:
             modulation_tensor = self._modulation_map_tensor(modulation_map)
 
         empty_pyramid = [self.empty_modulation] * self.num_pyramid_levels
-        p_target_guide: List[torch.Tensor] = empty_pyramid.copy()
-        p_modulation: List[torch.Tensor] = empty_pyramid.copy()
+        p_target_guide: list[torch.Tensor] = empty_pyramid.copy()
+        p_modulation: list[torch.Tensor] = empty_pyramid.copy()
 
         def _prepare_target_pyramid() -> None:
             for i, (_, _, p_th, p_tw) in enumerate(self.pyramid_shapes):
@@ -135,7 +134,7 @@ class PreparedSynthesisContext:
             return stylized_image_np, error_map_np, nnf.cpu().numpy()
         return stylized_image_np, error_map_np
 
-    def _targets_to_tensor(self, guides: List[GuideObject]) -> torch.Tensor:
+    def _targets_to_tensor(self, guides: list[GuideObject]) -> torch.Tensor:
         for guide, channel_slice in zip(guides, self.guide_channel_slices):
             self._target_guide_cat_np[..., channel_slice] = guide.target
 
@@ -190,7 +189,7 @@ class PreparedSynthesisContext:
         )
         return self._initial_nnf_tensor
 
-    def _build_pyramid_shapes(self) -> List[Tuple[int, int, int, int]]:
+    def _build_pyramid_shapes(self) -> list[tuple[int, int, int, int]]:
         shapes = []
         for i in range(self.num_pyramid_levels):
             scale = 2.0 ** -(self.num_pyramid_levels - 1 - i)
@@ -204,7 +203,7 @@ class PreparedSynthesisContext:
             )
         return shapes
 
-    def _validate_targets(self, guides: List[GuideObject]) -> None:
+    def _validate_targets(self, guides: list[GuideObject]) -> None:
         _validate_guides(guides)
         if len(guides) != len(self.guide_channel_counts):
             raise ValueError(
@@ -297,9 +296,9 @@ class EbsynthEngine:
     def run(
         self,
         style_img: np.ndarray,
-        guides: List[GuideObject],
-        modulation_map: Optional[np.ndarray] = None,
-        initial_nnf: Optional[np.ndarray] = None,
+        guides: list[GuideObject],
+        modulation_map: np.ndarray | None = None,
+        initial_nnf: np.ndarray | None = None,
         return_error: bool = True,
         output_nnf: bool = False,
         benchmark: bool = False,
@@ -356,10 +355,10 @@ class EbsynthEngine:
         context: PreparedSynthesisContext,
         target_guide_cat: torch.Tensor,
         modulation_tensor: torch.Tensor,
-        p_target_guide: List[torch.Tensor],
-        p_modulation: List[torch.Tensor],
-        initial_nnf: Optional[np.ndarray],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        p_target_guide: list[torch.Tensor],
+        p_modulation: list[torch.Tensor],
+        initial_nnf: np.ndarray | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         nnf = None
         output_image = None
         output_error = None
@@ -512,7 +511,7 @@ def _channel_weights(
 
 
 def _guide_weights(
-    guide_sources: List[np.ndarray], guide_weights: List[float], device: str
+    guide_sources: list[np.ndarray], guide_weights: list[float], device: str
 ) -> torch.Tensor:
     weights = []
     for guide, weight in zip(guide_sources, guide_weights):
@@ -522,7 +521,7 @@ def _guide_weights(
     return torch.tensor(weights, dtype=torch.float32, device=device)
 
 
-def _channel_slices(channel_counts: List[int]) -> List[slice]:
+def _channel_slices(channel_counts: list[int]) -> list[slice]:
     slices = []
     start = 0
     for channels in channel_counts:
@@ -547,7 +546,7 @@ def _validate_image_array(array: np.ndarray, name: str) -> None:
         raise ValueError(f"{name} must be uint8, got {array.dtype}.")
 
 
-def _validate_guides(guides: List[GuideObject]) -> None:
+def _validate_guides(guides: list[GuideObject]) -> None:
     if not guides:
         raise ValueError("At least one guide is required.")
     for i, guide in enumerate(guides):

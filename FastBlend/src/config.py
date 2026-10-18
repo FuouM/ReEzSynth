@@ -8,8 +8,9 @@ full synthesis (PatchMatch + voting). Naming here avoids ``ebsynth_*`` to preven
 confusion with ``ezsynth``'s synthesis settings (``EbsynthParamsConfig``).
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Any, Mapping
+from typing import Any
 
 
 @dataclass

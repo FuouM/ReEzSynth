@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class TransformerLayer(torch.nn.Module):
     def __init__(self, feature_dim, ffn=True, ffn_dim_expansion=1):
-        super(TransformerLayer, self).__init__()
+        super().__init__()
 
         # multi-head attention
         self.q_proj = torch.nn.Linear(feature_dim, feature_dim)
@@ -68,7 +68,7 @@ class FeatureAttention(torch.nn.Module):
     def __init__(
         self, feature_dim, num_layers, ffn=True, ffn_dim_expansion=1, post_norm=False
     ):
-        super(FeatureAttention, self).__init__()
+        super().__init__()
 
         self.layers = torch.nn.ModuleList([
             TransformerLayer(feature_dim, ffn=ffn, ffn_dim_expansion=ffn_dim_expansion)
@@ -112,7 +112,7 @@ class FlowAttention(torch.nn.Module):
     """
 
     def __init__(self, feature_dim):
-        super(FlowAttention, self).__init__()
+        super().__init__()
 
         self.q_proj = torch.nn.Linear(feature_dim, feature_dim)
         self.k_proj = torch.nn.Linear(feature_dim, feature_dim)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 import numpy as np
 
@@ -16,8 +16,8 @@ class FastBlendInput_Sequence:
 
     def __init__(
         self,
-        frames_guide: List[np.ndarray],
-        frames_style: List[np.ndarray],
+        frames_guide: list[np.ndarray],
+        frames_style: list[np.ndarray],
     ) -> None:
         self.frames_guide = frames_guide
         self.frames_style = frames_style
@@ -28,9 +28,9 @@ class FastBlendInput_Keyframes:
 
     def __init__(
         self,
-        frames_guide: List[np.ndarray],
-        keyframes_style: List[np.ndarray],
-        keyframe_indices: List[int],
+        frames_guide: list[np.ndarray],
+        keyframes_style: list[np.ndarray],
+        keyframe_indices: list[int],
     ) -> None:
         self.frames_guide = frames_guide
         self.keyframes_style = keyframes_style
@@ -44,10 +44,10 @@ class FastBlendEngine:
     def smooth_sequence(
         self,
         input_sequence: FastBlendInput_Sequence,
-        config: Optional[FastBlendConfig] = None,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        config: FastBlendConfig | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
         backend: str = "auto",
-    ) -> List[np.ndarray]:
+    ) -> list[np.ndarray]:
         cfg = config or FastBlendConfig()
         if not cfg.enabled:
             return input_sequence.frames_style
@@ -82,8 +82,8 @@ class FastBlendEngine:
         self,
         input_keyframes: FastBlendInput_Keyframes,
         config: FastBlendConfig,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> List[np.ndarray]:
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[np.ndarray]:
         frames_guide = input_keyframes.frames_guide
         keyframes_style = input_keyframes.keyframes_style
         keyframe_indices = input_keyframes.keyframe_indices
@@ -103,7 +103,7 @@ class FastBlendEngine:
             progress_callback=progress_callback,
         )
 
-        result_frames_u8: List[Optional[np.ndarray]] = [
+        result_frames_u8: list[np.ndarray | None] = [
             np.clip(f, 0, 255).astype(np.uint8) if f is not None else None
             for f in result_float
         ]

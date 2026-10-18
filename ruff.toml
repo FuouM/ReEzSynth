@@ -1,0 +1,18 @@
+# Minimal lint config. The project requires Python >= 3.10.
+target-version = "py310"
+extend-exclude = ["FaceBlit/examples", "examples"]
+
+[lint]
+select = ["E9", "F", "UP", "B"]
+ignore = [
+    "UP035",  # deprecated typing imports: low value, noisy
+    "B905",   # zip() without strict=: would change behavior on length mismatch
+]
+
+[lint.per-file-ignores]
+# B023: closures here are handed to _timed_operation(), which executes them
+# immediately inside the same loop iteration, so the loop variable is never
+# read late. Revisit if closures are ever deferred or run asynchronously.
+"ezsynth/engines/synthesis_engine.py" = ["B023"]
+"ezsynth/engines/backends/pytorch_backend.py" = ["B023"]
+"ezsynth/engines/backends/taichi_backend.py" = ["B023"]

@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -41,7 +41,7 @@ class RunConfig:
         warp_weight=0.5,
         sparse_anchor_weight=50.0,
         use_lsqr=True,
-        poisson_maxiter: Optional[int] = None,
+        poisson_maxiter: int | None = None,
         alpha: float = 0.75,
         use_temporal_nnf_propagation: bool = True,
         use_sparse_feature_guide: bool = True,
@@ -99,13 +99,13 @@ class Ezsynth:
     def __init__(
         self,
         content_dir: str,
-        style_paths: List[str],
-        style_indices: List[int],
-        output_dir: Optional[str] = None,
-        cache_dir: Optional[str] = None,
-        mask_dir: Optional[str] = None,
-        modulation_dir: Optional[str] = None,
-        config: RunConfig = RunConfig(),
+        style_paths: list[str],
+        style_indices: list[int],
+        output_dir: str | None = None,
+        cache_dir: str | None = None,
+        mask_dir: str | None = None,
+        modulation_dir: str | None = None,
+        config: RunConfig | None = None,
         edge_method: str = "Classic",
         flow_engine: str = "RAFT",
         flow_model: str = "sintel",
@@ -126,6 +126,7 @@ class Ezsynth:
             flow_engine (str): The optical flow engine to use ('RAFT', 'NeuFlow').
             flow_model (str): The specific model for the chosen flow engine.
         """
+        config = config if config is not None else RunConfig()
         self.output_dir_path = Path(output_dir) if output_dir else None
         self._temp_output_dir = None
         self._temp_cache_dir = None
@@ -205,7 +206,7 @@ class Ezsynth:
 
         print("\nEzsynth API initialized successfully.")
 
-    def run(self) -> List[np.ndarray]:
+    def run(self) -> list[np.ndarray]:
         """
         Executes the synthesis pipeline.
 
@@ -243,8 +244,8 @@ class ImageSynth:
 
     def __init__(
         self,
-        style_image: Union[str, np.ndarray],
-        config: RunConfig = RunConfig(),
+        style_image: str | np.ndarray,
+        config: RunConfig | None = None,
     ):
         """
         Initializes the ImageSynth engine.
@@ -253,6 +254,7 @@ class ImageSynth:
             style_image (Union[str, np.ndarray]): Path to the style image or the image as a NumPy array.
             config (RunConfig): An object containing detailed synthesis parameters.
         """
+        config = config if config is not None else RunConfig()
         self.style = GuideObject.load_guide(style_image, style_image).keyframe
 
         ebsynth_params_cfg = EbsynthParamsConfig(
@@ -285,8 +287,8 @@ class ImageSynth:
         print("\nImageSynth API initialized successfully.")
 
     def run(
-        self, guides: List[Tuple[Any, Any, float]], benchmark: bool = False
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, guides: list[tuple[Any, Any, float]], benchmark: bool = False
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Runs the synthesis for a single target image using the provided guides.
 

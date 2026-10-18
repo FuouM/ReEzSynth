@@ -1,6 +1,5 @@
 # ezsynth/engines/backends/taichi_backend.py
 import platform
-from typing import Optional, Tuple
 
 import taichi as ti
 import torch
@@ -67,9 +66,9 @@ class TaichiBackend:
 
         self.timer = SynthesisTimer()
         self.benchmark_enabled = False
-        self._vote_acc: Optional[torch.Tensor] = None
-        self._vote_wsum: Optional[torch.Tensor] = None
-        self._vote_buf_key: Optional[Tuple[int, int, int, str]] = None
+        self._vote_acc: torch.Tensor | None = None
+        self._vote_wsum: torch.Tensor | None = None
+        self._vote_buf_key: tuple[int, int, int, str] | None = None
 
     def enable_benchmarking(self, enabled: bool = True):
         self.benchmark_enabled = enabled
@@ -83,7 +82,7 @@ class TaichiBackend:
         else:
             return operation_func()
 
-    def _vote_get_scratch(self, out: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _vote_get_scratch(self, out: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         key = (out.shape[0], out.shape[1], out.shape[2], str(out.device))
         if self._vote_buf_key != key or self._vote_acc is None:
             self._vote_acc = torch.zeros(
@@ -117,10 +116,10 @@ class TaichiBackend:
         search_vote_iters: int,
         patch_match_iters: int,
         stop_threshold: float,
-        rand_states: Optional[torch.Tensor],
+        rand_states: torch.Tensor | None,
         cost_function_mode: int,
         benchmark: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if benchmark:
             self.enable_benchmarking(True)
         target_h, target_w = target_guide_tensor.shape[:2]

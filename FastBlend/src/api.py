@@ -5,7 +5,7 @@ This module provides a simple API for applying FastBlend to stylized video frame
 FastBlend smooths temporal inconsistencies in frame-by-frame stylization results.
 """
 
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 import numpy as np
 
@@ -14,15 +14,15 @@ from .engine import FastBlendEngine, FastBlendInput_Keyframes, FastBlendInput_Se
 
 
 def smooth_video(
-    frames_guide: List[np.ndarray],
-    frames_style: List[np.ndarray],
+    frames_guide: list[np.ndarray],
+    frames_style: list[np.ndarray],
     accuracy: int = 2,
-    window_size: Optional[int] = None,
-    batch_size: Optional[int] = None,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    window_size: int | None = None,
+    batch_size: int | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
     backend: str = "auto",
-    config: Optional[FastBlendConfig] = None,
-) -> List[np.ndarray]:
+    config: FastBlendConfig | None = None,
+) -> list[np.ndarray]:
     """
     Apply FastBlend post-processing to stylized video frames.
 
@@ -70,11 +70,11 @@ def smooth_video(
 
 def create_config(
     accuracy: int = 2,
-    window_size: Optional[int] = None,
-    batch_size: Optional[int] = None,
-    minimum_patch_size: Optional[int] = None,
-    num_iter: Optional[int] = None,
-    guide_weight: Optional[float] = None,
+    window_size: int | None = None,
+    batch_size: int | None = None,
+    minimum_patch_size: int | None = None,
+    num_iter: int | None = None,
+    guide_weight: float | None = None,
     backend: str = "auto",
     gpu_id: int = 0,
 ) -> FastBlendConfig:
@@ -126,7 +126,7 @@ def create_config(
 
 
 def check_frames_compatibility(
-    frames_guide: List[np.ndarray], frames_style: List[np.ndarray]
+    frames_guide: list[np.ndarray], frames_style: list[np.ndarray]
 ) -> str:
     """
     Check compatibility of guide and style frames.
@@ -154,16 +154,16 @@ def check_frames_compatibility(
 
 
 def interpolate_video(
-    frames_guide: List[np.ndarray],
-    keyframes_style: List[np.ndarray],
-    keyframe_indices: List[int],
+    frames_guide: list[np.ndarray],
+    keyframes_style: list[np.ndarray],
+    keyframe_indices: list[int],
     accuracy: int = 2,
-    window_size: Optional[int] = None,
-    batch_size: Optional[int] = None,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    window_size: int | None = None,
+    batch_size: int | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
     backend: str = "auto",
-    config: Optional[FastBlendConfig] = None,
-) -> List[np.ndarray]:
+    config: FastBlendConfig | None = None,
+) -> list[np.ndarray]:
     """
     Interpolate frames between keyframes using FastBlend.
 
