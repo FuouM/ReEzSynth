@@ -4,8 +4,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence, Union
 
 import cv2
 import numpy as np
@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 
 def extract_video_frames_to_png_directory(
-    video_path: Union[str, Path], output_dir: Union[str, Path]
+    video_path: str | Path, output_dir: str | Path
 ) -> int:
     """
     Decode ``video_path`` and write ``{i:05d}.png`` into ``output_dir``.
@@ -101,7 +101,7 @@ def remux_to_browser_h264_mp4(input_mp4: Path, output_mp4: Path) -> None:
 
 
 def export_frames_to_browser_h264_mp4(
-    frames: Sequence[np.ndarray], path: Union[str, Path], fps: float
+    frames: Sequence[np.ndarray], path: str | Path, fps: float
 ) -> None:
     """Write ``mp4v`` to a temp file, then H.264 + yuv420p + faststart via ffmpeg."""
     if not frames:

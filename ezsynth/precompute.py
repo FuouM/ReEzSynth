@@ -1,8 +1,8 @@
 """Precompute state and cache-aware guide computation helpers."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Optional
 
 import numpy as np
 
@@ -13,16 +13,16 @@ from .utils.pipeline_utils import has_exact_cache_files
 class PrecomputeState:
     """Computed data shared by synthesis passes."""
 
-    edge_maps: List[np.ndarray] = field(default_factory=list)
-    fwd_flows: List[np.ndarray] = field(default_factory=list)
-    bwd_flows: List[np.ndarray] = field(default_factory=list)
-    fwd_occlusion_masks: List[np.ndarray] = field(default_factory=list)
-    bwd_occlusion_masks: List[np.ndarray] = field(default_factory=list)
-    sparse_guides: List[np.ndarray] = field(default_factory=list)
+    edge_maps: list[np.ndarray] = field(default_factory=list)
+    fwd_flows: list[np.ndarray] = field(default_factory=list)
+    bwd_flows: list[np.ndarray] = field(default_factory=list)
+    fwd_occlusion_masks: list[np.ndarray] = field(default_factory=list)
+    bwd_occlusion_masks: list[np.ndarray] = field(default_factory=list)
+    sparse_guides: list[np.ndarray] = field(default_factory=list)
 
 
 def compute_guide(
-    content_frames: List[np.ndarray],
+    content_frames: list[np.ndarray],
     cache_dir: str,
     prefix: str,
     extension: str,
@@ -32,7 +32,7 @@ def compute_guide(
     load_cache_fn: Callable,
     compute_fn: Callable,
     save_fn: Callable,
-    compute_kwargs: Optional[dict] = None,
+    compute_kwargs: dict | None = None,
 ):
     cache_path = Path(cache_dir) / prefix
     if not force_recompute and has_exact_cache_files(

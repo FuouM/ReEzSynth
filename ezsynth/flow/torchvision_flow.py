@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 import torch
 from torchvision.models.optical_flow import (
@@ -39,14 +37,14 @@ def _load_torchvision_raft(
 
 
 def _compute_torchvision_raft_sequence_with_model(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model: torch.nn.Module,
     dev: torch.device,
     transforms: object,
     *,
     desc: str = "Computing Optical Flow (TV RAFT)",
     show_progress: bool = True,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     if len(frames) < 2:
         return []
 
@@ -71,10 +69,10 @@ def _compute_torchvision_raft_sequence_with_model(
 
 
 def compute_torchvision_raft_sequence(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model_name: TorchVisionRaftModel,
     device: FlowTorchDevice = "auto",
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     if len(frames) < 2:
         return []
 

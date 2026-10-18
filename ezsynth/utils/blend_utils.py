@@ -1,5 +1,4 @@
 # ezsynth/utils/blend_utils.py
-from typing import List
 
 import numpy as np
 from tqdm import tqdm
@@ -35,16 +34,16 @@ class Blender:
         )
 
     def create_selection_masks(
-        self, err_fwd: List[np.ndarray], err_bwd: List[np.ndarray]
-    ) -> List[np.ndarray]:
+        self, err_fwd: list[np.ndarray], err_bwd: list[np.ndarray]
+    ) -> list[np.ndarray]:
         err_fwd_arr = np.array(err_fwd)
         err_bwd_arr = np.array(err_bwd)
         selection_masks = np.where(err_fwd_arr < err_bwd_arr, 0, 1).astype(np.uint8)
         return [mask for mask in selection_masks]
 
     def warp_masks(
-        self, flows_fwd: List[np.ndarray], masks: List[np.ndarray]
-    ) -> List[np.ndarray]:
+        self, flows_fwd: list[np.ndarray], masks: list[np.ndarray]
+    ) -> list[np.ndarray]:
         warped_masks = []
         prev_mask = np.zeros_like(masks[0])
         for i, mask in tqdm(

@@ -6,7 +6,6 @@ The omega map tracks how many times each source pixel is used in the current
 NNF, enabling a uniformity penalty that discourages overuse of popular patches.
 """
 
-from typing import Tuple
 
 import torch
 import torch.nn.functional as F
@@ -53,7 +52,7 @@ def _omega_patch_offsets(patch_size: int, device: torch.device) -> torch.Tensor:
 
 def _omega_scatter_deltas(
     n: int, device: torch.device, dtype: torch.dtype
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     key = (str(device), dtype)
     entry = _OMEGA_DELTA_CACHE.get(key)
     if entry is None or entry[0].shape[0] < n:
@@ -67,7 +66,7 @@ def _omega_scatter_deltas(
 
 def populate_omega_map(
     nnf: torch.Tensor,  # (H_t, W_t, 2) int32
-    source_shape: Tuple[int, int],  # (H_s, W_s)
+    source_shape: tuple[int, int],  # (H_s, W_s)
     patch_size: int,
 ) -> torch.Tensor:
     """
@@ -224,7 +223,7 @@ def gather_omega_scores_pair(
     omega_mean_map: torch.Tensor,
     nnf_a: torch.Tensor,
     nnf_b: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Two omega lookups for ``nnf_a`` / ``nnf_b`` (same leading shape as in
     ``try_patch_batch``). Uses one 1-D ``gather`` on a flattened map so the device

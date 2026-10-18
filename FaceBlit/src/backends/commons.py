@@ -1,5 +1,5 @@
 import math
-from typing import Sequence, Tuple
+from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -81,8 +81,7 @@ def get_app_guide(image_bgr: np.ndarray, stretch_hist: bool = True) -> np.ndarra
 
     # Avoid divide by zero
     diff = max_val - min_val
-    if diff < 1:
-        diff = 1
+    diff = max(diff, 1)
 
     stretched = ((result.astype(np.float32) - min_val) / float(diff)) * 255.0
     return np.clip(stretched, 0, 255).astype(np.uint8)
@@ -318,7 +317,7 @@ def _calc_mls_delta(
 
 
 def get_skin_mask(
-    image_bgr: np.ndarray, landmarks: Sequence[Tuple[int, int]]
+    image_bgr: np.ndarray, landmarks: Sequence[tuple[int, int]]
 ) -> np.ndarray:
     """Generate skin mask using PyTorch operations."""
     lm = np.asarray([(int(x), int(y)) for x, y in landmarks], dtype=np.int32)
@@ -395,8 +394,8 @@ def gray_hist_matching(input_gray: np.ndarray, ref_gray: np.ndarray) -> np.ndarr
 
 
 def get_head_area_rect(
-    landmarks: Sequence[Tuple[int, int]], img_size: Tuple[int, int]
-) -> Tuple[int, int, int, int]:
+    landmarks: Sequence[tuple[int, int]], img_size: tuple[int, int]
+) -> tuple[int, int, int, int]:
     pts = np.asarray(landmarks, dtype=np.int32)
     width = pts[16, 0] - pts[0, 0]
     higher_y = min(pts[0, 1], pts[16, 1])

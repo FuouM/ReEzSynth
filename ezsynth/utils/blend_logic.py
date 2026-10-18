@@ -1,6 +1,5 @@
 # ezsynth/utils/blend_logic.py
 import time
-from typing import Optional
 
 import cv2
 import numpy as np
@@ -212,7 +211,7 @@ class Reconstructor:
     def __init__(
         self,
         solver: str = "lsqr",
-        poisson_maxiter: Optional[int] = None,
+        poisson_maxiter: int | None = None,
         grad_weights: list[float] = [2.5, 0.5, 0.5],
     ):
         self.solver = solver

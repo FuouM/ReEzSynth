@@ -1,7 +1,6 @@
 """Single-direction synthesis pass execution."""
 
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -43,9 +42,9 @@ class SynthesisPassRunner:
         seq: SynthesisSequence,
         style_img: np.ndarray,
         is_forward: bool,
-        content_frames: List[np.ndarray],
+        content_frames: list[np.ndarray],
         collect_intermediates: bool = True,
-    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+    ) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
         if is_forward:
             frame_indices = range(seq.start_frame, seq.end_frame)
             step = 1
@@ -218,8 +217,8 @@ class SynthesisPassRunner:
         warped_previous_style: np.ndarray,
         source_pos_guide: np.ndarray,
         target_pos_guide: np.ndarray,
-        content_frames: List[np.ndarray],
-    ) -> List[GuideObject]:
+        content_frames: list[np.ndarray],
+    ) -> list[GuideObject]:
         eb_params = self.engine.ebsynth_config
         guides = [
             GuideObject(
@@ -264,8 +263,8 @@ class SynthesisPassRunner:
         target_idx: int,
         source_style_img: np.ndarray,
         base_stylized_img: np.ndarray,
-        occlusion_mask: Optional[np.ndarray],
-        content_frames: List[np.ndarray],
+        occlusion_mask: np.ndarray | None,
+        content_frames: list[np.ndarray],
     ) -> np.ndarray:
         if occlusion_mask is None or not np.any(occlusion_mask):
             return base_stylized_img
@@ -307,8 +306,8 @@ class SynthesisPassRunner:
         *,
         is_forward: bool,
         target_idx: int,
-        mask: Optional[np.ndarray],
-        modulation_map: Optional[np.ndarray],
+        mask: np.ndarray | None,
+        modulation_map: np.ndarray | None,
         fill_enabled: bool,
     ) -> None:
         if not self.debug_cfg.save_occlusion_debug or mask is None:

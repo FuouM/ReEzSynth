@@ -1,7 +1,7 @@
 """Helpers shared by repo-root FastBlend CLI scripts."""
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 
 import numpy as np
 from tqdm import tqdm
@@ -34,7 +34,7 @@ _INTERPOLATION_DEFAULTS = {
 }
 
 
-def create_fastblend_config(fastblend_params: Optional[dict] = None) -> FastBlendConfig:
+def create_fastblend_config(fastblend_params: dict | None = None) -> FastBlendConfig:
     """FastBlend config for full-sequence post-processing."""
     params = dict(_STANDALONE_DEFAULTS)
     if fastblend_params:
@@ -52,7 +52,7 @@ def create_fastblend_config(fastblend_params: Optional[dict] = None) -> FastBlen
 
 
 def create_interpolation_config(
-    fastblend_params: Optional[dict] = None,
+    fastblend_params: dict | None = None,
 ) -> FastBlendConfig:
     """FastBlend config tuned for keyframe interpolation."""
     params = dict(_INTERPOLATION_DEFAULTS)
@@ -73,8 +73,8 @@ def create_interpolation_config(
 def load_frames_sorted_with_names(
     directory: str,
     *,
-    tqdm_desc: Optional[str] = None,
-) -> tuple[List[np.ndarray], List[str]]:
+    tqdm_desc: str | None = None,
+) -> tuple[list[np.ndarray], list[str]]:
     """Load frames by natural image sort and return aligned basenames."""
     path = Path(directory)
     paths = get_sorted_image_paths(path)
@@ -85,14 +85,14 @@ def load_frames_sorted_with_names(
     return frames, names
 
 
-def load_frames_sorted(directory: str) -> List[np.ndarray]:
+def load_frames_sorted(directory: str) -> list[np.ndarray]:
     """Load frames from ``directory`` using natural image sort."""
     frames, _ = load_frames_sorted_with_names(directory)
     return frames
 
 
 def save_frames(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     output_dir: str,
     prefix: str = "fastblend_",
 ) -> None:
@@ -107,12 +107,12 @@ def save_frames(
 
 
 def interpolate_frames(
-    guide_frames: List[np.ndarray],
-    style_frames: List[np.ndarray],
-    keyframe_indices: List[int],
+    guide_frames: list[np.ndarray],
+    style_frames: list[np.ndarray],
+    keyframe_indices: list[int],
     config: FastBlendConfig,
-    progress_callback: Optional[Callable[..., None]] = None,
-) -> List[np.ndarray]:
+    progress_callback: Callable[..., None] | None = None,
+) -> list[np.ndarray]:
     """Interpolate between keyframes using FastBlend patch matching."""
     if len(keyframe_indices) == 0:
         raise ValueError("No keyframes found")

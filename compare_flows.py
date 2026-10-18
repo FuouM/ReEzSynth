@@ -3,8 +3,6 @@ import sys
 
 import cv2
 import numpy as np
-import torch
-from tqdm import tqdm
 
 # Add project root
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))

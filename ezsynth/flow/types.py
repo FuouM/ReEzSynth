@@ -30,13 +30,13 @@ TorchVisionRaftModel: TypeAlias = Literal["raft_large", "raft_small"]
 FlowTorchDevice: TypeAlias = Literal["auto", "cpu", "cuda", "mps"]
 
 __all__ = [
+    "NEUFLOW_FLOW_MODELS",
+    "RAFT_FLOW_MODELS",
     "FlowEngineName",
     "FlowModelName",
     "FlowTorchDevice",
-    "NEUFLOW_FLOW_MODELS",
     "NeuFlowCheckpointName",
     "OpenCvFlowMethod",
-    "RAFT_FLOW_MODELS",
     "RaftCheckpointName",
     "TorchVisionRaftModel",
 ]

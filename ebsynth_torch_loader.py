@@ -41,7 +41,6 @@ if not FORCE_JIT:
                 "ezsynth.consts.FORCE_EBSYNTH_WHEEL is True but failed to import ebsynth_torch. "
                 "Please install the pre-compiled wheel."
             )
-        pass
 
 # If pre-compiled not available or FORCE_JIT is set, use JIT compilation
 if ebsynth_torch is None and not FORCE_WHEEL:

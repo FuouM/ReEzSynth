@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 
@@ -11,8 +10,8 @@ from .data import ProjectData
 
 @dataclass
 class OutputResult:
-    frames: List[np.ndarray]
-    output_dir: Optional[Path]
+    frames: list[np.ndarray]
+    output_dir: Path | None
     saved: bool
 
 
@@ -24,10 +23,10 @@ class OutputManager:
 
     def handle(
         self,
-        frames: List[np.ndarray],
+        frames: list[np.ndarray],
         *,
         save: bool,
-        visible_output_dir: Optional[Path],
+        visible_output_dir: Path | None,
     ) -> OutputResult:
         if save:
             self.data.save_output_frames(frames)

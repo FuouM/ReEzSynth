@@ -1,8 +1,8 @@
-# ruff: noqa: E402
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal
 
 # Add project roots to path
 ROOT = Path(__file__).resolve().parent.parent.parent

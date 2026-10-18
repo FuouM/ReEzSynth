@@ -6,7 +6,7 @@ Guide adapter lives in ``torch_guide.py`` (mirrors ``taichi_backend`` + ``taichi
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -115,7 +115,7 @@ def style_blit_voting_torch(
     target_app_guide: np.ndarray | None,
     look_up_cube: np.ndarray | None,
     style_image: np.ndarray,
-    stylization_rect: Tuple[int, int, int, int] | None,
+    stylization_rect: tuple[int, int, int, int] | None,
     patch_size: int,
     lambda_pos: int,
     lambda_app: int,

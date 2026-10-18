@@ -7,8 +7,8 @@ from .common import (
     flow_between_frames,
     get_style_keyframes,
     load_video_frames,
-    precompute_adjacent_flows,
     precomputation_config_for_engine,
+    precompute_adjacent_flows,
     sample_flow_bilinear,
     write_png_sequence,
 )
@@ -20,8 +20,8 @@ __all__ = [
     "flow_between_frames",
     "get_style_keyframes",
     "load_video_frames",
-    "precompute_adjacent_flows",
     "precomputation_config_for_engine",
+    "precompute_adjacent_flows",
     "sample_flow_bilinear",
     "write_png_sequence",
 ]

@@ -1,9 +1,9 @@
 """Composable synthesis service types shared by CLI/API/future integrations."""
 
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
 
 import numpy as np
 
@@ -39,17 +39,17 @@ class SynthesisRequest:
     content_dir: str
     style_paths: Sequence[str | Path]
     style_indices: Sequence[int]
-    output_dir: Optional[str] = None
-    cache_dir: Optional[str] = None
-    mask_dir: Optional[str] = None
-    modulation_dir: Optional[str] = None
-    project_name: Optional[str] = None
+    output_dir: str | None = None
+    cache_dir: str | None = None
+    mask_dir: str | None = None
+    modulation_dir: str | None = None
+    project_name: str | None = None
     save_outputs: bool = True
-    ebsynth_params: Optional[EbsynthParamsConfig] = None
-    pipeline: Optional[PipelineConfig] = None
-    blending: Optional[BlendingConfig] = None
-    precomputation: Optional[PrecomputationConfig] = None
-    debug: Optional[DebugConfig] = None
+    ebsynth_params: EbsynthParamsConfig | None = None
+    pipeline: PipelineConfig | None = None
+    blending: BlendingConfig | None = None
+    precomputation: PrecomputationConfig | None = None
+    debug: DebugConfig | None = None
 
     def build_configs(self, *, output_dir: str, cache_dir: str) -> SynthesisConfigs:
         project = ProjectConfig(
@@ -76,9 +76,9 @@ class SynthesisRequest:
 class SynthesisResult:
     """Frames and resolved paths produced by a synthesis run."""
 
-    frames: List[np.ndarray]
-    output_dir: Optional[Path]
-    cache_dir: Optional[Path]
+    frames: list[np.ndarray]
+    output_dir: Path | None
+    cache_dir: Path | None
     saved: bool
 
 
@@ -126,9 +126,9 @@ class SynthesisService:
 
 
 class _temp_dir_if_missing:
-    def __init__(self, path: Optional[str]) -> None:
+    def __init__(self, path: str | None) -> None:
         self._path = path
-        self._temp: Optional[tempfile.TemporaryDirectory] = None
+        self._temp: tempfile.TemporaryDirectory | None = None
 
     def __enter__(self) -> str:
         if self._path is not None:

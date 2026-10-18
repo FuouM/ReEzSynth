@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Union
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -16,12 +16,12 @@ class ProjectConfig(BaseModel):
     name: str = "DefaultProject"
     # --- REQUIRED PATHS ---
     content_dir: str
-    style_path: Union[str, List[str]]
-    style_indices: List[int]
+    style_path: str | list[str]
+    style_indices: list[int]
     output_dir: str
     # --- OPTIONAL PATHS ---
-    mask_dir: Optional[str] = None
-    modulation_dir: Optional[str] = None
+    mask_dir: str | None = None
+    modulation_dir: str | None = None
     # --- CACHING ---
     cache_dir: str = "cache/DefaultProject"
     force_recompute_flow: bool = False
@@ -88,7 +88,7 @@ class BlendingConfig(BaseModel):
         "taichi-cg",
         "disabled",
     ] = "lsqr"
-    poisson_maxiter: Optional[int] = None
+    poisson_maxiter: int | None = None
     poisson_grad_weight_l: float = 2.5  # Gradient weight for L channel
     poisson_grad_weight_ab: float = 0.5  # Gradient weight for a/b channels
     use_taichi_ops: bool = False
@@ -114,7 +114,7 @@ class EbsynthParamsConfig(BaseModel):
     # New: Backend for synthesis operations.
     backend: Literal["cuda", "torch", "taichi"] = "cuda"
     # New: Device for synthesis (allows CPU with C++ extension)
-    device: Optional[str] = None  # None for auto-detect, or "cpu"/"cuda"
+    device: str | None = None  # None for auto-detect, or "cpu"/"cuda"
     extra_pass_3x3: bool = False
     edge_weight: float = 1.0
     image_weight: float = 6.0

@@ -1,5 +1,4 @@
 # ezsynth/engines/backends/cuda_backend.py
-from typing import Optional, Tuple
 
 import torch
 
@@ -60,10 +59,10 @@ class CudaBackend:
         search_vote_iters: int,
         patch_match_iters: int,
         stop_threshold: float,
-        rand_states: Optional[torch.Tensor],
+        rand_states: torch.Tensor | None,
         cost_function_mode: int,
         benchmark: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Run a single level using the extension (auto-detects CPU/CUDA).
         """

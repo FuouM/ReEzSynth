@@ -3,7 +3,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import torch
 import torch.utils.cpp_extension
@@ -17,7 +17,7 @@ _source_files_str = [
     str(_ext_dir / "kernels.cu"),
 ]
 
-_cached: Optional[Any] = None
+_cached: Any | None = None
 _load_attempted = False
 
 

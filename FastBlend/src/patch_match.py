@@ -34,12 +34,12 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
-    "cupy_available",
-    "taichi_available",
-    "resolve_fastblend_backend",
+    "PyramidPatchMatcher",
     "build_patch_matcher",
     "build_pyramid_patch_matcher",
-    "PyramidPatchMatcher",
+    "cupy_available",
+    "resolve_fastblend_backend",
+    "taichi_available",
 ]
 
 

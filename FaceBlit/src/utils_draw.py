@@ -1,4 +1,3 @@
-from typing import Tuple
 
 import numpy as np
 
@@ -23,7 +22,7 @@ def fill_convex_poly(mask: np.ndarray, points: np.ndarray, value: float) -> np.n
 
 
 def draw_ellipse(
-    mask: np.ndarray, center: Tuple[int, int], axes: Tuple[int, int]
+    mask: np.ndarray, center: tuple[int, int], axes: tuple[int, int]
 ) -> np.ndarray:
     """Draw a filled ellipse on the mask."""
     h, w = mask.shape

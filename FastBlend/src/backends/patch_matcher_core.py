@@ -33,7 +33,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import ContextManager, Optional, Tuple, Union
+from typing import ContextManager
 
 import numpy as np
 import torch
@@ -217,7 +217,7 @@ class FaceBlitPatchMatcherCore(ABC):
         nnf: torch.Tensor,
         err: torch.Tensor,
         upd_nnf: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         upd_err = self.get_error(tensors, upd_nnf)
         upd_idx = upd_err < err
         # Boolean masked assignment can mis-count indices on MPS; where is stable.
@@ -231,7 +231,7 @@ class FaceBlitPatchMatcherCore(ABC):
         tensors: PatchMatchTensors,
         nnf: torch.Tensor,
         err: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         directions = torch.randperm(4, device=nnf.device)
         for d in directions:
             upd_nnf = self.neighboor_step(nnf, int(d))
@@ -243,7 +243,7 @@ class FaceBlitPatchMatcherCore(ABC):
         tensors: PatchMatchTensors,
         nnf: torch.Tensor,
         err: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         for _ in range(self.random_search_steps):
             upd_nnf = self.random_step(nnf, self.random_search_range)
             nnf, err = self.update(tensors, nnf, err, upd_nnf)
@@ -254,7 +254,7 @@ class FaceBlitPatchMatcherCore(ABC):
         tensors: PatchMatchTensors,
         nnf: torch.Tensor,
         err: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         for d in range(1, self.tracking_window_size + 1):
             upd_nnf = self.track_step(nnf, d)
             nnf, err = self.update(tensors, nnf, err, upd_nnf)
@@ -267,7 +267,7 @@ class FaceBlitPatchMatcherCore(ABC):
         tensors: PatchMatchTensors,
         nnf: torch.Tensor,
         err: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         nnf, err = self.propagation(tensors, nnf, err)
         nnf, err = self.random_search(tensors, nnf, err)
         nnf, err = self.track(tensors, nnf, err)
@@ -279,7 +279,7 @@ class FaceBlitPatchMatcherCore(ABC):
         target_guide: torch.Tensor,
         source_style: torch.Tensor,
         nnf: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         with self._level_execution_context():
             source_guide = self.pad_image(source_guide)
             target_guide = self.pad_image(target_guide)
@@ -353,7 +353,7 @@ class PyramidPatchMatcherCore(ABC):
     def _pyramid_run_context(self) -> ContextManager[None]:
         return nullcontext()
 
-    def _coerce_input(self, x: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    def _coerce_input(self, x: np.ndarray | torch.Tensor) -> torch.Tensor:
         if isinstance(x, np.ndarray):
             return (
                 torch.from_numpy(x).float().to(self._pyramid_torch_device).contiguous()
@@ -442,16 +442,16 @@ class PyramidPatchMatcherCore(ABC):
 
     def estimate_nnf(
         self,
-        source_guide: Union[np.ndarray, torch.Tensor],
-        target_guide: Union[np.ndarray, torch.Tensor],
-        source_style: Union[np.ndarray, torch.Tensor],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        source_guide: np.ndarray | torch.Tensor,
+        target_guide: np.ndarray | torch.Tensor,
+        source_style: np.ndarray | torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         with self._pyramid_run_context():
             source_guide = self._coerce_input(source_guide)
             target_guide = self._coerce_input(target_guide)
             source_style = self._coerce_input(source_style)
 
-            nnf: Optional[torch.Tensor] = None
+            nnf: torch.Tensor | None = None
             for level in range(self.pyramid_level):
                 if level == 0:
                     nnf = self.initialize_nnf(

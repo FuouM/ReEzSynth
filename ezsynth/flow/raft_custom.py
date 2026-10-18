@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
-from typing import List
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
@@ -24,10 +23,10 @@ def _raft_model_path(model_name: RaftCheckpointName) -> Path:
 
 
 def compute_custom_raft_sequence(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model_name: RaftCheckpointName = "sintel",
     device: FlowTorchDevice = "auto",
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     if len(frames) < 2:
         return []
 
@@ -36,10 +35,10 @@ def compute_custom_raft_sequence(
 
 
 def compute_custom_raft_bidirectional(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model_name: RaftCheckpointName = "sintel",
     device: FlowTorchDevice = "auto",
-) -> tuple[List[np.ndarray], List[np.ndarray]]:
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     if len(frames) < 2:
         return [], []
 
@@ -76,13 +75,13 @@ def _load_raft_model(
 
 
 def _compute_custom_raft_sequence_with_model(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     model: nn.DataParallel,
     dev: torch.device,
     *,
     desc: str = "Computing Optical Flow (RAFT)",
     show_progress: bool = True,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     if len(frames) < 2:
         return []
 

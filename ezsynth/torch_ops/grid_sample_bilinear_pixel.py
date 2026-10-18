@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Union
-
 import torch
 import torch.nn.functional as F
 
@@ -14,7 +12,7 @@ def grid_sample_bilinear_pixel_coords(
     *,
     disable_cudnn_on_cuda: bool = False,
     return_oob_mask: bool = False,
-) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     Sample ``img`` at locations given by ``coords[..., :2]`` as x, y pixel indices.
 

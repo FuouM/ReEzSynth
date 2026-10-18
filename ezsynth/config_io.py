@@ -1,7 +1,8 @@
 """Config loading helpers shared by CLI and programmatic entrypoints."""
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, Union
+from typing import Any
 
 import yaml
 
@@ -28,7 +29,7 @@ def configs_from_mapping(data: Mapping[str, Any]) -> SynthesisConfigs:
     )
 
 
-def configs_from_yaml(path: Union[str, Path]) -> SynthesisConfigs:
+def configs_from_yaml(path: str | Path) -> SynthesisConfigs:
     """Load a YAML project config into typed config sections."""
     config_path = Path(path)
     if not config_path.exists():

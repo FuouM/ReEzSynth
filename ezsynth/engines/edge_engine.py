@@ -1,4 +1,3 @@
-from typing import List
 
 import numpy as np
 
@@ -22,7 +21,7 @@ class EdgeEngine:
         self.method = method
         print("Edge Engine initialized.")
 
-    def compute(self, frames: List[np.ndarray]) -> List[np.ndarray]:
+    def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         """
         Computes an edge map for each frame in the input sequence.
 

@@ -352,7 +352,10 @@ class ReEzSynthVideoSynth:
         output_dir: str = "",
         cache_dir: str = "",
     ):
-        from ezsynth.integration_io import write_rgb_frame_sequence, write_rgb_style_images
+        from ezsynth.integration_io import (
+            write_rgb_frame_sequence,
+            write_rgb_style_images,
+        )
         from ezsynth.service import SynthesisRequest, SynthesisService
 
         content_frames = image_tensor_to_rgb_float_sequence(content_images)

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class ConvBlock(torch.nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, stride, padding):
-        super(ConvBlock, self).__init__()
+        super().__init__()
 
         self.conv1 = torch.nn.Conv2d(
             in_planes,
@@ -41,7 +41,7 @@ class CNNEncoder(torch.nn.Module):
     def __init__(
         self, feature_dim_s16, context_dim_s16, feature_dim_s8, context_dim_s8
     ):
-        super(CNNEncoder, self).__init__()
+        super().__init__()
 
         self.block_8_1 = ConvBlock(
             3, feature_dim_s8 * 2, kernel_size=8, stride=4, padding=2

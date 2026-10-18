@@ -11,8 +11,6 @@ chunks when memory is tight) to avoid Python double-loop dispatch on large grids
 
 from __future__ import annotations
 
-from typing import Tuple
-
 import torch
 
 from ..consts import vote_chunk_budget_bytes
@@ -20,14 +18,14 @@ from .device_cache import clear_torch_device_cache
 from .microprofile import region as _mp_region
 
 # (patch_size, device_str) -> (Py[K], Px[K]) long tensors
-_VOTE_OFFSET_CACHE: dict[Tuple[int, str], Tuple[torch.Tensor, torch.Tensor]] = {}
+_VOTE_OFFSET_CACHE: dict[tuple[int, str], tuple[torch.Tensor, torch.Tensor]] = {}
 # (H_t, W_t, device_str) -> (Ty, Tx) meshgrid long tensors
-_VOTE_TYTX_CACHE: dict[Tuple[int, int, str], Tuple[torch.Tensor, torch.Tensor]] = {}
+_VOTE_TYTX_CACHE: dict[tuple[int, int, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
 def _vote_target_grid(
     h_t: int, w_t: int, device: torch.device
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     key = (h_t, w_t, str(device))
     if key not in _VOTE_TYTX_CACHE:
         Ty, Tx = torch.meshgrid(
@@ -41,7 +39,7 @@ def _vote_target_grid(
 
 def _vote_flat_offsets(
     patch_size: int, device: torch.device
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """``(Py, Px)`` length ``K`` matching nested ``for py / for px`` order (``ij`` meshgrid)."""
     r = patch_size // 2
     key = (patch_size, str(device))

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import List, Tuple
 
 import cv2
 import numpy as np
@@ -88,14 +87,14 @@ def _coverage_holes(flow: np.ndarray) -> np.ndarray:
 
 
 def compute_flow_occlusion_masks(
-    fwd_flows: List[np.ndarray],
-    bwd_flows: List[np.ndarray],
+    fwd_flows: list[np.ndarray],
+    bwd_flows: list[np.ndarray],
     *,
     alpha: float = 0.01,
     beta: float = 0.5,
     dilate: int = 1,
     coverage: bool = True,
-) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """
     Build per-transition unreliable masks for both temporal directions.
 
@@ -199,9 +198,9 @@ def accumulate_target_to_source_coords(
     width: int,
     target_idx: int,
     source_idx: int,
-    fwd_flows: List[np.ndarray],
-    bwd_flows: List[np.ndarray],
-) -> Tuple[np.ndarray, np.ndarray]:
+    fwd_flows: list[np.ndarray],
+    bwd_flows: list[np.ndarray],
+) -> tuple[np.ndarray, np.ndarray]:
     """Compose adjacent flows to map target-frame pixels into a source frame."""
     coords = _grid(height, width)
     valid = np.ones((height, width), dtype=bool)
@@ -231,7 +230,7 @@ def build_dfs_pseudo_style(
     offset_error_threshold: float = 3.0,
     min_region_size: int = 16,
     inpaint_radius: int = 3,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Build a pseudo style by growing coherent target-to-source offset regions.
 

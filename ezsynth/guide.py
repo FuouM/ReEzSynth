@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Union
 
 import numpy as np
 
@@ -22,8 +21,8 @@ class GuideObject:
 
     @staticmethod
     def load_guide(
-        source: Union[str, np.ndarray],
-        target: Union[str, np.ndarray],
+        source: str | np.ndarray,
+        target: str | np.ndarray,
         weight: float = 1.0,
     ) -> "GuideObject":
         src_img = io_utils.read_image(source) if isinstance(source, str) else source

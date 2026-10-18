@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 
@@ -37,10 +36,10 @@ class PseudoEndpointGenerator:
     def add_endpoint_styles(
         self,
         *,
-        content_frames: List[np.ndarray],
-        style_frames: List[np.ndarray],
-        style_indices: List[int],
-    ) -> Tuple[List[np.ndarray], List[int]]:
+        content_frames: list[np.ndarray],
+        style_frames: list[np.ndarray],
+        style_indices: list[int],
+    ) -> tuple[list[np.ndarray], list[int]]:
         if not style_indices:
             return style_frames, style_indices
 
@@ -89,7 +88,7 @@ class PseudoEndpointGenerator:
         target_idx: int,
         source_idx: int,
         source_style: np.ndarray,
-        content_frames: List[np.ndarray],
+        content_frames: list[np.ndarray],
     ) -> np.ndarray:
         pc = self.engine.pipeline_config
         if pc.pseudo_endpoint_mode == "synthesis":

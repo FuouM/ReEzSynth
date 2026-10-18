@@ -15,7 +15,7 @@ except ImportError:
 
 class NeuFlow(torch.nn.Module, PyTorchModelHubMixin):
     def __init__(self):
-        super(NeuFlow, self).__init__()
+        super().__init__()
 
         self.backbone = backbone_v7.CNNEncoder(
             config.feature_dim_s16,

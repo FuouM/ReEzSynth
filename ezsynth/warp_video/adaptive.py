@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -22,8 +23,8 @@ from .common import (
     flow_between_frames,
     get_style_keyframes,
     load_video_frames,
-    precompute_adjacent_flows,
     precomputation_config_for_engine,
+    precompute_adjacent_flows,
     write_png_sequence,
 )
 

@@ -1,6 +1,5 @@
 """Video synthesis scheduling and blend orchestration."""
 
-from typing import List
 
 import numpy as np
 
@@ -40,11 +39,11 @@ class SynthesisScheduler:
     def run(
         self,
         *,
-        content_frames: List[np.ndarray],
-        style_frames: List[np.ndarray],
-        style_indices: List[int],
+        content_frames: list[np.ndarray],
+        style_frames: list[np.ndarray],
+        style_indices: list[int],
         force_directional: bool = False,
-    ) -> List[np.ndarray]:
+    ) -> list[np.ndarray]:
         sequence_builder = (
             create_directional_sequences if force_directional else create_sequences
         )
@@ -70,9 +69,9 @@ class SynthesisScheduler:
         self,
         *,
         seq: SynthesisSequence,
-        content_frames: List[np.ndarray],
-        style_frames: List[np.ndarray],
-    ) -> List[np.ndarray]:
+        content_frames: list[np.ndarray],
+        style_frames: list[np.ndarray],
+    ) -> list[np.ndarray]:
         pass_runner_args = {
             "seq": seq,
             "content_frames": content_frames,
@@ -102,9 +101,9 @@ class SynthesisScheduler:
         self,
         *,
         seq: SynthesisSequence,
-        content_frames: List[np.ndarray],
-        style_frames: List[np.ndarray],
-    ) -> List[np.ndarray]:
+        content_frames: list[np.ndarray],
+        style_frames: list[np.ndarray],
+    ) -> list[np.ndarray]:
         style_fwd_idx, style_bwd_idx = seq.style_indices[0], seq.style_indices[1]
         fwd_frames, fwd_err, fwd_flows_used, _ = self.pass_runner.run(
             seq=seq,

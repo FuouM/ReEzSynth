@@ -1,7 +1,7 @@
 # import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 from .corr import CorrBlock
 from .extractor import BasicEncoder, SmallEncoder
@@ -11,7 +11,7 @@ from .utils import coords_grid, upflow8
 
 class RAFT(nn.Module):
     def __init__(self, args):
-        super(RAFT, self).__init__()
+        super().__init__()
         self.args = args
 
         if args.small:

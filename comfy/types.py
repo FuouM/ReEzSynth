@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
 
 import numpy as np
 
@@ -14,9 +13,9 @@ from ezsynth.guide import GuideObject
 class ReEzGuideList:
     """Ordered list of guides for :class:`~ezsynth.api.ImageSynth`."""
 
-    guides: List[GuideObject] = field(default_factory=list)
+    guides: list[GuideObject] = field(default_factory=list)
 
-    def append(self, guide: GuideObject) -> "ReEzGuideList":
+    def append(self, guide: GuideObject) -> ReEzGuideList:
         return ReEzGuideList(guides=[*self.guides, guide])
 
 
@@ -44,8 +43,8 @@ class ReEzImgSynthConfig:
 class ReEzVideoStyleKeyframes:
     """Style keyframes and their corresponding content frame indices."""
 
-    frames: List[np.ndarray]
-    indices: List[int]
+    frames: list[np.ndarray]
+    indices: list[int]
 
 
 @dataclass(frozen=True)

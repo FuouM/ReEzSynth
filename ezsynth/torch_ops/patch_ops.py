@@ -6,7 +6,6 @@ This module contains vectorized PyTorch implementations of patch-based
 operations that form the core of the PatchMatch algorithm.
 """
 
-from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -154,7 +153,7 @@ _SSD_SPARSE_PATCH_CACHE: dict = {}
 
 def _ssd_sparse_patch_layout(
     patch_size: int, n_size_step: int, device: torch.device
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Linear patch indices and spatial_sq for the n_size_step sampling grid."""
     dev_key = str(device)
     key = (patch_size, n_size_step, dev_key)
@@ -217,13 +216,13 @@ def compute_patch_ssd_vectorized(
     target_patches: torch.Tensor,
     nnf: torch.Tensor,
     weights: torch.Tensor,
-    target_modulation_patches: Optional[torch.Tensor] = None,
+    target_modulation_patches: torch.Tensor | None = None,
     *,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,
     n_size_step: int = 1,
-    source_style_patches_for_bilateral: Optional[torch.Tensor] = None,
+    source_style_patches_for_bilateral: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Computes SSD. Handles both 2D grid and 1D list of target patches.
 
@@ -308,7 +307,7 @@ def compute_patch_ssd_style_guide_fused(
     nnf: torch.Tensor,
     style_weights: torch.Tensor,
     guide_weights: torch.Tensor,
-    target_modulation_patches: Optional[torch.Tensor],
+    target_modulation_patches: torch.Tensor | None,
     *,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
@@ -396,7 +395,7 @@ def compute_patch_ssd_style_guide_fused(
 
 def compute_patch_stats(
     patches: torch.Tensor, patch_size: int, num_channels: int
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Precompute statistics for NCC: vals (grayscale), mean, std.
 
@@ -434,9 +433,9 @@ def compute_patch_ncc_vectorized(
     patch_size: int,
     style_weights: torch.Tensor,
     guide_weights: torch.Tensor,
-    source_stats: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
-    target_stats: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
-    target_modulation_patches: Optional[torch.Tensor] = None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,

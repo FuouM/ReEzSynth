@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -41,7 +41,7 @@ class RunConfig:
         warp_weight=0.5,
         sparse_anchor_weight=50.0,
         use_lsqr=True,
-        poisson_maxiter: Optional[int] = None,
+        poisson_maxiter: int | None = None,
         alpha: float = 0.75,
         use_temporal_nnf_propagation: bool = True,
         use_sparse_feature_guide: bool = True,
@@ -99,12 +99,12 @@ class Ezsynth:
     def __init__(
         self,
         content_dir: str,
-        style_paths: List[str],
-        style_indices: List[int],
-        output_dir: Optional[str] = None,
-        cache_dir: Optional[str] = None,
-        mask_dir: Optional[str] = None,
-        modulation_dir: Optional[str] = None,
+        style_paths: list[str],
+        style_indices: list[int],
+        output_dir: str | None = None,
+        cache_dir: str | None = None,
+        mask_dir: str | None = None,
+        modulation_dir: str | None = None,
         config: RunConfig = RunConfig(),
         edge_method: str = "Classic",
         flow_engine: str = "RAFT",
@@ -205,7 +205,7 @@ class Ezsynth:
 
         print("\nEzsynth API initialized successfully.")
 
-    def run(self) -> List[np.ndarray]:
+    def run(self) -> list[np.ndarray]:
         """
         Executes the synthesis pipeline.
 
@@ -243,7 +243,7 @@ class ImageSynth:
 
     def __init__(
         self,
-        style_image: Union[str, np.ndarray],
+        style_image: str | np.ndarray,
         config: RunConfig = RunConfig(),
     ):
         """
@@ -285,8 +285,8 @@ class ImageSynth:
         print("\nImageSynth API initialized successfully.")
 
     def run(
-        self, guides: List[Tuple[Any, Any, float]], benchmark: bool = False
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, guides: list[tuple[Any, Any, float]], benchmark: bool = False
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Runs the synthesis for a single target image using the provided guides.
 

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class UpSample(torch.nn.Module):
     def __init__(self, feature_dim, upsample_factor):
-        super(UpSample, self).__init__()
+        super().__init__()
 
         self.upsample_factor = upsample_factor
 

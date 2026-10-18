@@ -8,7 +8,6 @@ This module implements the core PatchMatch operations:
 - random_search_step: Exploration via random offsets
 """
 
-from typing import Optional, Tuple
 
 import torch
 
@@ -73,7 +72,7 @@ def _get_offset_tensor(offset_tuple, device):
 
 def _random_search_buffers(
     num_active: int, nnf: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     key = (str(nnf.device), nnf.dtype)
     entry = _RANDOM_SEARCH_BUFFER_CACHE.get(key)
     if entry is None or entry[0].shape[0] < num_active:
@@ -101,17 +100,17 @@ def try_patch_batch(
     patch_size: int,
     cost_function_mode: int,
     omega_best: float,
-    source_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_modulation_patches: Optional[torch.Tensor] = None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,
     n_size_step: int = 1,
     update_nnf: bool = True,
     *,
-    omega_mean_map: Optional[torch.Tensor] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    omega_mean_map: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Try candidate patches and update NNF if better.
     """
@@ -255,9 +254,9 @@ def propagation_step(
     mask: torch.Tensor,
     cost_function_mode: int,
     omega_best: float,
-    source_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_modulation_patches: Optional[torch.Tensor] = None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,
@@ -433,9 +432,9 @@ def random_search_step(
     cost_function_mode: int,
     omega_best: float,
     generator: torch.Generator = None,
-    source_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_stats: Tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_modulation_patches: Optional[torch.Tensor] = None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,

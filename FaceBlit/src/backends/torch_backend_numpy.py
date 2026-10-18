@@ -9,7 +9,7 @@ from __future__ import annotations
 import heapq
 from collections import deque
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Union
 
 import numpy as np
 
@@ -23,8 +23,8 @@ def compute_guided_error(
     target_pos_guide: np.ndarray,
     style_app_guide: np.ndarray | None,
     target_app_guide: np.ndarray | None,
-    target_pos: Tuple[int, int],
-    style_pos: Tuple[int, int],
+    target_pos: tuple[int, int],
+    style_pos: tuple[int, int],
     lambda_pos: int,
     lambda_app: int,
 ) -> int:
@@ -51,8 +51,8 @@ def compute_guided_error(
 
 
 def dfs_seed_grow(
-    target_seed_point: Tuple[int, int],
-    style_seed_point: Tuple[int, int],
+    target_seed_point: tuple[int, int],
+    style_seed_point: tuple[int, int],
     style_pos_guide: np.ndarray,
     target_pos_guide: np.ndarray,
     style_app_guide: np.ndarray | None,
@@ -117,7 +117,7 @@ def dfs_seed_grow(
 
 
 def _pixel_out_of_range(
-    style_pixel: Tuple[int, int], target_pixel: Tuple[int, int], shape: Tuple[int, int]
+    style_pixel: tuple[int, int], target_pixel: tuple[int, int], shape: tuple[int, int]
 ) -> bool:
     """Mirror C++ pixelOutOfImageRange: both coords are checked against target dims."""
     h, w = shape
@@ -141,7 +141,7 @@ def _compute_style_seed_point(
     look_up_cube: np.ndarray | None,
     row_t: int,
     col_t: int,
-    style_shape: Tuple[int, int],
+    style_shape: tuple[int, int],
     lambda_app: int,
 ) -> tuple[int, int]:
     """Match C++ computeStyleSeedPoint (pos-only fallback when appearance disabled)."""
@@ -168,8 +168,8 @@ def _compute_style_seed_point(
 
 
 def dfs_seed_grow_voting_numpy(
-    target_seed_point: Tuple[int, int],
-    style_seed_point: Tuple[int, int],
+    target_seed_point: tuple[int, int],
+    style_seed_point: tuple[int, int],
     style_pos_guide: np.ndarray,
     target_pos_guide: np.ndarray,
     style_app_guide: np.ndarray | None,
@@ -225,8 +225,8 @@ def initialize_nnf_vectorized(
     target_pos_guide: np.ndarray,
     target_app_guide: np.ndarray | None,
     look_up_cube: np.ndarray | None,
-    style_shape: Tuple[int, int],
-    stylization_rect: Tuple[int, int, int, int],
+    style_shape: tuple[int, int],
+    stylization_rect: tuple[int, int, int, int],
     # kept for call-site compatibility; unused
 ) -> np.ndarray:
     """LUT-based NNF for every target pixel (full frame; head-only init left borders black under voting)."""
@@ -450,7 +450,7 @@ def _lookup_coords_from_guides(
     target_pos: np.ndarray,
     target_app: np.ndarray | None,
     look_up_cube: np.ndarray | None,
-    style_shape: Tuple[int, int],
+    style_shape: tuple[int, int],
 ) -> tuple[np.ndarray, np.ndarray]:
     h_s, w_s = style_shape
     pos_r = to_uint8(target_pos[..., 2])
@@ -472,7 +472,7 @@ def _lookup_coords_from_guides(
 
 
 def _apply_rect_mask(
-    rect: Tuple[int, int, int, int], shape: Tuple[int, int]
+    rect: tuple[int, int, int, int], shape: tuple[int, int]
 ) -> np.ndarray:
     x, y, w, h = rect
     mask = np.zeros(shape, dtype=bool)
@@ -487,7 +487,7 @@ def style_blit(
     target_app_guide: np.ndarray | None,
     look_up_cube: np.ndarray | None,
     style_image: np.ndarray,
-    stylization_rect: Tuple[int, int, int, int] | None = None,
+    stylization_rect: tuple[int, int, int, int] | None = None,
 ) -> np.ndarray:
     h_t, w_t = target_pos_guide.shape[:2]
     style_h, style_w = style_image.shape[:2]

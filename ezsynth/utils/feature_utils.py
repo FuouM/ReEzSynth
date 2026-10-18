@@ -1,5 +1,4 @@
 # ezsynth/utils/feature_utils.py
-from typing import List
 
 import cv2
 import numpy as np
@@ -8,11 +7,11 @@ from tqdm import tqdm
 
 def generate_tracked_features(
     initial_frame: np.ndarray,
-    flows: List[np.ndarray],
+    flows: list[np.ndarray],
     max_corners: int = 500,
     quality_level: float = 0.01,
     min_distance: int = 10,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """
     Finds good features to track in the first frame and propagates them
     through the sequence using optical flow.

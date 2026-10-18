@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Callable, Iterator, List, cast
+from typing import cast
 
 import numpy as np
 import torch
@@ -29,7 +30,7 @@ from .torchvision_flow import (
 )
 from .types import FlowEngineName, NeuFlowCheckpointName, RaftCheckpointName
 
-FlowSequenceFn = Callable[[List[np.ndarray]], List[np.ndarray]]
+FlowSequenceFn = Callable[[list[np.ndarray]], list[np.ndarray]]
 
 
 @contextmanager
@@ -48,7 +49,7 @@ def optical_flow_engine(
                 "auto",
             )
 
-            def _compute(frames: List[np.ndarray]) -> List[np.ndarray]:
+            def _compute(frames: list[np.ndarray]) -> list[np.ndarray]:
                 return _compute_custom_raft_sequence_with_model(
                     frames,
                     model,
@@ -63,7 +64,7 @@ def optical_flow_engine(
                 "auto",
             )
 
-            def _compute(frames: List[np.ndarray]) -> List[np.ndarray]:
+            def _compute(frames: list[np.ndarray]) -> list[np.ndarray]:
                 return _compute_neuflow_sequence_with_model(
                     frames,
                     model,
@@ -76,7 +77,7 @@ def optical_flow_engine(
             yield _compute
         elif engine_name == "OpenCV":
 
-            def _compute(frames: List[np.ndarray]) -> List[np.ndarray]:
+            def _compute(frames: list[np.ndarray]) -> list[np.ndarray]:
                 return compute_opencv_flow_sequence(
                     frames,
                     precomputation_cfg.opencv_flow_method,
@@ -89,7 +90,7 @@ def optical_flow_engine(
                 "auto",
             )
 
-            def _compute(frames: List[np.ndarray]) -> List[np.ndarray]:
+            def _compute(frames: list[np.ndarray]) -> list[np.ndarray]:
                 return _compute_torchvision_raft_sequence_with_model(
                     frames,
                     model,
@@ -108,9 +109,9 @@ def optical_flow_engine(
 
 
 def compute_optical_flow_sequence(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     precomputation_cfg: PrecomputationConfig,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Forward optical flow for a frame sequence; releases heavy models after use."""
     print("Instantiating Flow Engine...")
     engine_name: FlowEngineName = precomputation_cfg.flow_engine
@@ -146,9 +147,9 @@ def compute_optical_flow_sequence(
 
 
 def compute_backward_optical_flow_sequence(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     precomputation_cfg: PrecomputationConfig,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Backward optical flow for each adjacent pair: frame ``i + 1`` -> frame ``i``."""
     if len(frames) < 2:
         return []
@@ -160,9 +161,9 @@ def compute_backward_optical_flow_sequence(
 
 
 def compute_bidirectional_optical_flow_sequence(
-    frames: List[np.ndarray],
+    frames: list[np.ndarray],
     precomputation_cfg: PrecomputationConfig,
-) -> tuple[List[np.ndarray], List[np.ndarray]]:
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """Forward and backward adjacent flow."""
     if len(frames) < 2:
         return [], []
