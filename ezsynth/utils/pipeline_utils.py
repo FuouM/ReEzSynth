@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import numpy as np
 from tqdm import tqdm
 
 from .io_utils import write_image
+
+logger = logging.getLogger(__name__)
 
 
 def expected_cache_paths(
@@ -31,20 +34,20 @@ def _clear_cache_files(cache_dir: Path, extensions: Iterable[str]) -> None:
 
 
 def load_cached_flow(cache_dir: Path):
-    print(f"Loading optical flow from cache: {cache_dir}")
+    logger.info(f"Loading optical flow from cache: {cache_dir}")
     flow_paths = sorted(cache_dir.glob("*.npy"))
     fwd_flows = [np.load(p) for p in tqdm(flow_paths, desc="Loading Cached Flow")]
     return fwd_flows
 
 
 def load_cached_arrays(cache_dir: Path):
-    print(f"Loading arrays from cache: {cache_dir}")
+    logger.info(f"Loading arrays from cache: {cache_dir}")
     array_paths = sorted(cache_dir.glob("*.npy"))
     return [np.load(p) for p in tqdm(array_paths, desc="Loading Cached Arrays")]
 
 
 def save_array_cache(arrays, cache_dir: Path):
-    print(f"Saving {len(arrays)} arrays to cache: {cache_dir}")
+    logger.info(f"Saving {len(arrays)} arrays to cache: {cache_dir}")
     cache_dir.mkdir(parents=True, exist_ok=True)
     _clear_cache_files(cache_dir, ["npy"])
     for i, array in enumerate(tqdm(arrays, desc="Saving Array Cache")):
@@ -52,7 +55,7 @@ def save_array_cache(arrays, cache_dir: Path):
 
 
 def save_flow_cache(fwd_flows, cache_dir: Path):
-    print(f"Saving {len(fwd_flows)} flow fields to cache: {cache_dir}")
+    logger.info(f"Saving {len(fwd_flows)} flow fields to cache: {cache_dir}")
     cache_dir.mkdir(parents=True, exist_ok=True)
     _clear_cache_files(cache_dir, ["npy"])
     for i, flow in enumerate(tqdm(fwd_flows, desc="Saving Flow Cache")):
@@ -60,7 +63,7 @@ def save_flow_cache(fwd_flows, cache_dir: Path):
 
 
 def save_edge_map_cache(edge_maps, cache_dir: Path):
-    print(f"Saving {len(edge_maps)} edge maps to cache: {cache_dir}")
+    logger.info(f"Saving {len(edge_maps)} edge maps to cache: {cache_dir}")
     cache_dir.mkdir(parents=True, exist_ok=True)
     _clear_cache_files(cache_dir, ["png"])
     for i, edge_map in enumerate(edge_maps):

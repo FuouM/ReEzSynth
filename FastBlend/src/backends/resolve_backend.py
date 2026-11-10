@@ -12,10 +12,7 @@ def _cuda_extension_usable() -> bool:
     """True if CUDA is present and the JIT extension loaded; False if JIT failed."""
     if not torch.cuda.is_available():
         return False
-    try:
-        return bool(is_available())
-    except RuntimeError:
-        return False
+    return bool(is_available())
 
 
 def resolve_fastblend_backend(requested: str) -> str:

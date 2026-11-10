@@ -199,10 +199,7 @@ def get_val_reflect(src: ti.template(), y: int, x: int, c: int, h: int, w: int):
     rx = ti.max(0, ti.min(w - 1, rx))
 
     val = 0.0
-    if ti.static(len(src.shape) > 2):
-        val = src[ry, rx, c]
-    else:
-        val = src[ry, rx]
+    val = src[ry, rx, c] if ti.static(len(src.shape) > 2) else src[ry, rx]
     return float(val)
 
 
@@ -468,7 +465,7 @@ def compute_rhs_kernel(
 
 
 def poisson_solver_cg(gx, gy, target, weight, max_iter=100, tol=1e-5):
-    h, w = target.shape
+    _h, _w = target.shape
     x = np.zeros_like(target)
     weight_sq = weight * weight
     rhs = np.zeros_like(target)

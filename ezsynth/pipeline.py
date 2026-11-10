@@ -1,3 +1,4 @@
+import logging
 
 import numpy as np
 
@@ -11,12 +12,15 @@ from .config import (
 )
 from .data import ProjectData
 
-# Engines are imported just-in-time to save memory
+# Engine modules import eagerly; their heavy optional dependencies (phycv,
+# torchvision, scipy, taichi) load inside the functions that use them.
 from .engines.synthesis_engine import EbsynthEngine
 from .precompute import PrecomputeState
 from .precompute_runner import PrecomputeRunner
 from .pseudo_endpoint import PseudoEndpointGenerator
 from .scheduler import SynthesisScheduler
+
+logger = logging.getLogger(__name__)
 
 
 class SynthesisPipeline:
@@ -65,7 +69,7 @@ class SynthesisPipeline:
         """
         Main entry point for the synthesis pipeline.
         """
-        print("Loading project data for pipeline...")
+        logger.info("Loading project data for pipeline...")
         content_frames = self.data.get_content_frames()
         style_frames = (
             self.data.get_style_frames()
@@ -85,7 +89,7 @@ class SynthesisPipeline:
                 style_indices=style_indices,
             )
 
-        print("\n--- Starting Synthesis ---")
+        logger.info("\n--- Starting Synthesis ---")
         final_frames = SynthesisScheduler(
             engine=self.synthesis_engine,
             precompute_state=self.precompute_state,
@@ -101,5 +105,5 @@ class SynthesisPipeline:
             ),
         )
 
-        print("\nSynthesis pipeline finished.")
+        logger.info("\nSynthesis pipeline finished.")
         return final_frames

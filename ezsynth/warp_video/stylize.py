@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 from typing import cast
 
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+from ezsynth.logging_setup import configure_cli_logging
 
 from ..flow.run import optical_flow_engine
 from ..flow.types import FlowEngineName, FlowModelName
@@ -19,6 +22,8 @@ from .common import (
     precomputation_config_for_engine,
     write_png_sequence,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def run(args: argparse.Namespace) -> None:
@@ -45,7 +50,7 @@ def run(args: argparse.Namespace) -> None:
     current_source = style0
     current_source_idx = 0
 
-    print(
+    logger.info(
         f"Windowed warping (window={args.window_size}, method={args.method}) on {n} frames..."
     )
     with optical_flow_engine(cfg) as compute_flow:
@@ -96,12 +101,12 @@ def run(args: argparse.Namespace) -> None:
             montage_frames.append(montage)
 
     if psnrs:
-        print(f"Average PSNR ({args.method}): {np.mean(psnrs):.2f} dB")
+        logger.info(f"Average PSNR ({args.method}): {np.mean(psnrs):.2f} dB")
 
     write_png_sequence(stylized_out, seq_dir)
-    print(f"PNG sequence -> {seq_dir}")
+    logger.info(f"PNG sequence -> {seq_dir}")
     export_frames_to_browser_h264_mp4(montage_frames, out_path, args.fps)
-    print(f"Saved montage video to {out_path}")
+    logger.info(f"Saved montage video to {out_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -109,7 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Stylize video by warping a style frame through optical flow."
     )
     parser.add_argument("--video", type=str, required=True)
-    parser.add_argument("--style", type=str, required=True, help="Style image for frame 0")
+    parser.add_argument(
+        "--style", type=str, required=True, help="Style image for frame 0"
+    )
     parser.add_argument("--output", type=str, default="output/cat_warped.mp4")
     parser.add_argument("--num_frames", type=int, default=50)
     parser.add_argument(
@@ -130,6 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    configure_cli_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
     run(args)

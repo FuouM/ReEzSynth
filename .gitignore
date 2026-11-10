@@ -10,6 +10,7 @@
 projects/*
 output/*
 cache/*
+output_synth_api_*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

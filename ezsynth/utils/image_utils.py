@@ -1,7 +1,10 @@
+import logging
 from collections.abc import Sequence
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def assert_uniform_image_shapes(images: Sequence[np.ndarray]) -> None:
@@ -37,7 +40,7 @@ def resize_image_to_match(
     if (current_height, current_width) == (target_height, target_width):
         return image_to_resize  # No resize needed
 
-    print(
+    logger.info(
         f"Resizing image from ({current_width}x{current_height}) to ({target_width}x{target_height})."
     )
 

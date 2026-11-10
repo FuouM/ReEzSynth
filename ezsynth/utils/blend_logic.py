@@ -1,29 +1,28 @@
 # ezsynth/utils/blend_logic.py
+import logging
 import time
+from importlib.util import find_spec
+from types import ModuleType
 
 import cv2
 import numpy as np
-import scipy.sparse
-import scipy.sparse.linalg
 from tqdm import tqdm
 
+logger = logging.getLogger(__name__)
+
 # --- Optional Dependency Handling ---
-try:
-    import pyamg
+# Availability is probed without importing; scipy, pyamg and taichi load on first use.
+PYAMG_AVAILABLE = find_spec("pyamg") is not None
+TAICHI_AVAILABLE = find_spec("taichi") is not None
 
-    PYAMG_AVAILABLE = True
-except ImportError:
-    PYAMG_AVAILABLE = False
 
-try:
-    import taichi  # noqa: F401 — dependency gate before importing taichi_ops
-
+def _taichi_ops() -> ModuleType:
+    """Import the Taichi kernels and initialize the shared Taichi runtime."""
     from ..engines.backends import taichi_ops
-    from ..engines.backends.taichi_backend import ensure_ti_init
+    from .taichi_runtime import ensure_ti_init
 
-    TAICHI_AVAILABLE = True
-except ImportError:
-    TAICHI_AVAILABLE = False
+    ensure_ti_init()
+    return taichi_ops
 
 
 # --- Algorithmic Alternatives ---
@@ -31,7 +30,7 @@ except ImportError:
 
 def seamless_clone_blending(frame_fwd, frame_bwd, mask):
     """Blends using OpenCV's seamlessClone."""
-    h, w, _ = frame_fwd.shape
+    _h, _w, _ = frame_fwd.shape
     # seamlessClone requires a single-channel mask
     if len(mask.shape) > 2:
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
@@ -59,7 +58,7 @@ def hist_blender(
     use_taichi=False,
 ) -> np.ndarray:
     if use_taichi and TAICHI_AVAILABLE:
-        ensure_ti_init()
+        taichi_ops = _taichi_ops()
 
         # Prepare buffers
         ma, sa = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
@@ -123,6 +122,8 @@ def hist_blender(
 
 # --- Poisson Solvers ---
 def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
+    import scipy.sparse
+
     st = time.time()
     indgx_x = np.zeros(2 * (h - 1) * w, dtype=int)
     indgx_y = np.zeros(2 * (h - 1) * w, dtype=int)
@@ -148,11 +149,13 @@ def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
         (vdy, (indgy_x, indgy_y)), shape=(h * w, h * w)
     ).tocsc()
     As = [scipy.sparse.vstack([Gx * weight, Gy * weight, Ix]) for weight in grad_weight]
-    print(f"Constructing Poisson matrix 'A' took {time.time() - st:.4f} s")
+    logger.debug(f"Constructing Poisson matrix 'A' took {time.time() - st:.4f} s")
     return As
 
 
 def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weights):
+    import scipy.sparse.linalg
+
     Iab = cv2.cvtColor(blendI, cv2.COLOR_BGR2LAB).astype(np.float32)
     Ia = cv2.cvtColor(I1, cv2.COLOR_BGR2LAB).astype(np.float32)
     Ib = cv2.cvtColor(I2, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -193,7 +196,7 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
             A, ml = cache["As"][ch], cache["MLs"][ch]
             out_all[:, ch] = ml.solve(A.T @ b, tol=1e-6, maxiter=maxiter, accel="cg")
         elif solver == "taichi-cg" and TAICHI_AVAILABLE:
-            ensure_ti_init()
+            taichi_ops = _taichi_ops()
             out_all[:, ch] = taichi_ops.poisson_solver_cg(
                 gx[..., ch],
                 gy[..., ch],
@@ -231,7 +234,7 @@ class Reconstructor:
         if hw_key in self._cache:
             return self._cache[hw_key]
 
-        print(f"Preparing solver cache for resolution {w}x{h}...")
+        logger.info(f"Preparing solver cache for resolution {w}x{h}...")
         size_cache = {}
         # Only construct matrices if a solver that needs them is selected
         if self.solver in ["lsqr", "lsmr", "cg", "amg"]:
@@ -240,7 +243,9 @@ class Reconstructor:
             if self.solver == "cg" or self.solver == "amg":
                 size_cache["AtAs"] = [A.T @ A for A in As]
             if self.solver == "amg":
-                print("  - Building AMG solver...")
+                import pyamg
+
+                logger.debug("  - Building AMG solver...")
                 size_cache["MLs"] = [
                     pyamg.ruge_stuben_solver(AtA) for AtA in size_cache["AtAs"]
                 ]

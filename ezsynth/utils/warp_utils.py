@@ -15,7 +15,7 @@ class Warp:
         if self.use_taichi:
             try:
                 from ..engines.backends import taichi_ops
-                from ..engines.backends.taichi_backend import ensure_ti_init
+                from .taichi_runtime import ensure_ti_init
 
                 ensure_ti_init()
                 self._taichi_ops = taichi_ops

@@ -3,35 +3,7 @@
 import taichi as ti
 import torch
 
-from src.utils_io import get_taichi_arch
-
-_ti_initialized = False
-_ti_arch = None
-
-
-def _normalize_ti_device_key(device) -> str | None:
-    if device is None:
-        return None
-    if isinstance(device, torch.device):
-        return device.type
-    return str(device).lower().split(":", maxsplit=1)[0]
-
-
-def ensure_ti_init(device=None):
-    """Initialize Taichi; respects PyTorch-style ``device`` (cpu / cuda / mps).
-
-    Calls :func:`ti.reset` if the requested arch changes so CPU vs GPU can be switched.
-    """
-    global _ti_initialized, _ti_arch
-    arch = get_taichi_arch(_normalize_ti_device_key(device))
-    if _ti_initialized and _ti_arch is not None and _ti_arch != arch:
-        ti.reset()
-        _ti_initialized = False
-    if not _ti_initialized:
-        ti.init(arch=arch, log_level=ti.INFO, random_seed=42)
-        print(f"[Taichi FaceBlit] Initialized with arch: {arch}")
-        _ti_initialized = True
-        _ti_arch = arch
+from ezsynth.utils.taichi_runtime import ensure_ti_init as ensure_ti_init
 
 
 def compute_lut_taichi(
@@ -385,41 +357,38 @@ def initialize_nnf_dfs_kernel(
                         and 0 <= tx < w_t
                         and 0 <= sy < h_s
                         and 0 <= sx < w_s
-                    ):
-                        if covered_pixels[ty, tx] == 0:
-                            pos_err = ti.abs(
-                                ti.i32(target_pos_r[ty, tx])
-                                - ti.i32(style_pos_r[sy, sx])
-                            ) + ti.abs(
-                                ti.i32(target_pos_g[ty, tx])
-                                - ti.i32(style_pos_g[sy, sx])
-                            )
-                            app_err = ti.abs(
-                                ti.i32(target_app[ty, tx]) - ti.i32(style_app[sy, sx])
-                            )
-                            error = lambda_pos * pos_err + lambda_app * app_err
+                    ) and covered_pixels[ty, tx] == 0:
+                        pos_err = ti.abs(
+                            ti.i32(target_pos_r[ty, tx]) - ti.i32(style_pos_r[sy, sx])
+                        ) + ti.abs(
+                            ti.i32(target_pos_g[ty, tx]) - ti.i32(style_pos_g[sy, sx])
+                        )
+                        app_err = ti.abs(
+                            ti.i32(target_app[ty, tx]) - ti.i32(style_app[sy, sx])
+                        )
+                        error = lambda_pos * pos_err + lambda_app * app_err
 
-                            if error < threshold or (dy == 0 and dx == 0):
-                                nnf[ty, tx, 0] = sy
-                                nnf[ty, tx, 1] = sx
-                                covered_pixels[ty, tx] = chunk_number
+                        if error < threshold or (dy == 0 and dx == 0):
+                            nnf[ty, tx, 0] = sy
+                            nnf[ty, tx, 1] = sx
+                            covered_pixels[ty, tx] = chunk_number
 
-                                if ty > 0 and tail < max_q:
-                                    q_y[tail] = ty - 1
-                                    q_x[tail] = tx
-                                    tail += 1
-                                if ty + 1 < h_t and tail < max_q:
-                                    q_y[tail] = ty + 1
-                                    q_x[tail] = tx
-                                    tail += 1
-                                if tx > 0 and tail < max_q:
-                                    q_y[tail] = ty
-                                    q_x[tail] = tx - 1
-                                    tail += 1
-                                if tx + 1 < w_t and tail < max_q:
-                                    q_y[tail] = ty
-                                    q_x[tail] = tx + 1
-                                    tail += 1
+                            if ty > 0 and tail < max_q:
+                                q_y[tail] = ty - 1
+                                q_x[tail] = tx
+                                tail += 1
+                            if ty + 1 < h_t and tail < max_q:
+                                q_y[tail] = ty + 1
+                                q_x[tail] = tx
+                                tail += 1
+                            if tx > 0 and tail < max_q:
+                                q_y[tail] = ty
+                                q_x[tail] = tx - 1
+                                tail += 1
+                            if tx + 1 < w_t and tail < max_q:
+                                q_y[tail] = ty
+                                q_x[tail] = tx + 1
+                                tail += 1
 
                 chunk_number += 1
 

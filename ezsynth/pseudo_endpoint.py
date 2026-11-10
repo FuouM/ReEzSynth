@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +18,8 @@ from .utils.occlusion import (
     mask_to_bgr,
 )
 from .utils.sequence_utils import SynthesisSequence
+
+logger = logging.getLogger(__name__)
 
 
 class PseudoEndpointGenerator:
@@ -51,12 +54,12 @@ class PseudoEndpointGenerator:
         if not augmented:
             return style_frames, style_indices
 
-        print("\n--- Building pseudo endpoint style anchors ---")
+        logger.info("\n--- Building pseudo endpoint style anchors ---")
         first_idx = min(augmented)
         last_idx = max(augmented)
 
         if first_idx > 0:
-            print(
+            logger.info(
                 f"Generating pseudo start style at frame 0 from style frame {first_idx}..."
             )
             augmented[0] = self.generate(
@@ -67,7 +70,7 @@ class PseudoEndpointGenerator:
             )
 
         if last_idx < n - 1:
-            print(
+            logger.info(
                 f"Generating pseudo end style at frame {n - 1} from style frame {last_idx}..."
             )
             augmented[n - 1] = self.generate(
@@ -79,7 +82,7 @@ class PseudoEndpointGenerator:
 
         augmented_indices = sorted(augmented)
         augmented_frames = [augmented[idx] for idx in augmented_indices]
-        print(f"Using style anchors at frames: {augmented_indices}")
+        logger.info(f"Using style anchors at frames: {augmented_indices}")
         return augmented_frames, augmented_indices
 
     def generate(
@@ -146,7 +149,7 @@ class PseudoEndpointGenerator:
             )
 
         assigned_ratio = float((confidence > 0).mean())
-        print(
+        logger.info(
             f"Pseudo endpoint frame {target_idx}: DFS assigned {assigned_ratio:.1%} before fill"
         )
         return pseudo

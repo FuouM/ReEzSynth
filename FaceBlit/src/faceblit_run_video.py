@@ -1,18 +1,18 @@
-
-import sys
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-# Add project roots to path
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "FaceBlit"))
-
-from src.utils_landmark_viz import (
+from ezsynth.logging_setup import configure_cli_logging
+from FaceBlit.src.utils_landmark_viz import (
     write_landmark_trajectory_from_frames,
     write_landmarks_preview_mp4,
 )
+
+logger = logging.getLogger(__name__)
+
+# Run from the repository root: python -m FaceBlit.src.faceblit_run_video
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 PREDICTOR_PATH = ROOT / "FaceBlit" / "models" / "shape_predictor_68_face_landmarks.dat"
 EXAMPLES_DIR = ROOT / "FaceBlit" / "examples"
@@ -80,7 +80,7 @@ def run_landmark_preview_video(
             landmark_indices=trajectory_plot_indices,
             extensions=extensions,
         )
-        print(f"[Demo] landmark trajectory: wrote {path}")
+        logger.info(f"[Demo] landmark trajectory: wrote {path}")
         return path
 
     out: Path
@@ -123,13 +123,14 @@ def run_landmark_preview_video(
         faceblit_style_path=faceblit_style_path,
         faceblit_style_cache_dir=faceblit_style_cache_dir,
     )
-    print(f"[Demo] landmark preview: wrote {path}")
+    logger.info(f"[Demo] landmark preview: wrote {path}")
     if trajectory_plot_path is not None:
-        print(f"[Demo] trajectory plot: wrote {trajectory_plot_path}")
+        logger.info(f"[Demo] trajectory plot: wrote {trajectory_plot_path}")
     return path
 
 
 if __name__ == "__main__":
+    configure_cli_logging()
     video_output_dir = ROOT / "FaceBlit" / "test_output" / "video"
     video_output_dir.mkdir(parents=True, exist_ok=True)
 

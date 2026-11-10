@@ -1,30 +1,37 @@
-"""TorchVision RAFT optical flow."""
+"""TorchVision RAFT optical flow (torchvision is imported when a model loads)."""
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import torch
-from torchvision.models.optical_flow import (
-    Raft_Large_Weights,
-    Raft_Small_Weights,
-    raft_large,
-    raft_small,
-)
 from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from .types import FlowTorchDevice, TorchVisionRaftModel
+
+logger = logging.getLogger(__name__)
 
 
 def _load_torchvision_raft(
     model_name: TorchVisionRaftModel,
     device: FlowTorchDevice = "auto",
 ) -> tuple[torch.nn.Module, torch.device, object]:
-    print(f"Initializing TorchVision RAFT (model: {model_name})...")
+    from torchvision.models.optical_flow import (
+        Raft_Large_Weights,
+        Raft_Small_Weights,
+        raft_large,
+        raft_small,
+    )
+
+    logger.info(f"Initializing TorchVision RAFT (model: {model_name})...")
     if device == "auto":
         dev = torch.device(get_auto_torch_device())
     else:
         dev = torch.device(device)
+    apply_gpu_memory_limit(dev)
 
     if model_name == "raft_large":
         model = raft_large(weights=Raft_Large_Weights.DEFAULT, progress=False).to(dev)

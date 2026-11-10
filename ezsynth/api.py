@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,8 @@ from .guide import GuideObject
 from .output import OutputManager
 from .pipeline import SynthesisPipeline
 from .service import SynthesisConfigs
+
+logger = logging.getLogger(__name__)
 
 
 class RunConfig:
@@ -47,7 +50,7 @@ class RunConfig:
         use_sparse_feature_guide: bool = True,
         use_residual_transfer: bool = True,
         cost_function: str = "ssd",
-        device: str = None,
+        device: str | None = None,
         use_optimization: bool = True,
         use_bilateral: bool = False,
         sigma_spatial: float = 4.0,
@@ -204,7 +207,7 @@ class Ezsynth:
             debug_cfg=self.configs.debug,
         )
 
-        print("\nEzsynth API initialized successfully.")
+        logger.info("\nEzsynth API initialized successfully.")
 
     def run(self) -> list[np.ndarray]:
         """
@@ -213,20 +216,22 @@ class Ezsynth:
         Returns:
             List[np.ndarray]: A list of the final stylized frames as NumPy arrays.
         """
-        print("\n--- Starting Synthesis via API ---")
+        logger.info("\n--- Starting Synthesis via API ---")
         final_frames = self.pipeline.run()
 
         if self.output_dir_path:
-            print(f"\nSaving output to specified directory: {self.output_dir_path}")
+            logger.info(
+                f"\nSaving output to specified directory: {self.output_dir_path}"
+            )
             OutputManager(self.data).handle(
                 final_frames,
                 save=True,
                 visible_output_dir=self.output_dir_path,
             )
         else:
-            print("\nOutput directory not specified, skipping save.")
+            logger.warning("\nOutput directory not specified, skipping save.")
 
-        print("\n--- Synthesis via API Finished ---")
+        logger.info("\n--- Synthesis via API Finished ---")
         return final_frames
 
     def __del__(self):
@@ -284,7 +289,7 @@ class ImageSynth:
         self.engine = EbsynthEngine(
             ebsynth_config=ebsynth_params_cfg, pipeline_config=pipeline_cfg
         )
-        print("\nImageSynth API initialized successfully.")
+        logger.info("\nImageSynth API initialized successfully.")
 
     def run(
         self, guides: list[tuple[Any, Any, float]], benchmark: bool = False

@@ -1,6 +1,9 @@
 import contextlib
+import logging
 import time
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 class SynthesisTimer:
@@ -48,8 +51,8 @@ class SynthesisTimer:
         """Print formatted timing summary."""
         summary = self.get_summary()
 
-        print(f"\n{title}")
-        print("=" * len(title))
+        logger.info(f"\n{title}")
+        logger.info("=" * len(title))
 
         # Sort by time spent (descending)
         sorted_ops = sorted(
@@ -66,6 +69,8 @@ class SynthesisTimer:
             calls_str = f"{data['calls']} calls"
             avg_str = f"{data['avg_time']:.4f}s avg" if data["calls"] > 1 else ""
 
-            print(f"  {op:<25} {time_str:>10} ({pct_str:>5}) {calls_str:>10} {avg_str}")
+            logger.info(
+                f"  {op:<25} {time_str:>10} ({pct_str:>5}) {calls_str:>10} {avg_str}"
+            )
 
-        print(f"  {'TOTAL':<25} {total_time:.4f}s")
+        logger.info(f"  {'TOTAL':<25} {total_time:.4f}s")

@@ -94,10 +94,7 @@ def flow_to_image(flow_uv, clip_flow=None, convert_to_bgr=False):
 
     flow_magnitude = np.sqrt(np.square(u) + np.square(v))
     # Defensive check for max on an empty array or all-zero flow
-    if flow_magnitude.size > 0:
-        magnitude_max = np.max(flow_magnitude)
-    else:
-        magnitude_max = 0.0
+    magnitude_max = np.max(flow_magnitude) if flow_magnitude.size > 0 else 0.0
 
     epsilon = 1e-5
     # Defensive check to avoid division by zero if flow is all zeros

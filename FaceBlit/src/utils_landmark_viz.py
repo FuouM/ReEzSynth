@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -13,6 +14,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 # Open polyline index lists for iBUG 68 / dlib ordering
 _DLIB_68_OPEN_CHAINS: tuple[list[int], ...] = (
@@ -336,7 +339,7 @@ def _collect_carried_landmark_sequence(
 
 
 def _landmarks_to_int_tuples(lm: np.ndarray) -> list[tuple[int, int]]:
-    return [(int(round(lm[i, 0])), int(round(lm[i, 1]))) for i in range(68)]
+    return [(round(lm[i, 0]), round(lm[i, 1])) for i in range(68)]
 
 
 # Representative dlib-68 indices for trajectory plots (jaw, brow, nose, eye, mouth)
@@ -446,7 +449,7 @@ def _gather_landmarks_stack(
     device: str,
 ) -> tuple[np.ndarray, np.ndarray, list[Path], int, int]:
     """Load frames, run detection, return ``(raw_stack, detected_mask, paths, h, w)``."""
-    from src.utils_face import detect_landmarks
+    from FaceBlit.src.utils_face import detect_landmarks
 
     frames_dir = Path(frames_dir)
     frame_paths = list_frame_paths(frames_dir, extensions)
@@ -564,17 +567,14 @@ def write_landmarks_preview_mp4(
 
     n_cols = 1
     if smooth_landmarks:
-        if faceblit_taichi_solo:
-            n_cols = 1
-        else:
-            n_cols = 3 if faceblit_taichi_triplet else 2
+        n_cols = 1 if faceblit_taichi_solo else 3 if faceblit_taichi_triplet else 2
     out_w = w * n_cols
     out_h = h
 
     fb_engine = None
     fb_style = None
     if faceblit_taichi_triplet or faceblit_taichi_solo:
-        from src.engine import FaceBlitEngine
+        from FaceBlit.src.engine import FaceBlitEngine
 
         style_p = Path(faceblit_style_path or _default_faceblit_style_path())
         if not style_p.is_file():
@@ -583,7 +583,7 @@ def write_landmarks_preview_mp4(
             faceblit_style_cache_dir
             or (output_mp4.parent / f"_fb_style_cache_{style_p.stem}")
         )
-        print(f"[landmark viz] Precomputing Taichi style assets → {cache}")
+        logger.info(f"[landmark viz] Precomputing Taichi style assets → {cache}")
         fb_style = _prepare_faceblit_style_taichi(
             style_p,
             cache,
@@ -744,8 +744,8 @@ def _prepare_faceblit_style_taichi(
     device: str,
 ):
     """Precompute / load Taichi style LUT and guides; returns ``FaceBlitInput_Style``."""
-    from src.backends.taichi_backend import ensure_ti_init
-    from src.engine import FaceBlitInput_Style
+    from FaceBlit.src.backends.taichi_backend import ensure_ti_init
+    from FaceBlit.src.engine import FaceBlitInput_Style
 
     ensure_ti_init(device)
     cache_dir = Path(cache_dir)
@@ -779,7 +779,7 @@ def _stylize_target_taichi_no_bg(
     device: str,
 ) -> np.ndarray:
     """Run Taichi FaceBlit with ``stylize_background=False`` (face only, alpha blend)."""
-    from src.engine import FaceBlitInput_Target
+    from FaceBlit.src.engine import FaceBlitInput_Target
 
     tgt = FaceBlitInput_Target(img_bgr, landmarks)
     result, _ = engine.stylize_image_with_guide_and_landmarks(

@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from argparse import Namespace
 from pathlib import Path
 
 import numpy as np
 import torch
-from torch import nn
 from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
 from ..raft.raft import RAFT
 from ..raft.utils import InputPadder
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from .types import FlowTorchDevice, RaftCheckpointName
+
+logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -56,27 +59,29 @@ def compute_custom_raft_bidirectional(
 def _load_raft_model(
     model_name: RaftCheckpointName,
     device: FlowTorchDevice,
-) -> tuple[nn.DataParallel, torch.device]:
-    print(f"Initializing RAFT Flow Engine (model: {model_name})...")
+) -> tuple[RAFT, torch.device]:
+    logger.info(f"Initializing RAFT Flow Engine (model: {model_name})...")
     if device == "auto":
         dev = torch.device(get_auto_torch_device())
     else:
         dev = torch.device(device)
+    apply_gpu_memory_limit(dev)
     args = Namespace(model=model_name, small=False, mixed_precision=False)
-    model = nn.DataParallel(RAFT(args))
+    model = RAFT(args)
     model_path = _raft_model_path(model_name)
     if not model_path.exists():
         raise FileNotFoundError(f"RAFT model file not found: '{model_path}'")
-    state_dict = torch.load(model_path, map_location=dev)
-    model.load_state_dict(state_dict)
+    state_dict = torch.load(model_path, map_location=dev, weights_only=True)
+    # Official checkpoints were saved from nn.DataParallel ("module." key prefix).
+    model.load_state_dict({k.removeprefix("module."): v for k, v in state_dict.items()})
     model.to(dev).eval()
-    print("RAFT Flow Engine initialized.")
+    logger.info("RAFT Flow Engine initialized.")
     return model, dev
 
 
 def _compute_custom_raft_sequence_with_model(
     frames: list[np.ndarray],
-    model: nn.DataParallel,
+    model: RAFT,
     dev: torch.device,
     *,
     desc: str = "Computing Optical Flow (RAFT)",

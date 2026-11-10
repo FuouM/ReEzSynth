@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -10,8 +11,11 @@ from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
 from ..neuflow.neuflow import NeuFlow
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from .pad import pad_bgr_to_stride
 from .types import FlowTorchDevice, NeuFlowCheckpointName
+
+logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -57,11 +61,12 @@ def _load_neuflow_model(
     model_name: NeuFlowCheckpointName,
     device: FlowTorchDevice,
 ) -> tuple[NeuFlow, torch.device, torch.dtype, bool]:
-    print(f"Initializing NeuFlow Engine (model: {model_name})...")
+    logger.info(f"Initializing NeuFlow Engine (model: {model_name})...")
     if device == "auto":
         dev = torch.device(get_auto_torch_device())
     else:
         dev = torch.device(device)
+    apply_gpu_memory_limit(dev)
 
     use_amp = dev.type == "cuda"
     use_half = dev.type == "cuda"
@@ -69,7 +74,7 @@ def _load_neuflow_model(
     model_path = _neuflow_model_path(model_name)
     if not model_path.exists():
         raise FileNotFoundError(f"NeuFlow model file not found: '{model_path}'")
-    checkpoint = torch.load(model_path, map_location=dev)
+    checkpoint = torch.load(model_path, map_location=dev, weights_only=True)
     model.load_state_dict(checkpoint["model"], strict=True)
     dtype = torch.half if use_half else torch.float32
     model.to(dev, dtype=dtype).eval()
@@ -94,7 +99,7 @@ def _compute_neuflow_sequence_with_model(
     init_key = (ph, pw, str(dev), use_amp)
     prev_key = getattr(model, "_ezsynth_bhwd_key", None)
     if prev_key != init_key:
-        print(
+        logger.info(
             f"  - Initializing NeuFlow for resolution: {w0}x{h0} "
             f"(padded to {pw}x{ph} for alignment)"
         )

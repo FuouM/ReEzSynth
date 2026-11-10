@@ -1,0 +1,83 @@
+[project]
+name = "reezsynth"
+version = "0.1.0"
+description = "EbSynth-style example-based image and video stylization with PyTorch, Taichi and CUDA backends"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10,<3.13"
+# Keep requirements.txt (ComfyUI installs) in sync with this list, minus torch/torchvision.
+dependencies = [
+    "torch>=2.4",
+    "torchvision>=0.19",
+    "numpy>=1.26",
+    "opencv-python>=4.8",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "imageio>=2.31",
+    "scipy>=1.11",
+    "phycv>=1.2",
+    # JIT build of the optional ebsynth / FastBlend native extensions (torch.utils.cpp_extension).
+    "ninja>=1.11",
+]
+
+[project.scripts]
+reezsynth-video = "ezsynth.cli.video:main"
+reezsynth-prepare = "ezsynth.cli.prepare:main"
+fastblend = "ezsynth.cli.fastblend:main"
+fastblend-interpolate = "ezsynth.cli.fastblend_interpolate:main"
+
+[project.optional-dependencies]
+taichi = ["taichi>=1.7"]
+cupy = ["cupy-cuda12x>=13; sys_platform != 'darwin'"]
+pyamg = ["pyamg>=5.0"]
+neuflow = ["huggingface-hub>=0.20"]
+faceblit = [
+    "dlib>=19.22",
+    "face-alignment>=1.4",
+    "numba>=0.59",
+    "pillow>=10.0",
+    "matplotlib>=3.7",
+]
+all = ["reezsynth[taichi,cupy,pyamg,neuflow,faceblit]"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff==0.17.4",
+    "pre-commit>=4.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ezsynth", "FastBlend", "FaceBlit", "reezsynth_nodes"]
+exclude = ["FaceBlit/examples", "FaceBlit/models", "**/tests"]
+
+[tool.uv]
+# Installed editable from the clone: model checkpoints (models/) and example media are
+# resolved relative to the repository.
+package = true
+default-groups = ["dev"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
+torchvision = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+# dlib ships only an sdist; declare its metadata so locking does not need a CMake build.
+[[tool.uv.dependency-metadata]]
+name = "dlib"
+version = "19.24.6"
+requires-dist = []
+
+[tool.pytest.ini_options]
+testpaths = ["ezsynth/tests", "FastBlend/tests"]
+addopts = ["--import-mode=importlib"]
+pythonpath = ["."]

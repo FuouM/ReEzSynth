@@ -56,12 +56,28 @@ def test_torch_ops_package_is_lightweight_and_device_cache_accepts_none():
     clear_torch_device_cache(None)
 
 
-def test_consts_expose_extension_and_tuning_controls():
+def test_consts_expose_extension_and_tuning_controls(monkeypatch):
+    from ezsynth import native
+    from ezsynth.utils import ebsynth_jit_platform as jit
+
     assert consts.vote_chunk_budget_bytes() >= 8 << 20
     assert hasattr(consts, "FORCE_EBSYNTH_WHEEL")
     assert hasattr(consts, "TORCH_MICROPROFILE")
     assert hasattr(consts, "TAICHI_INIT_VERBOSE")
     assert callable(consts.ensure_extension_loaded)
+    # Extension state is mirrored from ezsynth.native without loading anything.
+    assert consts.EXTENSION_AVAILABLE is (native.module is not None)
+    assert consts.ebsynth_torch is native.module
+    assert consts.EXTENSION_CUDA_AVAILABLE is native.cuda_available
+
+    # Host flags are portable unless EZSYNTH_NATIVE_ARCH opts in.
+    monkeypatch.delenv(jit.NATIVE_ARCH_ENV, raising=False)
+    portable = jit.ebsynth_jit_cflags()
+    assert not any("native" in f or f.startswith("/arch:") for f in portable)
+    std = jit.cxx_standard()
+    assert any(f in (f"/std:{std}", f"-std={std}") for f in portable)
+    # Never pass arch flags to nvcc: torch picks TORCH_CUDA_ARCH_LIST / local GPU.
+    assert not any("arch" in f for f in jit.ebsynth_jit_cuda_cflags())
 
 
 def test_microprofile_records_regions_when_enabled(monkeypatch):

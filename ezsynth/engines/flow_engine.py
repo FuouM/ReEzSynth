@@ -1,3 +1,4 @@
+import logging
 from typing import cast
 
 import numpy as np
@@ -13,6 +14,8 @@ from ..flow.types import (
     TorchVisionRaftModel,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class OpenCVFlowEngine:
     """
@@ -21,12 +24,12 @@ class OpenCVFlowEngine:
 
     def __init__(self, method: str = "DIS"):
         self.method = method.upper()
-        print(f"Initializing OpenCV Flow Engine (method: {self.method})...")
+        logger.info(f"Initializing OpenCV Flow Engine (method: {self.method})...")
         if self.method not in {"DIS", "FARNEBACK"}:
             raise NotImplementedError(
                 f"OpenCV flow method '{method}' not implemented. Use 'DIS' or 'FARNEBACK'."
             )
-        print("OpenCV Flow Engine initialized.")
+        logger.info("OpenCV Flow Engine initialized.")
 
     def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_opencv_flow_sequence(frames, cast(OpenCvFlowMethod, self.method))
@@ -38,13 +41,13 @@ class TorchVisionFlowEngine:
     """
 
     def __init__(self, model_name: str = "raft_large"):
-        print(f"Initializing TorchVision Engine (model: {model_name})...")
+        logger.info(f"Initializing TorchVision Engine (model: {model_name})...")
         if model_name not in {"raft_large", "raft_small"}:
             raise NotImplementedError(
                 f"TorchVision model '{model_name}' not supported. Use 'raft_large' or 'raft_small'."
             )
         self.model_name = model_name
-        print("TorchVision Flow Engine initialized.")
+        logger.info("TorchVision Flow Engine initialized.")
 
     def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_torchvision_raft_sequence(
@@ -59,11 +62,11 @@ class RAFTFlowEngine:
     """
 
     def __init__(self, model_name: str = "sintel", arch: str = "RAFT"):
-        print(f"Initializing RAFT Flow Engine (model: {model_name})...")
+        logger.info(f"Initializing RAFT Flow Engine (model: {model_name})...")
         if arch.upper() != "RAFT":
             raise NotImplementedError(f"Flow architecture '{arch}' not implemented.")
         self.model_name = model_name
-        print("RAFT Flow Engine initialized.")
+        logger.info("RAFT Flow Engine initialized.")
 
     def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_custom_raft_sequence(
@@ -77,9 +80,9 @@ class NeuFlowEngine:
     """
 
     def __init__(self, model_name: str = "neuflow_sintel"):
-        print(f"Initializing NeuFlow Engine (model: {model_name})...")
+        logger.info(f"Initializing NeuFlow Engine (model: {model_name})...")
         self.model_name = model_name
-        print("NeuFlow Engine initialized.")
+        logger.info("NeuFlow Engine initialized.")
 
     def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         return compute_neuflow_sequence(

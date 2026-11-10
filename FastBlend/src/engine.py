@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 import numpy as np
@@ -9,6 +10,8 @@ import numpy as np
 from .balanced_runner import BalancedModeRunner
 from .config import FastBlendConfig
 from .interpolation_runner import InterpolationModeRunner
+
+logger = logging.getLogger(__name__)
 
 
 class FastBlendInput_Sequence:
@@ -52,7 +55,7 @@ class FastBlendEngine:
         if not cfg.enabled:
             return input_sequence.frames_style
 
-        print(f"Starting FastBlend (Accuracy={cfg.accuracy})...")
+        logger.info(f"Starting FastBlend (Accuracy={cfg.accuracy})...")
 
         actual_backend = cfg.backend if backend == "auto" else backend
         patch_matcher_config = cfg.get_pyramid_patch_matcher_config()
@@ -75,7 +78,7 @@ class FastBlendEngine:
         final_frames = [
             np.clip(frame, 0, 255).astype(np.uint8) for frame in result_frames
         ]
-        print("FastBlend complete.")
+        logger.info("FastBlend complete.")
         return final_frames
 
     def interpolate_keyframes(

@@ -1,9 +1,55 @@
-"""Compiler flags and header checks for JIT-building ``ebsynth_torch``."""
+"""Compiler flags and header checks for JIT-building ``ebsynth_torch``.
+
+Flags are portable by default so a build cache can be shared between machines:
+
+- Host code targets the toolchain's baseline ISA. Set ``EZSYNTH_NATIVE_ARCH=1`` to
+  tune for the build machine (``-march=native`` / ``-mcpu=native`` /
+  ``/arch:AVX2``); such a binary may crash with an illegal instruction elsewhere.
+- The C++ standard is set explicitly on every platform. Host code
+  (``cxx_standard()``) uses C++17, or C++20 for PyTorch >= 2.12, whose headers
+  require it; an explicit flag also overrides MSVC's C++14 default. CUDA code is
+  always C++17 (``CUDA_CXX_STANDARD``): the ``*.cu`` sources include no PyTorch
+  headers, so they build with older nvcc too (CUDA 12.4's cudafe++ crashes in
+  C++20 mode with MSVC 14.41).
+- CUDA architectures are left to PyTorch: ``ebsynth_jit_cuda_cflags()`` never
+  contains an ``-arch``/``-gencode`` flag, so ``torch.utils.cpp_extension``
+  builds for ``TORCH_CUDA_ARCH_LIST`` when it is set, and otherwise for the
+  compute capability of every visible GPU (plus PTX for the newest one).
+"""
 
 import os
 import platform
 import sys
 from pathlib import Path
+
+import torch
+
+NATIVE_ARCH_ENV = "EZSYNTH_NATIVE_ARCH"
+CUDA_CXX_STANDARD = "c++17"
+
+
+def cxx_standard() -> str:
+    """C++ standard for host code: the minimum the installed PyTorch headers accept."""
+    return "c++20" if torch.__version__ >= "2.12" else "c++17"
+
+
+def native_arch_enabled() -> bool:
+    """Whether ``EZSYNTH_NATIVE_ARCH`` opts in to machine-specific host tuning."""
+    value = os.environ.get(NATIVE_ARCH_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def ensure_ninja_on_path() -> None:
+    """Put the ``ninja`` dependency's executable on PATH for ``torch.utils.cpp_extension``.
+
+    PyTorch's JIT loader runs ``ninja`` from PATH, which does not include the virtualenv's
+    scripts directory when the interpreter is started directly (``.venv/Scripts/python``).
+    """
+    import ninja
+
+    path = os.environ.get("PATH", "")
+    if ninja.BIN_DIR not in path.split(os.pathsep):
+        os.environ["PATH"] = ninja.BIN_DIR + os.pathsep + path
 
 
 def check_python_dev_headers() -> bool:
@@ -11,48 +57,50 @@ def check_python_dev_headers() -> bool:
     include_path = Path(sys.base_prefix) / "include"
 
     if platform.system() == "Windows":
-        if (include_path / "Python.h").exists():
-            return True
-        return (Path(sys.base_prefix) / "include" / "Python.h").exists()
+        return (include_path / "Python.h").exists()
 
     python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-    if (include_path / python_version / "Python.h").exists():
-        return True
-
-    return False
+    return bool((include_path / python_version / "Python.h").exists())
 
 
 def ebsynth_jit_cflags() -> list[str]:
     """Host C++ compiler flags for the native extension."""
-    cflags = ["-O2"]
     system = platform.system()
     machine = platform.machine()
+    native = native_arch_enabled()
 
+    if system == "Windows":
+        std = cxx_standard()
+        cflags = [f"/std:{std}", "/openmp", "/O2", "/fp:fast", "/MP", "/EHsc"]
+        if native and machine in ("AMD64", "x86_64"):
+            cflags.append("/arch:AVX2")
+        return cflags
+
+    cflags = ["-O2", f"-std={cxx_standard()}"]
     if system == "Darwin":
-        cflags.append("-std=c++17")
         cflags.append("-ffast-math")
         if machine == "arm64":
-            cflags.extend(["-arch", "arm64", "-mcpu=native"])
+            cflags.extend(["-arch", "arm64"])
         elif machine == "x86_64":
             cflags.extend(["-arch", "x86_64"])
         cflags.extend(["-Xpreprocessor", "-fopenmp"])
-    elif system == "Windows":
-        cflags.extend(["/openmp", "/O2", "/fp:fast", "/MP", "/EHsc"])
-        if machine in ["AMD64", "x86_64"]:
-            cflags.extend(["/arch:AVX2", "/D__SSE4_2__", "/D__AVX2__"])
     else:
-        cflags.append("-std=c++17")
         cflags.append("-fopenmp")
-        if machine in ["x86_64", "AMD64"]:
+    if native:
+        if machine in ("x86_64", "AMD64"):
             cflags.append("-march=native")
-        elif machine == "arm64":
+        elif machine in ("arm64", "aarch64"):
             cflags.append("-mcpu=native")
     return cflags
 
 
 def ebsynth_jit_cuda_cflags() -> list[str]:
-    """CUDA compiler flags for JIT builds."""
-    return ["-O2", "--use_fast_math"]
+    """CUDA compiler flags for JIT builds (no arch flags; see module docstring).
+
+    PyTorch passes its own ``-std=c++20`` to nvcc first; nvcc keeps the last
+    ``-std`` value, so this one wins.
+    """
+    return ["-O2", "--use_fast_math", f"-std={CUDA_CXX_STANDARD}"]
 
 
 def ebsynth_jit_ldflags() -> list[str]:

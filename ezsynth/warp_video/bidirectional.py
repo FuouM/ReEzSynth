@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 from typing import cast
 
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+from ezsynth.logging_setup import configure_cli_logging
 
 from ..flow.run import optical_flow_engine
 from ..flow.types import FlowEngineName, FlowModelName
@@ -20,6 +23,8 @@ from .common import (
     precomputation_config_for_engine,
     write_png_sequence,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def run(args: argparse.Namespace) -> None:
@@ -33,8 +38,7 @@ def run(args: argparse.Namespace) -> None:
 
     sorted_keys = sorted(keyframes.keys())
     style_imgs = {
-        idx: cv2.resize(cv2.imread(path), (w, h))
-        for idx, path in keyframes.items()
+        idx: cv2.resize(cv2.imread(path), (w, h)) for idx, path in keyframes.items()
     }
 
     warper = Warp(h, w, use_taichi=True)
@@ -47,7 +51,9 @@ def run(args: argparse.Namespace) -> None:
     montage_frames: list[np.ndarray] = []
     stylized_out: list[np.ndarray] = []
 
-    print(f"Multi-keyframe bidirectional warping ({len(sorted_keys)} keyframes)...")
+    logger.info(
+        f"Multi-keyframe bidirectional warping ({len(sorted_keys)} keyframes)..."
+    )
     with optical_flow_engine(cfg) as compute_flow:
         for i in tqdm(range(n)):
             target_content = frames[i]
@@ -123,9 +129,9 @@ def run(args: argparse.Namespace) -> None:
             montage_frames.append(montage)
 
     write_png_sequence(stylized_out, seq_dir)
-    print(f"PNG sequence -> {seq_dir}")
+    logger.info(f"PNG sequence -> {seq_dir}")
     export_frames_to_browser_h264_mp4(montage_frames, out_path, args.fps)
-    print(f"Saved montage video to {out_path}")
+    logger.info(f"Saved montage video to {out_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -139,12 +145,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--engine", type=str, default="NeuFlow", choices=["RAFT", "NeuFlow", "OpenCV"]
     )
     parser.add_argument("--flow-model", type=str, default=None)
-    parser.add_argument("--output", type=str, default="output/cat_multi_bidirectional.mp4")
+    parser.add_argument(
+        "--output", type=str, default="output/cat_multi_bidirectional.mp4"
+    )
     parser.add_argument("--fps", type=float, default=20.0)
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
+    configure_cli_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
     run(args)

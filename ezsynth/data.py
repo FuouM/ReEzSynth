@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,8 @@ from ezsynth.utils import io_utils
 from ezsynth.utils.image_utils import assert_uniform_image_shapes, resize_image_to_match
 
 from .config import ProjectConfig
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectData:
@@ -34,15 +37,15 @@ class ProjectData:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        print("Data Manager Initialized:")
-        print(f"  - Content: {self.content_dir}")
-        print(f"  - Style: {self.style_paths}")
-        print(f"  - Output: {self.output_dir}")
-        print(f"  - Cache: {self.cache_dir}")
+        logger.info("Data Manager Initialized:")
+        logger.info(f"  - Content: {self.content_dir}")
+        logger.info(f"  - Style: {self.style_paths}")
+        logger.info(f"  - Output: {self.output_dir}")
+        logger.info(f"  - Cache: {self.cache_dir}")
         if self.mask_dir:
-            print(f"  - Masks: {self.mask_dir}")
+            logger.info(f"  - Masks: {self.mask_dir}")
         if self.modulation_dir:  # New
-            print(f"  - Modulations: {self.modulation_dir}")
+            logger.info(f"  - Modulations: {self.modulation_dir}")
 
         self._content_frames: list[np.ndarray] | None = None
         self._style_frames: list[np.ndarray] | None = None
@@ -71,7 +74,7 @@ class ProjectData:
             raw_styles = [io_utils.read_image(p) for p in self.style_paths]
 
             if self.config.force_style_size:
-                print("`force_style_size` is enabled. Resizing styles...")
+                logger.info("`force_style_size` is enabled. Resizing styles...")
                 content_frames = self.get_content_frames()
                 if not content_frames:
                     raise ValueError(
@@ -113,10 +116,10 @@ class ProjectData:
         """Saves the final stylized frames to the output directory."""
         num_frames = len(frames)
         if num_frames == 0:
-            print("No frames to save.")
+            logger.info("No frames to save.")
             return
 
-        print(f"Saving {num_frames} frames to {self.output_dir}...")
+        logger.info(f"Saving {num_frames} frames to {self.output_dir}...")
 
         for i, frame in tqdm(
             enumerate(frames),
@@ -126,4 +129,4 @@ class ProjectData:
             filename = self.output_dir / f"{i:05d}.png"
             io_utils.write_image(filename, frame)
 
-        print("All frames saved successfully.")
+        logger.info("All frames saved successfully.")

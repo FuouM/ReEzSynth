@@ -1,13 +1,13 @@
 import datetime
-import platform
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
-import taichi as ti
 import torch
 import torch.nn.functional as F
 from PIL import Image
+
+from ezsynth.utils.gpu_memory import apply_gpu_memory_limit
 
 PathLike = str | Path
 
@@ -232,30 +232,15 @@ def get_torch_device(device=None):
             else ("mps" if torch.backends.mps.is_available() else "cpu")
         )
     device = torch.device(device)
+    apply_gpu_memory_limit(device)
     return device
 
 
 def get_taichi_arch(device: str | None = None):
-    """Pick Taichi arch. When ``device`` is None, use the same auto-defaults as before."""
-    if device is not None:
-        d = device.lower().split(":", maxsplit=1)[0]
-        if d == "cpu":
-            return ti.cpu
-        if d == "cuda":
-            return ti.cuda if torch.cuda.is_available() else ti.cpu
-        if d == "mps":
-            if platform.system() == "Darwin" and platform.machine() == "arm64":
-                return ti.metal
-            return ti.cpu
-        return ti.cpu
+    """Pick Taichi arch for a PyTorch-style ``device``; ``None`` uses auto-defaults."""
+    from ezsynth.utils.taichi_runtime import get_ti_arch
 
-    system = platform.system()
-    machine = platform.machine()
-    if system == "Darwin" and machine == "arm64":
-        return ti.metal
-    elif torch.cuda.is_available():
-        return ti.cuda
-    return ti.cpu
+    return get_ti_arch(device)
 
 
 def resize_torch(image: np.ndarray, size: tuple[int, int]) -> np.ndarray:

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,8 @@ from .utils.pipeline_utils import (
     save_flow_cache,
 )
 from .utils.viz_utils import flow_to_image
+
+logger = logging.getLogger(__name__)
 
 
 class PrecomputeRunner:
@@ -59,7 +62,7 @@ class PrecomputeRunner:
         self._compute_edge_maps(content_frames)
 
         if self.pipeline_cfg.use_sparse_feature_guide:
-            print("\nGenerating sparse feature guides...")
+            logger.info("\nGenerating sparse feature guides...")
             tracked_points = generate_tracked_features(
                 content_frames[0], self.state.fwd_flows
             )
@@ -68,7 +71,7 @@ class PrecomputeRunner:
                 render_gaussian_guide(h, w, pts) for pts in tracked_points
             ]
 
-        print("\nAll pre-computation finished.")
+        logger.info("\nAll pre-computation finished.")
         return self.state
 
     def uses_bidirectional_flow(self) -> bool:
@@ -227,7 +230,7 @@ class PrecomputeRunner:
         if subdir:
             out_dir = out_dir / subdir
         out_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Writing flow color maps to: {out_dir}")
+        logger.info(f"Writing flow color maps to: {out_dir}")
         for i, flow in enumerate(tqdm(flows, desc="Flow visualization")):
             f32 = flow if flow.dtype == np.float32 else flow.astype(np.float32)
             bgr = flow_to_image(f32, convert_to_bgr=True)
@@ -254,7 +257,7 @@ class PrecomputeRunner:
         bwd_dir = out_dir / "bwd"
         fwd_dir.mkdir(parents=True, exist_ok=True)
         bwd_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Writing occlusion masks to: {out_dir}")
+        logger.info(f"Writing occlusion masks to: {out_dir}")
         for i, mask in enumerate(
             tqdm(self.state.fwd_occlusion_masks, desc="Fwd occlusion debug")
         ):

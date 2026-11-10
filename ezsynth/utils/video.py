@@ -1,5 +1,6 @@
 """Video frame extraction and browser-friendly H.264 export helpers."""
 
+import logging
 import os
 import shutil
 import subprocess
@@ -10,6 +11,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def extract_video_frames_to_png_directory(
@@ -24,15 +27,15 @@ def extract_video_frames_to_png_directory(
     output_dir = Path(output_dir)
 
     if not video_path.exists():
-        print(f"Error: Video file not found at {video_path}")
+        logger.error(f"Error: Video file not found at {video_path}")
         return 0
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Extracting frames from '{video_path.name}' to '{output_dir}'...")
+    logger.info(f"Extracting frames from '{video_path.name}' to '{output_dir}'...")
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        print("Error: Could not open video file.")
+        logger.error("Error: Could not open video file.")
         return 0
 
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -51,7 +54,7 @@ def extract_video_frames_to_png_directory(
             pbar.update(1)
 
     cap.release()
-    print(f"\nSuccessfully extracted {frame_num} frames.")
+    logger.info(f"\nSuccessfully extracted {frame_num} frames.")
     return frame_num
 
 
@@ -105,7 +108,7 @@ def export_frames_to_browser_h264_mp4(
 ) -> None:
     """Write ``mp4v`` to a temp file, then H.264 + yuv420p + faststart via ffmpeg."""
     if not frames:
-        print("[export-mp4] No frames to encode; skipping.")
+        logger.warning("[export-mp4] No frames to encode; skipping.")
         return
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,7 +147,7 @@ def export_frames_to_browser_h264_mp4(
         remux_to_browser_h264_mp4(video_target, path)
     finally:
         video_target.unlink(missing_ok=True)
-    print(
+    logger.info(
         f"Exported MP4: {path} "
         f"({len(frames)} frames @ {fps} fps, H.264 yuv420p +faststart)"
     )

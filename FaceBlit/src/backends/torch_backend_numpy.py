@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.utils_io import ensure_grayscale, to_uint8
+from FaceBlit.src.utils_io import ensure_grayscale, to_uint8
 
 PathLike = str | Path
 
@@ -77,7 +77,7 @@ def dfs_seed_grow(
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 4-connectivity
 
     while pq:
-        error, ty, tx = heapq.heappop(pq)
+        _error, ty, tx = heapq.heappop(pq)
 
         if visited[ty, tx] or covered_pixels[ty, tx] != 0:
             continue

@@ -1,0 +1,17 @@
+ReEzSynth
+Copyright (c) 2025 Fuou Marinas. Licensed under the MIT License (see LICENSE).
+
+This repository includes third-party code under its own license terms:
+
+- ezsynth/raft/ — RAFT optical flow, Zachary Teed and Jia Deng (princeton-vl/RAFT).
+  BSD 3-Clause License; see ezsynth/raft/LICENSE. Modified for this project.
+
+- ezsynth/neuflow/ — NeuFlow v2 optical flow (neufieldrobotics/NeuFlow_v2).
+  Apache License 2.0; see ezsynth/neuflow/LICENSE. Modified for this project.
+
+- FastBlend/ — derived from Artiprocher/sd-webui-fastblend.
+  Apache License 2.0; see FastBlend/LICENSE. Modified for this project
+  (restructured into FastBlend/src, added Taichi and CUDA extension backends).
+
+- FaceBlit/ — PyTorch/Taichi rewrite of AnetaTexler/FaceBlit, which its authors
+  released into the public domain (https://github.com/AnetaTexler/FaceBlit#license).

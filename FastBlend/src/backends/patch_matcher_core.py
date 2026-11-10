@@ -1,6 +1,6 @@
 """Shared FaceBlit-style patch matching (Python loop + backend-specific kernels).
 
-Comparison to ``ebsynth_extension/patchmatch.cu`` (and ``ezsynth/torch_ops/patchmatch_ops``):
+Comparison to ``ezsynth/ebsynth_extension/patchmatch.cu`` (and ``ezsynth/torch_ops/patchmatch_ops``):
 
 **Not the same algorithm.** EBSynth-style PatchMatch uses per-pixel ``try_patch`` with an
 omega (uniformity) map, weighted SSD or NCC, optional bilateral/modulation, search
@@ -37,6 +37,8 @@ from typing import ContextManager
 
 import numpy as np
 import torch
+
+from ezsynth.utils.gpu_memory import apply_gpu_memory_limit
 
 
 @dataclass
@@ -325,6 +327,7 @@ class PyramidPatchMatcherCore(ABC):
         self.use_pairwise_patch_error = use_pairwise_patch_error
         self.tracking_window_size = tracking_window_size
         self.initialize = initialize
+        apply_gpu_memory_limit(self._pyramid_torch_device)
 
         maximum_patch_size = minimum_patch_size + (num_iter - 1) * 2
         self.pyramid_level = int(

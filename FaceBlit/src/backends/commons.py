@@ -5,8 +5,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from src.utils_draw import draw_ellipse, fill_convex_poly
-from src.utils_io import (
+from FaceBlit.src.utils_draw import draw_ellipse, fill_convex_poly
+from FaceBlit.src.utils_io import (
     bgr_to_yuv,
     ensure_grayscale,
     to_uint8,
@@ -146,11 +146,8 @@ def warp_mls_similarity(
     grid_size: int = 10,
 ) -> torch.Tensor:
     """Warp image using Moving Least Squares (similarity)."""
-    if image.ndim == 3:
-        img = image.unsqueeze(0)
-    else:
-        img = image
-    _, c, h, w = img.shape
+    img = image.unsqueeze(0) if image.ndim == 3 else image
+    _, _c, h, w = img.shape
     device = img.device
     # src_points/dst_points are expected as (x, y)
 
