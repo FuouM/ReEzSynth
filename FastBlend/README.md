@@ -152,7 +152,7 @@ Apply FastBlend post-processing to stylized video frames.
 - `window_size`: Temporal window size for blending. Uses default if None
 - `batch_size`: Batch size for processing. Uses default if None
 - `progress_callback`: Optional callback function called with (current_frame, total_frames)
-- `backend`: Backend to use ("auto", "cuda", "cupy"). Default: "auto"
+- `backend`: Backend to use ("auto", "cuda", "cupy", "taichi"). Default: "auto" (Taichi on Apple Silicon, else CUDA extension, Taichi, CuPy in that order)
 - `config`: Optional FastBlendConfig. If provided, other parameters are ignored
 
 **Returns:** List of smoothed frames as numpy arrays (H, W, 3) uint8
@@ -169,7 +169,7 @@ Create a FastBlend configuration with custom parameters.
 - `minimum_patch_size`: Minimum patch size for matching
 - `num_iter`: Number of patch matching iterations
 - `guide_weight`: Weight for guide matching
-- `backend`: Backend to use ("auto", "cuda", "cupy"). Default: "auto"
+- `backend`: Backend to use ("auto", "cuda", "cupy", "taichi"). Default: "auto"
 - `gpu_id`: GPU device ID. Default: 0
 
 **Returns:** FastBlendConfig instance
@@ -187,7 +187,7 @@ Interpolate frames between keyframes using FastBlend.
 - `window_size`: Temporal window size for blending. Uses default if None
 - `batch_size`: Batch size for processing. Uses default if None
 - `progress_callback`: Optional callback function called with (current_frame, total_frames)
-- `backend`: Backend to use ("auto", "cuda", "cupy"). Default: "auto"
+- `backend`: Backend to use ("auto", "cuda", "cupy", "taichi"). Default: "auto"
 - `config`: Optional FastBlendConfig. If provided, other parameters are ignored
 
 **Returns:** List of interpolated frames as numpy arrays (H, W, 3) uint8

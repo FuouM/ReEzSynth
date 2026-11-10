@@ -107,7 +107,14 @@ Different Loss functions
 5. **GPU memory budget**:
     Outside ComfyUI, each run caps PyTorch's CUDA allocator to a budget computed from the memory free *at startup* (90% of it, always leaving 1.5 GiB for the browser/desktop). Running out of budget raises a CUDA out-of-memory error in ReEzSynth instead of exhausting the whole GPU. Overrides: `EZSYNTH_GPU_MEMORY_LIMIT_MB` (absolute cap), `EZSYNTH_GPU_MEMORY_FRACTION`, `EZSYNTH_GPU_MEMORY_RESERVE_MB`, or `EZSYNTH_GPU_MEMORY_LIMIT=0` to disable.
 
-**ComfyUI**: clone into `ComfyUI/custom_nodes/` and install `requirements.txt` into ComfyUI's Python (torch/torchvision come from ComfyUI).
+### ComfyUI
+
+1. Clone into `ComfyUI/custom_nodes/ReEzSynth` (with [Git LFS](https://git-lfs.com/) installed if you want the example media).
+2. Install `requirements.txt` into ComfyUI's Python; torch/torchvision come from ComfyUI. Add `taichi` for the Taichi backend.
+3. Restart ComfyUI. Nodes appear under the `ReEzSynth` prefix: Guide, Guides Append, Image Synth Config, Image Synth, Video Style Keyframe(s), Video Synth Config, Video Synth.
+4. Example graphs are in `workflows/` (`reezsynth_imgsynth_facestyle.json`, `reezsynth_imgsynth_stylelit.json`, `reezsynth_imgsynth_texbynum.json`, `reezsynth_videosynth.json`); drag one onto the canvas.
+
+Inside ComfyUI the GPU memory budget above is disabled; ComfyUI manages VRAM for its process.
 
 A prototype build is provided in the Releases
 
@@ -257,8 +264,23 @@ ReEzSynth operates in several stages:
 ## Troubleshooting
 
 - **`ebsynth_torch` not found**: the JIT build of the C++/CUDA extension failed. Check the compiler (and, for CUDA kernels, CUDA Toolkit) prerequisites and the build log, or use the `torch`/`taichi` backends, which need no extension.
-- **CUDA Out of Memory**: Video synthesis is memory-intensive. Try reducing the resolution of your content frames.
+- **CUDA Out of Memory**: the run exceeded its GPU memory budget (see Installation → GPU memory budget). Close other GPU applications, reduce content resolution, or raise the budget with `EZSYNTH_GPU_MEMORY_LIMIT_MB` / `EZSYNTH_GPU_MEMORY_RESERVE_MB`.
 - **Visual Artifacts (Jitter/Flicker)**: Enable `use_temporal_nnf_propagation` and `use_sparse_feature_guide` in your config. These new features are specifically designed to solve these common problems. Adding more keyframes can also help.
+
+## Development
+
+```bash
+uv sync --extra taichi --extra pyamg   # dev tools (pytest, ruff, pre-commit) are in the default dev group
+uv run pre-commit install              # ruff check/format + uv lock on commit
+uv run pytest                          # CPU-safe test suite
+uv run ruff check . && uv run ruff format --check .
+```
+
+CI (`.github/workflows/ci.yml`) runs the same lint and tests on Linux. Backend notes live in `docs/` (`backend-benchmarks.md`, `taichi-porting-guide.md`).
+
+## License
+
+MIT (see `LICENSE`). Bundled third-party code (RAFT, NeuFlow v2, FastBlend, FaceBlit) keeps its own license; see `NOTICE`.
 
 ## Acknowledgements
 

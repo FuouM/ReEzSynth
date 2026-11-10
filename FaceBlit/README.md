@@ -1,6 +1,6 @@
 # FaceBlit (PyTorch)
 
-Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) in PyTorch and Taichi, accelerated by Numba. Supports CUDA, CPU and MPS.
+Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) in PyTorch and Taichi, accelerated by Numba. Supports CUDA, CPU and MPS. Upstream FaceBlit is public domain; this rewrite is MIT like the rest of ReEzSynth (see `../NOTICE`).
 
 ## Quick start
 
