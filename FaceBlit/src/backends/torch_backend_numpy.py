@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.utils_io import ensure_grayscale, to_uint8
+from FaceBlit.src.utils_io import ensure_grayscale, to_uint8
 
 PathLike = str | Path
 

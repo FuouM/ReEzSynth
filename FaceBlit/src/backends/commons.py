@@ -5,8 +5,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from src.utils_draw import draw_ellipse, fill_convex_poly
-from src.utils_io import (
+from FaceBlit.src.utils_draw import draw_ellipse, fill_convex_poly
+from FaceBlit.src.utils_io import (
     bgr_to_yuv,
     ensure_grayscale,
     to_uint8,

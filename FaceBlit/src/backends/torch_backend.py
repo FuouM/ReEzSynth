@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from src.utils_io import (
+from FaceBlit.src.utils_io import (
     ensure_grayscale,
     get_torch_device,
 )

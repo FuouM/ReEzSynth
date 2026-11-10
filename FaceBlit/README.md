@@ -5,7 +5,9 @@ Rewrite of [AnetaTexler/FaceBlit](https://github.com/AnetaTexler/FaceBlit) in Py
 ## Quick start
 
 ```bash
-python src/faceblit_run.py
+# from the ReEzSynth repository root
+uv sync --extra faceblit --extra taichi
+uv run python -m FaceBlit.src.faceblit_run
 ```
 
 ![img](examples/faceblit_output_comparison.png)
@@ -15,7 +17,7 @@ python src/faceblit_run.py
 One can stylize a video, frame-by-frame, using this method. This only works for frames where a face is detected. Use EbSynth to propagate a stylized still instead, or use FastBlend, for temporal coherence and consistency.
 
 ```bash
-python src/faceblit_run_video.py
+uv run python -m FaceBlit.src.faceblit_run_video
 ```
 
 Zuzka2 example from <https://github.com/OndrejTexler/Few-Shot-Patch-Based-Training#run> `testing-data.zip`

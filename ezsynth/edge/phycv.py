@@ -1,15 +1,14 @@
-"""PST / PAGE edge detectors via Phycv."""
+"""PST / PAGE edge detectors via Phycv (imported on first use)."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
 import torch
-from phycv import PAGE_GPU, PST_GPU
 
 from .ops import (
     PAD_SIZE,
@@ -22,14 +21,21 @@ from .ops import (
     unpad_gray,
 )
 
+if TYPE_CHECKING:
+    from phycv import PAGE_GPU, PST_GPU
+
 
 @lru_cache(maxsize=8)
 def _pst_gpu(device: str) -> PST_GPU:
+    from phycv import PST_GPU
+
     return PST_GPU(device=device)
 
 
 @lru_cache(maxsize=8)
 def _page_gpu(device: str) -> PAGE_GPU:
+    from phycv import PAGE_GPU
+
     return PAGE_GPU(direction_bins=10, device=device)
 
 

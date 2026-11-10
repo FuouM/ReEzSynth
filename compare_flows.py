@@ -1,11 +1,8 @@
 import os
-import sys
+from argparse import ArgumentParser
 
 import cv2
 import numpy as np
-
-# Add project root
-sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from ezsynth.engines.flow_engine import (
     NeuFlowEngine,
@@ -37,8 +34,18 @@ def draw_label(img, text):
     return img
 
 
+DEFAULT_VIDEO = "examples/cat_full.mp4"
+
+
 def main():
-    video_path = "examples/cat_full.mp4"
+    parser = ArgumentParser(description="Render a side-by-side optical flow comparison")
+    parser.add_argument(
+        "video_path",
+        nargs="?",
+        default=DEFAULT_VIDEO,
+        help=f"Input video (default: {DEFAULT_VIDEO})",
+    )
+    video_path = parser.parse_args().video_path
     output_path = "output/flow_comparison.mp4"
 
     if not os.path.exists("output"):

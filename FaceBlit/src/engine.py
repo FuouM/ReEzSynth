@@ -4,7 +4,7 @@ from typing import Literal
 import numpy as np
 import torch
 
-from src.backends.commons import (
+from FaceBlit.src.backends.commons import (
     alpha_blend,
     get_app_guide,
     get_head_area_rect,
@@ -13,16 +13,16 @@ from src.backends.commons import (
     gray_hist_matching,
     warp_mls_similarity,
 )
-from src.backends.taichi_backend import compute_lut_taichi, stylize_blit_taichi
-from src.backends.torch_backend import (
+from FaceBlit.src.backends.taichi_backend import compute_lut_taichi, stylize_blit_taichi
+from FaceBlit.src.backends.torch_backend import (
     compute_look_up_cube_optimized,
     style_blit_voting_torch,
 )
-from src.backends.torch_backend_numba import (
+from FaceBlit.src.backends.torch_backend_numba import (
     denoise_nnf_numba,
     initialize_nnf_dfs_voting_numba,
 )
-from src.backends.torch_backend_numpy import (
+from FaceBlit.src.backends.torch_backend_numpy import (
     _lookup_coords_from_guides,
     denoise_nnf_python,
     dfs_seed_grow_voting_numpy,
@@ -30,8 +30,8 @@ from src.backends.torch_backend_numpy import (
     prepare_dfs_voting_arrays,
     voting_on_rgb,
 )
-from src.utils_face import detect_landmarks
-from src.utils_io import (
+from FaceBlit.src.utils_face import detect_landmarks
+from FaceBlit.src.utils_io import (
     load_look_up_cube,
     pack_lut_packed,
     read_image_pil,

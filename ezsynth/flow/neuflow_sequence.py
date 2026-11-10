@@ -71,7 +71,7 @@ def _load_neuflow_model(
     model_path = _neuflow_model_path(model_name)
     if not model_path.exists():
         raise FileNotFoundError(f"NeuFlow model file not found: '{model_path}'")
-    checkpoint = torch.load(model_path, map_location=dev)
+    checkpoint = torch.load(model_path, map_location=dev, weights_only=True)
     model.load_state_dict(checkpoint["model"], strict=True)
     dtype = torch.half if use_half else torch.float32
     model.to(dev, dtype=dtype).eval()

@@ -3,35 +3,7 @@
 import taichi as ti
 import torch
 
-from src.utils_io import get_taichi_arch
-
-_ti_initialized = False
-_ti_arch = None
-
-
-def _normalize_ti_device_key(device) -> str | None:
-    if device is None:
-        return None
-    if isinstance(device, torch.device):
-        return device.type
-    return str(device).lower().split(":", maxsplit=1)[0]
-
-
-def ensure_ti_init(device=None):
-    """Initialize Taichi; respects PyTorch-style ``device`` (cpu / cuda / mps).
-
-    Calls :func:`ti.reset` if the requested arch changes so CPU vs GPU can be switched.
-    """
-    global _ti_initialized, _ti_arch
-    arch = get_taichi_arch(_normalize_ti_device_key(device))
-    if _ti_initialized and _ti_arch is not None and _ti_arch != arch:
-        ti.reset()
-        _ti_initialized = False
-    if not _ti_initialized:
-        ti.init(arch=arch, log_level=ti.INFO, random_seed=42)
-        print(f"[Taichi FaceBlit] Initialized with arch: {arch}")
-        _ti_initialized = True
-        _ti_arch = arch
+from ezsynth.utils.taichi_runtime import ensure_ti_init as ensure_ti_init
 
 
 def compute_lut_taichi(

@@ -1,15 +1,9 @@
-"""TorchVision RAFT optical flow."""
+"""TorchVision RAFT optical flow (torchvision is imported when a model loads)."""
 
 from __future__ import annotations
 
 import numpy as np
 import torch
-from torchvision.models.optical_flow import (
-    Raft_Large_Weights,
-    Raft_Small_Weights,
-    raft_large,
-    raft_small,
-)
 from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
@@ -21,6 +15,13 @@ def _load_torchvision_raft(
     model_name: TorchVisionRaftModel,
     device: FlowTorchDevice = "auto",
 ) -> tuple[torch.nn.Module, torch.device, object]:
+    from torchvision.models.optical_flow import (
+        Raft_Large_Weights,
+        Raft_Small_Weights,
+        raft_large,
+        raft_small,
+    )
+
     print(f"Initializing TorchVision RAFT (model: {model_name})...")
     if device == "auto":
         dev = torch.device(get_auto_torch_device())

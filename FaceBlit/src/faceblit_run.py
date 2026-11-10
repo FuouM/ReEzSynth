@@ -1,22 +1,19 @@
-import sys
 import time
 from pathlib import Path
 from typing import Literal
 
 import cv2
 
-# Add project roots to path
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "FaceBlit"))
-
-from src.backends.taichi_backend import ensure_ti_init
-from src.engine import (
+from FaceBlit.src.backends.taichi_backend import ensure_ti_init
+from FaceBlit.src.engine import (
     FaceBlitEngine,
     FaceBlitInput_Style,
     FaceBlitInput_Target,
 )
-from src.utils_face import detect_landmarks
+from FaceBlit.src.utils_face import detect_landmarks
+
+# Run from the repository root: python -m FaceBlit.src.faceblit_run
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 MODEL_DIR = ROOT / "FaceBlit" / "models"
 PREDICTOR_PATH = MODEL_DIR / "shape_predictor_68_face_landmarks.dat"

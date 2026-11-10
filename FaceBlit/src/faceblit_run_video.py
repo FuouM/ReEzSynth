@@ -1,17 +1,14 @@
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-# Add project roots to path
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "FaceBlit"))
-
-from src.utils_landmark_viz import (
+from FaceBlit.src.utils_landmark_viz import (
     write_landmark_trajectory_from_frames,
     write_landmarks_preview_mp4,
 )
+
+# Run from the repository root: python -m FaceBlit.src.faceblit_run_video
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 PREDICTOR_PATH = ROOT / "FaceBlit" / "models" / "shape_predictor_68_face_landmarks.dat"
 EXAMPLES_DIR = ROOT / "FaceBlit" / "examples"

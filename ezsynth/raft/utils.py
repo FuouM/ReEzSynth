@@ -1,7 +1,5 @@
-import numpy as np
 import torch
 import torch.nn.functional as F
-from scipy import interpolate
 
 from ..torch_ops.grid_sample_bilinear_pixel import grid_sample_bilinear_pixel_coords
 
@@ -36,41 +34,6 @@ class InputPadder:
             self._pad[2] : self.ht + self._pad[2],
             self._pad[0] : self.wd + self._pad[0],
         ]
-
-
-def forward_interpolate(flow_ts):
-    with torch.no_grad():
-        flow = flow_ts.cpu().numpy()
-    dx, dy = flow[0], flow[1]
-
-    ht, wd = dx.shape
-    x0, y0 = np.meshgrid(np.arange(wd), np.arange(ht), indexing="xy")
-
-    x1 = x0 + dx
-    y1 = y0 + dy
-
-    x1 = x1.reshape(-1)
-    y1 = y1.reshape(-1)
-    dx = dx.reshape(-1)
-    dy = dy.reshape(-1)
-
-    valid = (x1 >= 0) & (x1 < wd) & (y1 >= 0) & (y1 < ht)
-
-    x1_valid = x1[valid]
-    y1_valid = y1[valid]
-    dx_valid = dx[valid]
-    dy_valid = dy[valid]
-
-    flow_x = interpolate.griddata(
-        (x1_valid, y1_valid), dx_valid, (x0, y0), method="nearest", fill_value=0
-    )
-
-    flow_y = interpolate.griddata(
-        (x1_valid, y1_valid), dy_valid, (x0, y0), method="nearest", fill_value=0
-    )
-
-    flow = np.stack([flow_x, flow_y], axis=0)
-    return torch.from_numpy(flow).float()
 
 
 def bilinear_sampler(img, coords, mode="bilinear", mask=False):

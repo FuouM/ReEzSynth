@@ -6,41 +6,15 @@ Kernels live in :mod:`taichi_kernels` (same split as ``ezsynth`` ``taichi_kernel
 
 from __future__ import annotations
 
-import os
 import platform
 
-import taichi as ti
 import torch
+
+from ezsynth.utils.taichi_runtime import ensure_ti_init as ensure_ti_init
+from ezsynth.utils.taichi_runtime import get_ti_arch as get_ti_arch
 
 from . import taichi_kernels as tk
 from .patch_matcher_core import FaceBlitPatchMatcherCore, PyramidPatchMatcherCore
-
-
-def get_ti_arch():
-    system = platform.system()
-    machine = platform.machine()
-    if system == "Darwin" and machine == "arm64":
-        return ti.metal
-    if torch.cuda.is_available():
-        return ti.cuda
-    return ti.cpu
-
-
-_ti_initialized = False
-
-
-def ensure_ti_init():
-    global _ti_initialized
-    if not _ti_initialized:
-        arch = get_ti_arch()
-        ti.init(arch=arch, log_level=ti.WARN, random_seed=42)
-        if os.environ.get("FASTBLEND_TAICHI_INIT_VERBOSE", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        ):
-            print(f"[Taichi FastBlend] Initialized with arch: {arch}")
-        _ti_initialized = True
 
 
 class FastBlendTaichiBackend:

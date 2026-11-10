@@ -1,58 +1,16 @@
 # ezsynth/engines/backends/taichi_backend.py
-import platform
-
-import taichi as ti
 import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ...consts import (
     COST_FUNCTION_NCC,
     EBSYNTH_VOTEMODE_PLAIN,
-    TAICHI_INIT_VERBOSE,
 )
+from ...utils.taichi_runtime import ensure_ti_init as ensure_ti_init
+from ...utils.taichi_runtime import get_taichi_torch_device as get_taichi_torch_device
+from ...utils.taichi_runtime import get_ti_arch as get_ti_arch
 from ...utils.timer import SynthesisTimer
 from . import taichi_kernels as tk
-
-
-# Initialize Taichi
-def get_ti_arch():
-    system = platform.system()
-    machine = platform.machine()
-    if system == "Darwin" and machine == "arm64":
-        return ti.metal
-    elif torch.cuda.is_available():
-        return ti.cuda
-    return ti.cpu
-
-
-def get_taichi_torch_device() -> str:
-    arch = get_ti_arch()
-    if arch == ti.cuda:
-        return "cuda"
-    if (
-        arch == ti.metal
-        and hasattr(torch.backends, "mps")
-        and torch.backends.mps.is_available()
-    ):
-        return "mps"
-    return "cpu"
-
-
-_ti_initialized = False
-
-
-def ensure_ti_init():
-    global _ti_initialized
-    if not _ti_initialized:
-        arch = get_ti_arch()
-        ti.init(
-            arch=arch,
-            log_level=ti.INFO if TAICHI_INIT_VERBOSE else ti.ERROR,
-            random_seed=42,
-        )
-        if TAICHI_INIT_VERBOSE:
-            print(f"[Taichi] Initialized with arch: {arch}")
-        _ti_initialized = True
 
 
 class TaichiBackend:

@@ -10,7 +10,8 @@ from .config import (
 )
 from .data import ProjectData
 
-# Engines are imported just-in-time to save memory
+# Engine modules import eagerly; their heavy optional dependencies (phycv,
+# torchvision, scipy, taichi) load inside the functions that use them.
 from .engines.synthesis_engine import EbsynthEngine
 from .precompute import PrecomputeState
 from .precompute_runner import PrecomputeRunner

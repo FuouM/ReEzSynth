@@ -1,29 +1,25 @@
 # ezsynth/utils/blend_logic.py
 import time
+from importlib.util import find_spec
+from types import ModuleType
 
 import cv2
 import numpy as np
-import scipy.sparse
-import scipy.sparse.linalg
 from tqdm import tqdm
 
 # --- Optional Dependency Handling ---
-try:
-    import pyamg
+# Availability is probed without importing; scipy, pyamg and taichi load on first use.
+PYAMG_AVAILABLE = find_spec("pyamg") is not None
+TAICHI_AVAILABLE = find_spec("taichi") is not None
 
-    PYAMG_AVAILABLE = True
-except ImportError:
-    PYAMG_AVAILABLE = False
 
-try:
-    import taichi  # noqa: F401 — dependency gate before importing taichi_ops
-
+def _taichi_ops() -> ModuleType:
+    """Import the Taichi kernels and initialize the shared Taichi runtime."""
     from ..engines.backends import taichi_ops
-    from ..engines.backends.taichi_backend import ensure_ti_init
+    from .taichi_runtime import ensure_ti_init
 
-    TAICHI_AVAILABLE = True
-except ImportError:
-    TAICHI_AVAILABLE = False
+    ensure_ti_init()
+    return taichi_ops
 
 
 # --- Algorithmic Alternatives ---
@@ -59,7 +55,7 @@ def hist_blender(
     use_taichi=False,
 ) -> np.ndarray:
     if use_taichi and TAICHI_AVAILABLE:
-        ensure_ti_init()
+        taichi_ops = _taichi_ops()
 
         # Prepare buffers
         ma, sa = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
@@ -123,6 +119,8 @@ def hist_blender(
 
 # --- Poisson Solvers ---
 def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
+    import scipy.sparse
+
     st = time.time()
     indgx_x = np.zeros(2 * (h - 1) * w, dtype=int)
     indgx_y = np.zeros(2 * (h - 1) * w, dtype=int)
@@ -153,6 +151,8 @@ def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
 
 
 def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weights):
+    import scipy.sparse.linalg
+
     Iab = cv2.cvtColor(blendI, cv2.COLOR_BGR2LAB).astype(np.float32)
     Ia = cv2.cvtColor(I1, cv2.COLOR_BGR2LAB).astype(np.float32)
     Ib = cv2.cvtColor(I2, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -193,7 +193,7 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
             A, ml = cache["As"][ch], cache["MLs"][ch]
             out_all[:, ch] = ml.solve(A.T @ b, tol=1e-6, maxiter=maxiter, accel="cg")
         elif solver == "taichi-cg" and TAICHI_AVAILABLE:
-            ensure_ti_init()
+            taichi_ops = _taichi_ops()
             out_all[:, ch] = taichi_ops.poisson_solver_cg(
                 gx[..., ch],
                 gy[..., ch],
@@ -240,6 +240,8 @@ class Reconstructor:
             if self.solver == "cg" or self.solver == "amg":
                 size_cache["AtAs"] = [A.T @ A for A in As]
             if self.solver == "amg":
+                import pyamg
+
                 print("  - Building AMG solver...")
                 size_cache["MLs"] = [
                     pyamg.ruge_stuben_solver(AtA) for AtA in size_cache["AtAs"]
