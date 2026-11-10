@@ -1,5 +1,7 @@
 # ezsynth/engines/backends/pytorch_backend.py
 
+import logging
+
 import torch
 
 from ...config import EbsynthParamsConfig, PipelineConfig
@@ -17,6 +19,8 @@ from ...torch_ops.patchmatch_ops import (
 from ...torch_ops.voting_ops import vote_plain, vote_weighted
 from ...utils.timer import SynthesisTimer
 from .common import get_auto_torch_device, resample_tensor
+
+logger = logging.getLogger(__name__)
 
 
 class PyTorchBackend:
@@ -112,11 +116,14 @@ class PyTorchBackend:
                 if plan.budget_bytes is not None
                 else "unknown"
             )
-            print(
-                f"[torch backend] level {shape.target_hw[1]}x{shape.target_hw[0]}: "
-                f"materialized patches need ~{plan.estimate_bytes >> 20} MiB "
-                f"(budget {budget}); gathering patches in chunks of "
-                f"{plan.chunk_pixels} pixels"
+            logger.info(
+                "[torch backend] level %dx%d: materialized patches need ~%d MiB "
+                "(budget %s); gathering patches in chunks of %d pixels",
+                shape.target_hw[1],
+                shape.target_hw[0],
+                plan.estimate_bytes >> 20,
+                budget,
+                plan.chunk_pixels,
             )
         return plan
 

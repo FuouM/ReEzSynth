@@ -20,6 +20,7 @@ counted; the reserve covers them.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 
@@ -29,6 +30,8 @@ DEFAULT_FRACTION = 0.9
 DEFAULT_RESERVE_MB = 1536
 MIN_BUDGET_MB = 256
 _MIB = 1 << 20
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _applied: dict[int, int] = {}
@@ -114,9 +117,12 @@ def apply_gpu_memory_limit(device: torch.device | str | None = None) -> int | No
         )
         torch.cuda.set_per_process_memory_fraction(budget / total, index)
         _applied[index] = budget
-        print(
-            f"[GPU memory] cuda:{index} budget {budget // _MIB} MiB "
-            f"(free {free // _MIB} / total {total // _MIB} MiB)"
+        logger.info(
+            "[GPU memory] cuda:%d budget %d MiB (free %d / total %d MiB)",
+            index,
+            budget // _MIB,
+            free // _MIB,
+            total // _MIB,
         )
         return budget
 
