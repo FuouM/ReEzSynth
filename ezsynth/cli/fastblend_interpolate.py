@@ -7,10 +7,12 @@ Instead of processing every frame, you provide keyframes (stylized frames at spe
 and FastBlend will interpolate the missing frames between them.
 
 Usage:
-    python fastblend_standalone_interpolate.py --frames_dir PATH_TO_ALL_FRAMES \
-                                             --keyframes_dir PATH_TO_KEYFRAMES \
-                                             --output_dir PATH_TO_SAVE_INTERPOLATED_FRAMES \
-                                             --keyframe_interval N  # Process every Nth frame as keyframe
+    fastblend-interpolate --frames_dir PATH_TO_ALL_FRAMES \
+                          --keyframes_dir PATH_TO_KEYFRAMES \
+                          --output_dir PATH_TO_SAVE_INTERPOLATED_FRAMES \
+                          --keyframe_interval N  # Process every Nth frame as keyframe
+
+    (or ``python -m ezsynth.cli.fastblend_interpolate ...``)
 """
 
 import argparse

@@ -25,7 +25,7 @@ Included both CUDA and CuPy implementations (original).
 #### Frame-by-Frame Blending
 
 ```bash
-python fastblend_standalone.py
+uv run fastblend
     --content_dir <content_dir> # original content frames
     --style_dir <style_dir> # stylized frames
     --output_dir <output_dir> # output directory
@@ -34,7 +34,7 @@ python fastblend_standalone.py
 #### Keyframe Interpolation
 
 ```bash
-python fastblend_standalone_interpolate.py
+uv run fastblend-interpolate
     --frames_dir <frames_dir> # all original frames
     --keyframes_dir <keyframes_dir> # stylized keyframes (every Nth frame)
     --output_dir <output_dir> # output directory
@@ -101,7 +101,7 @@ FastBlend also supports keyframe interpolation, where you provide stylized frame
 # 1. Extract all frames from video
 # 2. Stylize every Nth frame (keyframes) with your preferred method
 # 3. Run interpolation to fill in the gaps
-python fastblend_standalone_interpolate.py \
+uv run fastblend-interpolate \
     --frames_dir ./all_frames \
     --keyframes_dir ./stylized_keyframes \
     --output_dir ./output \

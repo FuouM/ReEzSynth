@@ -9,11 +9,13 @@ without running the full ReEzSynth pipeline. It's useful for:
 - Applying FastBlend to outputs from other stylization methods
 
 Usage:
-    python fastblend_standalone.py --content_dir PATH_TO_CONTENT_FRAMES \
-                                  --style_dir PATH_TO_STYLIZED_FRAMES \
-                                  --output_dir PATH_TO_SAVE_FASTBLENDED_FRAMES
+    fastblend --content_dir PATH_TO_CONTENT_FRAMES \
+              --style_dir PATH_TO_STYLIZED_FRAMES \
+              --output_dir PATH_TO_SAVE_FASTBLENDED_FRAMES
 
-    Optional MP4 (same pattern as run.py): add ``--export-mp4``; use ``--mp4-fps`` and
+    (or ``python -m ezsynth.cli.fastblend ...``)
+
+    Optional MP4 (same as ``reezsynth-video``): add ``--export-mp4``; use ``--mp4-fps`` and
     ``--mp4-output`` to override defaults (requires ffmpeg on PATH).
 """
 

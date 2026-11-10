@@ -1,3 +1,5 @@
+"""``reezsynth-prepare``: extract video frames to PNGs (``python -m ezsynth.cli.prepare``)."""
+
 import argparse
 from pathlib import Path
 
@@ -47,7 +49,7 @@ def extract_frames(video_path: str, output_dir: str):
     print(f"\nSuccessfully extracted {frame_num} frames.")
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Extract frames from a video for Ezsynth."
     )
@@ -65,3 +67,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     extract_frames(args.video, args.output)
+
+
+if __name__ == "__main__":
+    main()

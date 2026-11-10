@@ -1,3 +1,5 @@
+"""``reezsynth-video``: run a YAML video project (``python -m ezsynth.cli.video``)."""
+
 import argparse
 import os
 import time

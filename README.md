@@ -95,7 +95,7 @@ Different Loss functions
 
     Optional extras: `taichi`, `cupy`, `pyamg`, `neuflow` (Hugging Face weight download), `faceblit`.
 
-3. **Run** scripts through the environment, e.g. `uv run python run_video.py --config configs/example_project.yml`, and tests with `uv run pytest`.
+3. **Run** the command-line tools through the environment, e.g. `uv run reezsynth-video --config configs/example_project.yml`, and tests with `uv run pytest`. Console scripts: `reezsynth-video`, `reezsynth-prepare`, `fastblend`, `fastblend-interpolate` (each also runs as `python -m ezsynth.cli.<name>`).
 
 4. **Native extension (optional)**:
     The `ebsynth_torch` C++/CUDA extension is compiled on first use by a PyTorch JIT loader and cached. If a prebuilt `ebsynth_torch` wheel is installed it is used instead; to force the JIT loader anyway:
@@ -144,7 +144,7 @@ This method is ideal for managing full video projects.
 Extract your source video into a sequence of frames (e.g., PNGs).
 
 ```bash
-python prepare_video.py --video "path/to/your/video.mp4" --output "projects/my_project/content"
+uv run reezsynth-prepare --video "path/to/your/video.mp4" --output "projects/my_project/content"
 ```
 
 **2. Create Keyframes**:
@@ -168,7 +168,7 @@ project:
 **4. Run Synthesis**:
 
 ```bash
-uv run python run_video.py --config "configs/example_project.yml"
+uv run reezsynth-video --config "configs/example_project.yml"
 ```
 
 The stylized frames will be saved to your specified `output_dir`.
