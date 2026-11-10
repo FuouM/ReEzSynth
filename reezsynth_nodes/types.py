@@ -3,28 +3,39 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ezsynth.guide import GuideObject
+if TYPE_CHECKING:
+    from ezsynth.guide import GuideObject
+
+# ComfyUI socket type names (stable: saved workflows reference them).
+REEZ_GUIDES = "REEZ_GUIDES"
+REEZ_IMG_SYNTH_CONFIG = "REEZ_IMG_SYNTH_CONFIG"
+REEZ_VIDEO_STYLES = "REEZ_VIDEO_STYLES"
+REEZ_VIDEO_SYNTH_CONFIG = "REEZ_VIDEO_SYNTH_CONFIG"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReEzGuideList:
-    """Ordered list of guides for :class:`~ezsynth.api.ImageSynth`."""
+    """Ordered guides for :class:`~ezsynth.api.ImageSynth`."""
 
-    guides: list[GuideObject] = field(default_factory=list)
+    guides: tuple[GuideObject, ...] = field(default_factory=tuple)
 
     def append(self, guide: GuideObject) -> ReEzGuideList:
-        return ReEzGuideList(guides=[*self.guides, guide])
+        return ReEzGuideList(guides=(*self.guides, guide))
 
 
 @dataclass(frozen=True)
 class ReEzImgSynthConfig:
-    """Synthesis parameters (mirrors ``run_img_synth.py`` / ``RunConfig``)."""
+    """Single-image synthesis parameters (mirrors :class:`~ezsynth.api.RunConfig`)."""
 
-    backend: str = "torch"
+    backend: str = "taichi"
     cost_function: str = "ssd"
+    search_mode: str = "patchmatch"
+    multicand_k: int = 3
+    precision: str = "float32"
     use_residual_transfer: bool = True
     use_optimization: bool = True
     use_bilateral: bool = False
@@ -41,10 +52,10 @@ class ReEzImgSynthConfig:
 
 @dataclass(frozen=True)
 class ReEzVideoStyleKeyframes:
-    """Style keyframes and their corresponding content frame indices."""
+    """Style keyframes (BGR uint8) and the content frame index of each, sorted."""
 
-    frames: list[np.ndarray]
-    indices: list[int]
+    frames: tuple[np.ndarray, ...]
+    indices: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -71,6 +82,9 @@ class ReEzVideoSynthConfig:
     use_taichi_ops: bool = False
     backend: str = "taichi"
     cost_function: str = "ncc"
+    search_mode: str = "patchmatch"
+    multicand_k: int = 3
+    precision: str = "float32"
     vote_mode: str = "weighted"
     uniformity: float = 3500.0
     patch_size: int = 7

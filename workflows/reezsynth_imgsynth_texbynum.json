@@ -366,6 +366,33 @@
                         "name": "patch_match_iters"
                     },
                     "link": null
+                },
+                {
+                    "localized_name": "search_mode",
+                    "name": "search_mode",
+                    "type": "COMBO",
+                    "widget": {
+                        "name": "search_mode"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "multicand_k",
+                    "name": "multicand_k",
+                    "type": "INT",
+                    "widget": {
+                        "name": "multicand_k"
+                    },
+                    "link": null
+                },
+                {
+                    "localized_name": "precision",
+                    "name": "precision",
+                    "type": "COMBO",
+                    "widget": {
+                        "name": "precision"
+                    },
+                    "link": null
                 }
             ],
             "outputs": [
@@ -397,7 +424,10 @@
                 7,
                 6,
                 12,
-                6
+                6,
+                "patchmatch",
+                3,
+                "float32"
             ]
         },
         {

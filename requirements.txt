@@ -1,11 +1,12 @@
-# Runtime dependencies for ComfyUI installs (ComfyUI provides torch/torchvision).
-# Source of truth: [project.dependencies] in pyproject.toml.
+# Runtime dependencies for ComfyUI installs (ComfyUI provides torch, torchvision, Pillow).
+# Source of truth: [project.dependencies] in pyproject.toml (minus torch/torchvision),
+# plus taichi: the nodes' default synthesis backend (no wheels for Python >= 3.13; use
+# the torch backend there). Other optional extras are listed in README.md.
 numpy>=1.26
 opencv-python>=4.8
 pydantic>=2.5
 pyyaml>=6.0
 tqdm>=4.66
-imageio>=2.31
 scipy>=1.11
-phycv>=1.2
 ninja>=1.11
+taichi>=1.7; python_version < "3.13"

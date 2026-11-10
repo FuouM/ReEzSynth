@@ -1,5 +1,13 @@
+"""ReEzSynth ComfyUI nodes.
+
+Import-time cost is kept to the node definitions: ezsynth / FastBlend / FaceBlit
+engines and every optional dependency are imported inside node execution.
+"""
+
 from ezsynth.utils.gpu_memory import disable_gpu_memory_limit
 
+from .nodes_faceblit import ReEzSynthFaceBlit
+from .nodes_fastblend import ReEzSynthFastBlend
 from .nodes_image_synth import (
     ReEzSynthGuide,
     ReEzSynthGuidesAppend,
@@ -28,6 +36,8 @@ NODE_CLASS_MAPPINGS = {
     "ReEzSynthVideoStyleKeyframesAppend": ReEzSynthVideoStyleKeyframesAppend,
     "ReEzSynthVideoSynthConfig": ReEzSynthVideoSynthConfig,
     "ReEzSynthVideoSynth": ReEzSynthVideoSynth,
+    "ReEzSynthFastBlend": ReEzSynthFastBlend,
+    "ReEzSynthFaceBlit": ReEzSynthFaceBlit,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -40,6 +50,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ReEzSynthVideoStyleKeyframesAppend": "ReEzSynth Video Style Keyframes Append",
     "ReEzSynthVideoSynthConfig": "ReEzSynth Video Synth Config",
     "ReEzSynthVideoSynth": "ReEzSynth Video Synth",
+    "ReEzSynthFastBlend": "ReEzSynth FastBlend Interpolate",
+    "ReEzSynthFaceBlit": "ReEzSynth FaceBlit",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

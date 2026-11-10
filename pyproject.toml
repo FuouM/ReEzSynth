@@ -14,9 +14,7 @@ dependencies = [
     "pydantic>=2.5",
     "pyyaml>=6.0",
     "tqdm>=4.66",
-    "imageio>=2.31",
     "scipy>=1.11",
-    "phycv>=1.2",
     # JIT build of the optional ebsynth / FastBlend native extensions (torch.utils.cpp_extension).
     "ninja>=1.11",
 ]
@@ -32,14 +30,18 @@ taichi = ["taichi>=1.7"]
 cupy = ["cupy-cuda12x>=13; sys_platform != 'darwin'"]
 pyamg = ["pyamg>=5.0"]
 neuflow = ["huggingface-hub>=0.20"]
+# PAGE / PST edge methods.
+phycv = ["phycv>=1.2"]
+# FaceBlit: face-alignment (FAN + BlazeFace/S3FD) detects landmarks; numba runs the CPU DFS path.
 faceblit = [
-    "dlib>=19.22",
     "face-alignment>=1.4",
     "numba>=0.59",
     "pillow>=10.0",
     "matplotlib>=3.7",
 ]
-all = ["reezsynth[taichi,cupy,pyamg,neuflow,faceblit]"]
+# Optional dlib landmark backend (sdist only: needs CMake and a C++ compiler).
+dlib = ["dlib>=19.22"]
+all = ["reezsynth[taichi,cupy,pyamg,neuflow,phycv,faceblit,dlib]"]
 
 [dependency-groups]
 dev = [

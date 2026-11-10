@@ -1,83 +1,77 @@
-"""ComfyUI nodes for video EbSynth synthesis."""
+"""ComfyUI nodes for video EbSynth synthesis (``ezsynth.pipeline.SynthesisPipeline``)."""
 
 from __future__ import annotations
 
-import gc
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
-import torch
+import numpy as np
 
-from .image_io import (
-    bgr_uint8_sequence_to_image_tensor,
-    image_tensor_to_rgb_float_sequence,
+from .image_io import bgr_uint8_sequence_to_image_tensor, image_batch_to_bgr_uint8_list
+from .nodes_image_synth import (
+    BACKEND_TOOLTIP,
+    COST_TOOLTIP,
+    MULTICAND_TOOLTIP,
+    PRECISION_TOOLTIP,
+    SEARCH_MODE_TOOLTIP,
+    _bool,
+    _combo,
+    _float,
+    _int,
+    synthesis_core_inputs,
 )
-from .types import ReEzVideoStyleKeyframes, ReEzVideoSynthConfig
-
-REEZ_VIDEO_STYLES = "REEZ_VIDEO_STYLES"
-REEZ_VIDEO_SYNTH_CONFIG = "REEZ_VIDEO_SYNTH_CONFIG"
-
-_FLOW_ENGINES = ("NeuFlow", "RAFT", "OpenCV", "TorchVision")
-_FLOW_MODELS = (
-    "neuflow_mixed",
-    "neuflow_sintel",
-    "neuflow_things",
-    "sintel",
-    "kitti",
-    "small",
+from .options import (
+    COST_FUNCTIONS,
+    EDGE_METHODS,
+    FLOW_ENGINES,
+    FLOW_MODELS,
+    MULTICAND_K_RANGE,
+    OPENCV_FLOW_METHODS,
+    POISSON_SOLVERS,
+    PRECISIONS,
+    SEARCH_MODES,
+    SYNTH_BACKENDS,
+    TORCHVISION_FLOW_MODELS,
+    VOTE_MODES,
+    check_indices_in_range,
+    check_patch_size,
+    check_synthesis_options,
+    parse_indices,
+    require_module,
+    validate_synthesis_options,
 )
-_EDGE_METHODS = ("Classic", "PAGE", "PST")
-_OPENCV_FLOW_METHODS = ("DIS", "FARNEBACK")
-_TORCHVISION_FLOW_MODELS = ("raft_large", "raft_small")
-_POISSON_SOLVERS = ("disabled", "lsqr", "lsmr", "cg", "amg", "seamless", "taichi-cg")
-_BACKENDS = ("cuda", "torch", "taichi")
-_COST_FUNCTIONS = ("ssd", "ncc")
-_VOTE_MODES = ("weighted", "plain")
+from .types import (
+    REEZ_VIDEO_STYLES,
+    REEZ_VIDEO_SYNTH_CONFIG,
+    ReEzVideoStyleKeyframes,
+    ReEzVideoSynthConfig,
+)
+
+CATEGORY = "ReEzSynth/video"
 
 
-def _parse_indices(style_indices: str) -> list[int]:
-    try:
-        indices = [
-            int(part.strip()) for part in style_indices.split(",") if part.strip()
-        ]
-    except ValueError as exc:
-        raise ValueError(
-            "style_indices must be comma-separated frame numbers, e.g. 0, 24, 48."
-        ) from exc
-    if not indices:
-        raise ValueError("At least one style index is required.")
-    if any(index < 0 for index in indices):
-        raise ValueError("style_indices cannot contain negative frame numbers.")
-    return indices
-
-
-def _make_style_keyframes(
-    frames: list[Any],
-    indices: list[int],
+def make_style_keyframes(
+    frames: list[np.ndarray], indices: list[int]
 ) -> ReEzVideoStyleKeyframes:
+    """Pair style frames with content indices, sorted by index."""
     if len(frames) != len(indices):
         raise ValueError(
-            f"Expected the same number of style images and indices, got {len(frames)} images and {len(indices)} indices."
+            f"Got {len(frames)} style images but {len(indices)} indices; "
+            "give one index per style image."
         )
     if len(set(indices)) != len(indices):
-        raise ValueError("Each style keyframe index must be unique.")
-
-    ordered = sorted(zip(indices, frames), key=lambda item: item[0])
+        raise ValueError(f"Each style keyframe index must be unique (got {indices}).")
+    order = sorted(range(len(indices)), key=indices.__getitem__)
     return ReEzVideoStyleKeyframes(
-        frames=[frame for _, frame in ordered],
-        indices=[index for index, _ in ordered],
+        frames=tuple(frames[i] for i in order),
+        indices=tuple(indices[i] for i in order),
     )
 
 
-def _path_or_none(path: str | None) -> str | None:
-    if path is None:
-        return None
-    stripped = path.strip()
-    return stripped or None
-
-
-def _build_configs(cfg: ReEzVideoSynthConfig):
+def build_video_configs(cfg: ReEzVideoSynthConfig, device: str | None):
+    """Translate the node config into the ezsynth pydantic config sections."""
     from ezsynth.config import (
         BlendingConfig,
         DebugConfig,
@@ -86,7 +80,6 @@ def _build_configs(cfg: ReEzVideoSynthConfig):
         PrecomputationConfig,
     )
 
-    poisson_maxiter = cfg.poisson_maxiter if cfg.poisson_maxiter > 0 else None
     precomputation = PrecomputationConfig(
         flow_engine=cfg.flow_engine,
         flow_model=cfg.flow_model,
@@ -106,7 +99,7 @@ def _build_configs(cfg: ReEzVideoSynthConfig):
     )
     blending = BlendingConfig(
         poisson_solver=cfg.poisson_solver,
-        poisson_maxiter=poisson_maxiter,
+        poisson_maxiter=cfg.poisson_maxiter if cfg.poisson_maxiter > 0 else None,
         poisson_grad_weight_l=cfg.poisson_grad_weight_l,
         poisson_grad_weight_ab=cfg.poisson_grad_weight_ab,
         use_taichi_ops=cfg.use_taichi_ops,
@@ -125,7 +118,11 @@ def _build_configs(cfg: ReEzVideoSynthConfig):
         sigma_color=cfg.sigma_color,
         n_size_step=cfg.n_size_step,
         cost_function=cfg.cost_function,
+        search_mode=cfg.search_mode,
+        multicand_k=cfg.multicand_k,
+        precision=cfg.precision,
         backend=cfg.backend,
+        device=device,
         extra_pass_3x3=cfg.extra_pass_3x3,
         edge_weight=cfg.edge_weight,
         image_weight=cfg.image_weight,
@@ -138,15 +135,22 @@ def _build_configs(cfg: ReEzVideoSynthConfig):
     return precomputation, pipeline, blending, ebsynth_params, debug
 
 
-def _fps_from_video_info(video_info: dict[str, Any] | None, fallback: float) -> float:
-    if video_info:
-        fps = video_info.get("loaded_fps") or video_info.get("source_fps")
-        if fps:
-            return float(fps)
-    return float(fallback)
+def check_video_dependencies(cfg: ReEzVideoSynthConfig) -> None:
+    """Fail before any work when the chosen options need a missing optional package."""
+    check_synthesis_options(
+        cfg.backend, cfg.cost_function, cfg.search_mode, cfg.precision, cfg.multicand_k
+    )
+    if cfg.edge_method in ("PAGE", "PST"):
+        require_module("phycv")
+    if cfg.poisson_solver == "amg":
+        require_module("pyamg")
+    if cfg.poisson_solver == "taichi-cg" or cfg.use_taichi_ops:
+        require_module("taichi")
+    if cfg.flow_engine == "NeuFlow":
+        require_module("huggingface_hub")
 
 
-def _build_video_info(
+def build_video_info(
     video_info: dict[str, Any] | None,
     *,
     frame_count: int,
@@ -154,6 +158,7 @@ def _build_video_info(
     width: int,
     height: int,
 ) -> dict[str, Any]:
+    """VHS-compatible video info: incoming ``source_*`` kept, ``loaded_*`` = output."""
     duration = frame_count / frame_rate if frame_rate > 0 else 0.0
     info = dict(video_info or {})
     for key, value in {
@@ -176,234 +181,393 @@ def _build_video_info(
     return info
 
 
+def _in_memory_project_data(project_cfg, content_frames, style_frames):
+    """ProjectData serving frames already in memory (no PNG round trip)."""
+    from ezsynth.data import ProjectData
+    from ezsynth.utils.image_utils import (
+        assert_uniform_image_shapes,
+        resize_image_to_match,
+    )
+
+    assert_uniform_image_shapes(content_frames)
+    styles = [resize_image_to_match(style, content_frames[0]) for style in style_frames]
+
+    class _InMemoryProjectData(ProjectData):
+        def get_content_frames(self, force_reload: bool = False) -> list[np.ndarray]:
+            return content_frames
+
+        def get_style_frames(self, force_reload: bool = False) -> list[np.ndarray]:
+            return styles
+
+    return _InMemoryProjectData(project_cfg)
+
+
 class ReEzSynthVideoStyleKeyframe:
-    """Create one style keyframe for the video EbSynth pipeline."""
+    DESCRIPTION = "One stylized keyframe and the content frame it corresponds to."
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "style_image": ("IMAGE",),
-                "style_index": (
-                    "INT",
-                    {"default": 0, "min": 0, "max": 1000000, "step": 1},
+                "style_image": (
+                    "IMAGE",
+                    {"tooltip": "Stylized version of content frame style_index."},
+                ),
+                "style_index": _int(
+                    0,
+                    0,
+                    1000000,
+                    1,
+                    "0-based index of the content frame this style matches.",
                 ),
             },
         }
 
     RETURN_TYPES = (REEZ_VIDEO_STYLES,)
     RETURN_NAMES = ("style",)
+    OUTPUT_TOOLTIPS = ("Style keyframe list with one entry.",)
     FUNCTION = "create"
-    CATEGORY = "ReEzSynth/video"
+    CATEGORY = CATEGORY
 
     def create(self, style_image, style_index: int):
-        frames = image_tensor_to_rgb_float_sequence(style_image)
+        frames = image_batch_to_bgr_uint8_list(style_image)
         if len(frames) != 1:
             raise ValueError(
-                f"Video Style Keyframe expects a single image, got a batch of {len(frames)}."
+                f"Video Style Keyframe expects a single image, got a batch of {len(frames)}. "
+                "Use Video Style Keyframes for batches."
             )
-        return (_make_style_keyframes(frames, [int(style_index)]),)
+        return (make_style_keyframes(frames, [int(style_index)]),)
 
 
 class ReEzSynthVideoStyleKeyframes:
-    """Pair a batch of style keyframes with their content frame indices."""
+    DESCRIPTION = "A batch of stylized keyframes with their content frame indices."
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "style_images": ("IMAGE",),
-                "style_indices": ("STRING", {"default": "0"}),
+                "style_images": (
+                    "IMAGE",
+                    {
+                        "tooltip": "Batch of stylized keyframes, in the order of style_indices."
+                    },
+                ),
+                "style_indices": (
+                    "STRING",
+                    {
+                        "default": "0",
+                        "tooltip": "Content frame index of each style image, e.g. '0, 24, 48'.",
+                    },
+                ),
             },
         }
 
     RETURN_TYPES = (REEZ_VIDEO_STYLES,)
     RETURN_NAMES = ("styles",)
+    OUTPUT_TOOLTIPS = ("Style keyframe list.",)
     FUNCTION = "create"
-    CATEGORY = "ReEzSynth/video"
+    CATEGORY = CATEGORY
 
     def create(self, style_images, style_indices: str):
-        frames = image_tensor_to_rgb_float_sequence(style_images)
-        indices = _parse_indices(style_indices)
-        return (_make_style_keyframes(frames, indices),)
+        frames = image_batch_to_bgr_uint8_list(style_images)
+        return (
+            make_style_keyframes(frames, parse_indices(style_indices, "style_indices")),
+        )
 
 
 class ReEzSynthVideoStyleKeyframesAppend:
-    """Append style keyframes to an existing video style list."""
+    DESCRIPTION = "Merge style keyframe lists."
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "style": (REEZ_VIDEO_STYLES,),
+                "style": (REEZ_VIDEO_STYLES, {"tooltip": "Keyframe(s) to add."}),
             },
             "optional": {
-                "styles": (REEZ_VIDEO_STYLES,),
+                "styles": (
+                    REEZ_VIDEO_STYLES,
+                    {
+                        "tooltip": "Existing keyframe list to extend (leave empty to start one)."
+                    },
+                ),
             },
         }
 
     RETURN_TYPES = (REEZ_VIDEO_STYLES,)
     RETURN_NAMES = ("styles",)
+    OUTPUT_TOOLTIPS = ("Merged keyframe list, sorted by frame index.",)
     FUNCTION = "append"
-    CATEGORY = "ReEzSynth/video"
+    CATEGORY = CATEGORY
 
     def append(
         self,
         style: ReEzVideoStyleKeyframes,
         styles: ReEzVideoStyleKeyframes | None = None,
     ):
-        base_frames = styles.frames if styles is not None else []
-        base_indices = styles.indices if styles is not None else []
+        base_frames = styles.frames if styles is not None else ()
+        base_indices = styles.indices if styles is not None else ()
         return (
-            _make_style_keyframes(
-                frames=[*base_frames, *style.frames],
-                indices=[*base_indices, *style.indices],
+            make_style_keyframes(
+                [*base_frames, *style.frames], [*base_indices, *style.indices]
             ),
         )
 
 
 class ReEzSynthVideoSynthConfig:
-    """Parameters for the full video EbSynth pipeline."""
+    DESCRIPTION = (
+        "Parameters for ReEzSynth Video Synth (flow, edges, blending, EbSynth)."
+    )
 
     @classmethod
     def INPUT_TYPES(cls):
+        core = synthesis_core_inputs()
         return {
+            # Widget order is part of saved workflows: append new inputs at the end.
             "required": {
-                "flow_engine": (list(_FLOW_ENGINES), {"default": "RAFT"}),
-                "flow_model": (list(_FLOW_MODELS), {"default": "sintel"}),
-                "edge_method": (list(_EDGE_METHODS), {"default": "Classic"}),
-                "opencv_flow_method": (list(_OPENCV_FLOW_METHODS), {"default": "DIS"}),
-                "torchvision_flow_model": (
-                    list(_TORCHVISION_FLOW_MODELS),
-                    {"default": "raft_large"},
+                "flow_engine": _combo(
+                    FLOW_ENGINES,
+                    "RAFT",
+                    "Optical flow: RAFT (raft-*.pth in models/raft, see "
+                    "models/model_files.md), NeuFlow (needs huggingface-hub; "
+                    "neuflow_*.pth in models/neuflow), OpenCV (CPU, no weights), "
+                    "TorchVision RAFT (weights download automatically).",
                 ),
-                "pyramid_levels": (
-                    "INT",
-                    {"default": 6, "min": 1, "max": 12, "step": 1},
+                "flow_model": _combo(
+                    FLOW_MODELS,
+                    "sintel",
+                    "Checkpoint for the flow engine: sintel/kitti/small for RAFT, "
+                    "neuflow_* for NeuFlow.",
                 ),
-                "alpha": (
-                    "FLOAT",
-                    {"default": 0.75, "min": 0.0, "max": 1.0, "step": 0.01},
+                "edge_method": _combo(
+                    EDGE_METHODS,
+                    "Classic",
+                    "Edge guide: Classic (OpenCV), PAGE / PST (need `pip install phycv`).",
                 ),
-                "use_residual_transfer": ("BOOLEAN", {"default": False}),
-                "use_temporal_nnf_propagation": ("BOOLEAN", {"default": False}),
-                "use_sparse_feature_guide": ("BOOLEAN", {"default": False}),
-                "use_pseudo_endpoint_styles": ("BOOLEAN", {"default": False}),
-                "use_flow_occlusion_masks": ("BOOLEAN", {"default": False}),
-                "use_forward_warping": ("BOOLEAN", {"default": False}),
-                "poisson_solver": (list(_POISSON_SOLVERS), {"default": "disabled"}),
-                "poisson_maxiter": (
-                    "INT",
-                    {"default": 0, "min": 0, "max": 10000, "step": 1},
+                "opencv_flow_method": _combo(
+                    OPENCV_FLOW_METHODS,
+                    "DIS",
+                    "OpenCV flow algorithm (flow_engine OpenCV).",
                 ),
-                "poisson_grad_weight_l": (
-                    "FLOAT",
-                    {"default": 2.5, "min": 0.0, "max": 20.0, "step": 0.1},
+                "torchvision_flow_model": _combo(
+                    TORCHVISION_FLOW_MODELS,
+                    "raft_large",
+                    "TorchVision RAFT variant (flow_engine TorchVision).",
                 ),
-                "poisson_grad_weight_ab": (
-                    "FLOAT",
-                    {"default": 0.5, "min": 0.0, "max": 20.0, "step": 0.1},
+                "pyramid_levels": _int(6, 1, 12, 1, "Coarse-to-fine pyramid levels."),
+                "alpha": _float(
+                    0.75,
+                    0.0,
+                    1.0,
+                    0.01,
+                    "Blend weight between forward and backward passes near keyframes.",
                 ),
-                "use_taichi_ops": ("BOOLEAN", {"default": False}),
-                "backend": (list(_BACKENDS), {"default": "taichi"}),
-                "cost_function": (list(_COST_FUNCTIONS), {"default": "ncc"}),
-                "vote_mode": (list(_VOTE_MODES), {"default": "weighted"}),
-                "uniformity": (
-                    "FLOAT",
-                    {"default": 3500.0, "min": 0.0, "max": 20000.0, "step": 10.0},
+                "use_residual_transfer": _bool(
+                    False,
+                    "Transfer the style's high-frequency residual for crisper detail.",
                 ),
-                "patch_size": ("INT", {"default": 7, "min": 3, "max": 31, "step": 2}),
-                "search_vote_iters": (
-                    "INT",
-                    {"default": 12, "min": 1, "max": 64, "step": 1},
+                "use_temporal_nnf_propagation": _bool(
+                    False,
+                    "Seed each frame's search with the previous frame's NNF (more stable, faster).",
                 ),
-                "patch_match_iters": (
-                    "INT",
-                    {"default": 6, "min": 1, "max": 32, "step": 1},
+                "use_sparse_feature_guide": _bool(
+                    False, "Add a sparse feature-track guide to pin moving structures."
                 ),
-                "stop_threshold": (
-                    "INT",
-                    {"default": 5, "min": 0, "max": 255, "step": 1},
+                "use_pseudo_endpoint_styles": _bool(
+                    False,
+                    "Synthesize extra style endpoints when only one keyframe bounds a segment.",
                 ),
-                "search_pruning_threshold": (
-                    "FLOAT",
-                    {"default": 50.0, "min": 0.0, "max": 10000.0, "step": 1.0},
+                "use_flow_occlusion_masks": _bool(
+                    False,
+                    "Mask occluded regions from forward/backward flow consistency.",
                 ),
-                "use_bilateral": ("BOOLEAN", {"default": False}),
-                "sigma_spatial": (
-                    "FLOAT",
-                    {"default": 4.0, "min": 0.1, "max": 64.0, "step": 0.1},
+                "use_forward_warping": _bool(
+                    False, "Forward-splat the warp guide instead of backward warping."
                 ),
-                "sigma_color": (
-                    "FLOAT",
-                    {"default": 10.0, "min": 0.1, "max": 255.0, "step": 0.1},
+                "poisson_solver": _combo(
+                    POISSON_SOLVERS,
+                    "disabled",
+                    "Gradient-domain blending of forward/backward passes. amg needs pyamg, "
+                    "taichi-cg needs taichi; disabled uses histogram blending only.",
                 ),
-                "n_size_step": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
-                "extra_pass_3x3": ("BOOLEAN", {"default": False}),
-                "image_weight": (
-                    "FLOAT",
-                    {"default": 6.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                "poisson_maxiter": _int(
+                    0, 0, 10000, 1, "Max solver iterations (0 = solver default)."
                 ),
-                "edge_weight": (
-                    "FLOAT",
-                    {"default": 1.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                "poisson_grad_weight_l": _float(
+                    2.5, 0.0, 20.0, 0.1, "Poisson gradient weight for luminance."
                 ),
-                "pos_weight": (
-                    "FLOAT",
-                    {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                "poisson_grad_weight_ab": _float(
+                    0.5, 0.0, 20.0, 0.1, "Poisson gradient weight for chroma."
                 ),
-                "warp_weight": (
-                    "FLOAT",
-                    {"default": 0.5, "min": 0.0, "max": 100.0, "step": 0.1},
+                "use_taichi_ops": _bool(
+                    False, "Run blending color ops with Taichi (needs taichi)."
                 ),
-                "sparse_anchor_weight": (
-                    "FLOAT",
-                    {"default": 50.0, "min": 0.0, "max": 200.0, "step": 0.1},
+                "backend": _combo(SYNTH_BACKENDS, "taichi", BACKEND_TOOLTIP),
+                "cost_function": _combo(COST_FUNCTIONS, "ncc", COST_TOOLTIP),
+                "vote_mode": _combo(
+                    VOTE_MODES,
+                    "weighted",
+                    "Patch voting: weighted by match error, or plain average.",
                 ),
-                "use_optimization": ("BOOLEAN", {"default": True}),
-                "save_flow_viz": ("BOOLEAN", {"default": False}),
+                "uniformity": core["uniformity"],
+                "patch_size": core["patch_size"],
+                "search_vote_iters": core["search_vote_iters"],
+                "patch_match_iters": core["patch_match_iters"],
+                "stop_threshold": _int(
+                    5,
+                    0,
+                    255,
+                    1,
+                    "Skip refining patches whose error is already below this.",
+                ),
+                "search_pruning_threshold": _float(
+                    50.0,
+                    0.0,
+                    10000.0,
+                    1.0,
+                    "Prune random-search candidates worse than this.",
+                ),
+                "use_bilateral": _bool(
+                    False, "Edge-aware (bilateral) weighting of patch votes."
+                ),
+                "sigma_spatial": _float(
+                    4.0, 0.1, 64.0, 0.1, "Bilateral spatial sigma."
+                ),
+                "sigma_color": _float(10.0, 0.1, 255.0, 0.1, "Bilateral color sigma."),
+                "n_size_step": _int(
+                    1, 1, 8, 1, "Neighbour step used by the bilateral filter."
+                ),
+                "extra_pass_3x3": _bool(
+                    False, "Extra 3x3 refinement pass at the finest level."
+                ),
+                "image_weight": _float(
+                    6.0, 0.0, 100.0, 0.1, "Weight of the content image guide."
+                ),
+                "edge_weight": _float(
+                    1.0, 0.0, 100.0, 0.1, "Weight of the edge guide."
+                ),
+                "pos_weight": _float(
+                    2.0, 0.0, 100.0, 0.1, "Weight of the positional guide."
+                ),
+                "warp_weight": _float(
+                    0.5, 0.0, 100.0, 0.1, "Weight of the flow-warped style guide."
+                ),
+                "sparse_anchor_weight": _float(
+                    50.0, 0.0, 200.0, 0.1, "Weight of the sparse feature guide."
+                ),
+                "use_optimization": _bool(
+                    True, "Use the optimized search/vote kernels (same result, faster)."
+                ),
+                "save_flow_viz": _bool(
+                    False,
+                    "Write flow visualizations to debug/flow_viz (debugging only).",
+                ),
+                "search_mode": _combo(SEARCH_MODES, "patchmatch", SEARCH_MODE_TOOLTIP),
+                "multicand_k": _int(3, *MULTICAND_K_RANGE, 1, MULTICAND_TOOLTIP),
+                "precision": _combo(PRECISIONS, "float32", PRECISION_TOOLTIP),
             },
         }
 
     RETURN_TYPES = (REEZ_VIDEO_SYNTH_CONFIG,)
     RETURN_NAMES = ("config",)
+    OUTPUT_TOOLTIPS = ("Config for ReEzSynth Video Synth.",)
     FUNCTION = "build"
-    CATEGORY = "ReEzSynth/video"
+    CATEGORY = CATEGORY
+
+    @classmethod
+    def VALIDATE_INPUTS(
+        cls,
+        backend=None,
+        cost_function=None,
+        search_mode=None,
+        precision=None,
+        multicand_k=None,
+    ):
+        values = (backend, cost_function, search_mode, precision, multicand_k)
+        if any(v is None for v in values):
+            return True  # linked inputs: validated in build()
+        return validate_synthesis_options(*values) or True
 
     def build(self, **kwargs):
-        if kwargs["patch_size"] % 2 == 0:
-            raise ValueError("patch_size must be odd.")
-        return (ReEzVideoSynthConfig(**kwargs),)
+        cfg = ReEzVideoSynthConfig(**kwargs)
+        check_patch_size(cfg.patch_size)
+        check_video_dependencies(cfg)
+        return (cfg,)
 
 
 class ReEzSynthVideoSynth:
-    """Run EbSynth over a video/image batch and return VHS-compatible outputs."""
+    DESCRIPTION = (
+        "Propagate stylized keyframes through a frame batch with the full EbSynth "
+        "video pipeline (optical flow, edge guides, forward/backward passes, blending)."
+    )
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "content_images": ("IMAGE",),
-                "styles": (REEZ_VIDEO_STYLES,),
-                "config": (REEZ_VIDEO_SYNTH_CONFIG,),
-                "frame_rate": (
-                    "FLOAT",
-                    {"default": 8.0, "min": 0.001, "max": 240.0, "step": 0.001},
+                "content_images": (
+                    "IMAGE",
+                    {"tooltip": "All content frames as one IMAGE batch."},
                 ),
-                "save_outputs": ("BOOLEAN", {"default": False}),
+                "styles": (
+                    REEZ_VIDEO_STYLES,
+                    {"tooltip": "Stylized keyframes with their frame indices."},
+                ),
+                "config": (
+                    REEZ_VIDEO_SYNTH_CONFIG,
+                    {"tooltip": "From ReEzSynth Video Synth Config."},
+                ),
+                "frame_rate": _float(
+                    8.0,
+                    0.001,
+                    240.0,
+                    0.001,
+                    "Frame rate reported on the outputs (connect the source video fps).",
+                ),
+                "save_outputs": _bool(
+                    False, "Also write the frames as PNGs into output_dir."
+                ),
             },
             "optional": {
-                "audio": ("AUDIO",),
-                "video_info": ("VHS_VIDEOINFO",),
-                "output_dir": ("STRING", {"default": ""}),
-                "cache_dir": ("STRING", {"default": ""}),
+                "audio": (
+                    "AUDIO",
+                    {"tooltip": "Passed through unchanged to the audio output."},
+                ),
+                "video_info": (
+                    "VHS_VIDEOINFO",
+                    {
+                        "tooltip": "VideoHelperSuite video info; passed through with loaded_* updated."
+                    },
+                ),
+                "output_dir": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "tooltip": "Folder for save_outputs (required when saving).",
+                    },
+                ),
+                "cache_dir": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "tooltip": "Folder to cache optical flow / edges between runs. Empty: "
+                        "temporary. Use one folder per clip (the cache is not keyed by content).",
+                    },
+                ),
             },
         }
 
     RETURN_TYPES = ("IMAGE", "INT", "FLOAT", "AUDIO", "VHS_VIDEOINFO")
     RETURN_NAMES = ("images", "frame_count", "frame_rate", "audio", "video_info")
+    OUTPUT_TOOLTIPS = (
+        "Stylized frames.",
+        "Number of output frames.",
+        "The frame_rate input.",
+        "The audio input, unchanged.",
+        "Video info describing the output frames.",
+    )
     FUNCTION = "synthesize"
-    CATEGORY = "ReEzSynth/video"
+    CATEGORY = CATEGORY
 
     def synthesize(
         self,
@@ -417,61 +581,70 @@ class ReEzSynthVideoSynth:
         output_dir: str = "",
         cache_dir: str = "",
     ):
-        from ezsynth.integration_io import (
-            write_rgb_frame_sequence,
-            write_rgb_style_images,
-        )
-        from ezsynth.service import SynthesisRequest, SynthesisService
+        check_video_dependencies(config)
+        out_dir = output_dir.strip()
+        if save_outputs and not out_dir:
+            raise ValueError("save_outputs is on but output_dir is empty.")
 
-        content_frames = image_tensor_to_rgb_float_sequence(content_images)
-        if not content_frames:
-            raise ValueError("content_images must contain at least one frame.")
-        if any(index >= len(content_frames) for index in styles.indices):
-            raise ValueError(
-                f"style_indices must be within content frame range 0-{len(content_frames) - 1}."
+        from ezsynth.config import ProjectConfig
+        from ezsynth.output import OutputManager
+        from ezsynth.service import SynthesisConfigs, SynthesisService
+
+        from . import comfy_runtime as rt
+
+        content_frames = image_batch_to_bgr_uint8_list(content_images)
+        check_indices_in_range(
+            list(styles.indices), len(content_frames), "style_indices"
+        )
+
+        device = rt.torch_device()
+        height, width = content_frames[0].shape[:2]
+        precomputation, pipeline, blending, ebsynth_params, debug = build_video_configs(
+            config, str(device)
+        )
+        rt.prepare_vram(device, rt.estimate_synthesis_bytes(height, width, 12))
+
+        with ExitStack() as stack:
+            cache = cache_dir.strip() or stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="reezsynth_cache_")
             )
-
-        resolved_fps = _fps_from_video_info(video_info, frame_rate)
-        precomputation, pipeline, blending, ebsynth_params, debug = _build_configs(
-            config
-        )
-        out_dir = _path_or_none(output_dir)
-        cache = _path_or_none(cache_dir)
-
-        with tempfile.TemporaryDirectory(prefix="reezsynth_comfy_video_") as temp_root:
-            root = Path(temp_root)
-            content_paths = write_rgb_frame_sequence(content_frames, root / "content")
-            style_paths = write_rgb_style_images(styles.frames, root / "styles")
-            request = SynthesisRequest(
-                content_dir=str(content_paths.directory),
-                style_paths=style_paths,
-                style_indices=styles.indices,
-                output_dir=out_dir,
+            work_out = out_dir or stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="reezsynth_out_")
+            )
+            project = ProjectConfig(
+                name="ReEzSynthComfyVideo",
+                content_dir="<comfyui images>",
+                style_path=[f"<comfyui style {i}>" for i in styles.indices],
+                style_indices=list(styles.indices),
+                output_dir=work_out,
                 cache_dir=cache,
-                project_name="ReEzSynthComfyVideo",
-                save_outputs=save_outputs,
-                ebsynth_params=ebsynth_params,
+            )
+            configs = SynthesisConfigs(
+                project=project,
+                precomputation=precomputation,
                 pipeline=pipeline,
                 blending=blending,
-                precomputation=precomputation,
+                ebsynth_params=ebsynth_params,
                 debug=debug,
             )
-            result = SynthesisService().run(request)
+            data = _in_memory_project_data(project, content_frames, list(styles.frames))
+            try:
+                with rt.comfy_progress():
+                    frames = SynthesisService().build_pipeline(configs, data).run()
+            finally:
+                rt.release_vram()
+            if save_outputs:
+                OutputManager(data).handle(
+                    frames, save=True, visible_output_dir=Path(out_dir)
+                )
 
-        images = bgr_uint8_sequence_to_image_tensor(result.frames)
+        images = bgr_uint8_sequence_to_image_tensor(frames)
         frame_count = int(images.shape[0])
-        height = int(images.shape[1])
-        width = int(images.shape[2])
-        out_video_info = _build_video_info(
+        out_info = build_video_info(
             video_info,
             frame_count=frame_count,
-            frame_rate=resolved_fps,
-            width=width,
-            height=height,
+            frame_rate=float(frame_rate),
+            width=int(images.shape[2]),
+            height=int(images.shape[1]),
         )
-
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        return (images, frame_count, resolved_fps, audio, out_video_info)
+        return (images, frame_count, float(frame_rate), audio, out_info)

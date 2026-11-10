@@ -13,14 +13,9 @@ from FaceBlit.src.backends.commons import (
     gray_hist_matching,
     warp_mls_similarity,
 )
-from FaceBlit.src.backends.taichi_backend import compute_lut_taichi, stylize_blit_taichi
 from FaceBlit.src.backends.torch_backend import (
     compute_look_up_cube_optimized,
     style_blit_voting_torch,
-)
-from FaceBlit.src.backends.torch_backend_numba import (
-    denoise_nnf_numba,
-    initialize_nnf_dfs_voting_numba,
 )
 from FaceBlit.src.backends.torch_backend_numpy import (
     _lookup_coords_from_guides,
@@ -30,9 +25,10 @@ from FaceBlit.src.backends.torch_backend_numpy import (
     prepare_dfs_voting_arrays,
     voting_on_rgb,
 )
-from FaceBlit.src.utils_face import detect_landmarks
+from FaceBlit.src.utils_face import DEFAULT_FAN_FACE_DETECTOR, detect_landmarks
 from FaceBlit.src.utils_io import (
     load_look_up_cube,
+    normalize_landmarks,
     pack_lut_packed,
     read_image_pil,
     read_landmarks_file,
@@ -43,6 +39,64 @@ from FaceBlit.src.utils_io import (
     unpack_lut_packed,
     write_image_pil,
 )
+
+NUMBA_INSTALL_HINT = (
+    "FaceBlit's CPU DFS / denoise path needs the 'numba' package "
+    "(pip install numba); use dfs_mode='python' or the GPU LUT path instead."
+)
+
+
+def _numba_backend():
+    """Import the Numba kernels on first use (numba is an optional dependency)."""
+    try:
+        from FaceBlit.src.backends import torch_backend_numba
+    except ImportError as exc:
+        raise ImportError(NUMBA_INSTALL_HINT) from exc
+    return torch_backend_numba
+
+
+def _taichi_backend():
+    """Import the Taichi kernels on first use (taichi is an optional dependency)."""
+    try:
+        from FaceBlit.src.backends import taichi_backend
+    except ImportError as exc:
+        raise ImportError(
+            "The FaceBlit 'taichi' backend needs the 'taichi' package "
+            "(pip install taichi); use backend='torch' otherwise."
+        ) from exc
+    return taichi_backend
+
+
+def compute_style_look_up_cube(
+    style_pos_guide: np.ndarray,
+    style_app_guide: np.ndarray,
+    device,
+    lambda_pos: int = 10,
+    lambda_app: int = 2,
+    search_radius: int = 30,
+    backend: Literal["taichi", "torch"] = "torch",
+) -> np.ndarray:
+    """Style LUT ``(256, 256, 256, 2)`` uint16 ``[sx, sy]`` from the style guides."""
+    if backend == "taichi":
+        packed = _taichi_backend().compute_lut_taichi(
+            to_tensor_simple(style_pos_guide),
+            to_tensor_simple(style_app_guide),
+            lambda_pos=lambda_pos,
+            lambda_app=lambda_app,
+            search_radius=search_radius,
+            device=device,
+        )
+        return unpack_lut_packed(packed)
+    if backend == "torch":
+        return compute_look_up_cube_optimized(
+            style_pos_guide,
+            style_app_guide,
+            lambda_pos=lambda_pos,
+            lambda_app=lambda_app,
+            search_radius=search_radius,
+            device=device,
+        )
+    raise ValueError(f"backend must be 'torch' or 'taichi', got {backend!r}")
 
 
 def save_landmarks_txt(landmarks, landmarks_path):
@@ -83,6 +137,41 @@ class FaceBlitInput_Style:
         }
 
     @classmethod
+    def from_image(
+        cls,
+        style_image: np.ndarray,
+        style_landmarks,
+        device,
+        lambda_pos: int = 10,
+        lambda_app: int = 2,
+        search_radius: int = 30,
+        draw_grid: bool = False,
+        stretch_hist: bool = True,
+        backend: Literal["taichi", "torch"] = "torch",
+    ) -> "FaceBlitInput_Style":
+        """Build guides and LUT in memory from a BGR uint8 style image and its landmarks."""
+        style_pos_guide = gradient_guide(
+            style_image.shape[1], style_image.shape[0], draw_grid=draw_grid
+        )
+        style_app_guide = get_app_guide(style_image, stretch_hist=stretch_hist)
+        look_up_cube = compute_style_look_up_cube(
+            style_pos_guide,
+            style_app_guide,
+            device,
+            lambda_pos=lambda_pos,
+            lambda_app=lambda_app,
+            search_radius=search_radius,
+            backend=backend,
+        )
+        return cls(
+            style_image,
+            style_pos_guide,
+            style_app_guide,
+            normalize_landmarks(style_landmarks),
+            look_up_cube,
+        )
+
+    @classmethod
     def compute_style_assets(
         cls,
         output_dir,
@@ -96,6 +185,7 @@ class FaceBlitInput_Style:
         draw_grid=False,
         stretch_hist=True,
         backend: Literal["taichi", "torch"] = "torch",
+        face_detector: str = DEFAULT_FAN_FACE_DETECTOR,
     ):
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -105,44 +195,25 @@ class FaceBlitInput_Style:
         style_image = read_image_pil(path_style_image)
 
         landmarks = detect_landmarks(
-            style_image, landmark_model, predictor_path, device
+            style_image, landmark_model, predictor_path, device, face_detector
         )
-        save_landmarks_txt(landmarks, asset_paths["path_style_landmarks"])
-
-        style_pos_guide = gradient_guide(
-            style_image.shape[1], style_image.shape[0], draw_grid=draw_grid
+        if landmarks is None:
+            raise ValueError(f"No face detected in style image {path_style_image}.")
+        style = cls.from_image(
+            style_image,
+            landmarks,
+            device,
+            lambda_pos=lambda_pos,
+            lambda_app=lambda_app,
+            search_radius=search_radius,
+            draw_grid=draw_grid,
+            stretch_hist=stretch_hist,
+            backend=backend,
         )
-        write_image_pil(asset_paths["path_style_pos_guide"], style_pos_guide)
-
-        style_app_guide = get_app_guide(style_image, stretch_hist=stretch_hist)
-        write_image_pil(asset_paths["path_style_app_guide"], style_app_guide)
-
-        if backend == "taichi":
-            style_lookup_packed = compute_lut_taichi(
-                to_tensor_simple(style_pos_guide),
-                to_tensor_simple(style_app_guide),
-                lambda_pos=lambda_pos,
-                lambda_app=lambda_app,
-                search_radius=search_radius,
-                device=device,
-            )
-            save_look_up_cube(
-                unpack_lut_packed(style_lookup_packed),
-                asset_paths["path_style_lookup_table"],
-            )
-        elif backend == "torch":
-            style_lookup_table = compute_look_up_cube_optimized(
-                style_pos_guide,
-                style_app_guide,
-                lambda_pos=lambda_pos,
-                lambda_app=lambda_app,
-                search_radius=search_radius,
-                device=device,
-            )
-            save_look_up_cube(
-                style_lookup_table, asset_paths["path_style_lookup_table"]
-            )
-
+        save_landmarks_txt(style.style_landmarks, asset_paths["path_style_landmarks"])
+        write_image_pil(asset_paths["path_style_pos_guide"], style.style_pos_guide)
+        write_image_pil(asset_paths["path_style_app_guide"], style.style_app_guide)
+        save_look_up_cube(style.look_up_cube, asset_paths["path_style_lookup_table"])
         return asset_paths
 
     @classmethod
@@ -249,7 +320,7 @@ class FaceBlitEngine:
                     device,
                 )
         elif backend == "taichi":
-            stylized = stylize_blit_taichi(
+            stylized = _taichi_backend().stylize_blit_taichi(
                 to_tensor_simple(input_style.style_image),
                 to_tensor_simple(input_style.style_pos_guide),
                 to_tensor_simple(input_style.style_app_guide),
@@ -357,7 +428,7 @@ def _denoise_nnf_cpu(
     if backend == "python":
         return denoise_nnf_python(nnf, patch_size)
     if backend in ("auto", "numba"):
-        return denoise_nnf_numba(nnf, patch_size)
+        return _numba_backend().denoise_nnf_numba(nnf, patch_size)
     raise ValueError(f"backend must be 'auto', 'python', or 'numba', got {backend!r}")
 
 
@@ -419,7 +490,7 @@ def initialize_nnf(
             )
             chunk_number += 1
     else:
-        nnf, covered_pixels = initialize_nnf_dfs_voting_numba(
+        nnf, covered_pixels = _numba_backend().initialize_nnf_dfs_voting_numba(
             target_pos_guide,
             target_app_gray,
             style_pos_guide,
