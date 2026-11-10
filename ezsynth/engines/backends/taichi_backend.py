@@ -5,7 +5,12 @@ from ...config import EbsynthParamsConfig, PipelineConfig
 from ...consts import (
     COST_FUNCTION_NCC,
     EBSYNTH_VOTEMODE_PLAIN,
+    EBSYNTH_VOTEMODE_WEIGHTED,
+    SEARCH_MODE_BY_NAME,
+    SEARCH_MODE_JFA,
+    SEARCH_MODE_MULTICAND,
 )
+from ...torch_ops.jfa_ops import jfa_fine_radius, jfa_step_sizes
 from ...utils.taichi_runtime import ensure_ti_init as ensure_ti_init
 from ...utils.taichi_runtime import get_taichi_torch_device as get_taichi_torch_device
 from ...utils.taichi_runtime import get_ti_arch as get_ti_arch
@@ -19,8 +24,11 @@ class TaichiBackend:
     ):
         self.ebsynth_config = ebsynth_config
         self.pipeline_config = pipeline_config
-        ensure_ti_init()
+        # An explicit ``device`` ("cpu" / "cuda" / "mps") selects the Taichi arch;
+        # None keeps the process-wide runtime (or its default arch).
+        ensure_ti_init(ebsynth_config.device)
         self.device = get_taichi_torch_device()
+        self.search_mode = SEARCH_MODE_BY_NAME[ebsynth_config.search_mode]
 
         self.timer = SynthesisTimer()
         self.benchmark_enabled = False
@@ -174,6 +182,18 @@ class TaichiBackend:
             ),
         )
 
+        # Multicand: k - 1 alternative matches per pixel, initially empty.
+        alt_nnf = alt_err = None
+        if self.search_mode == SEARCH_MODE_MULTICAND:
+            slots = self.ebsynth_config.multicand_k - 1
+            alt_nnf = nnf_ti.unsqueeze(2).repeat(1, 1, slots, 1).contiguous()
+            alt_err = torch.full(
+                (target_h, target_w, slots),
+                tk.ALT_EMPTY,
+                dtype=torch.float32,
+                device=ti_device,
+            )
+
         for iter_idx in range(search_vote_iters):
             if cost_function_mode == COST_FUNCTION_NCC:
                 self._timed_operation(
@@ -208,89 +228,195 @@ class TaichiBackend:
                     n_size_step,
                 ),
             )
-            for pm_idx in range(patch_match_iters):
+            # Arguments shared by the search kernels.
+            images = (
+                style_ti,
+                target_style_prev,
+                s_guide_ti,
+                t_guide_ti,
+                modulation_ti,
+                use_mod,
+                s_weights_ti,
+                g_weights_ti,
+                patch_size,
+            )
+            tail = (
+                s_sat,
+                s_sq_sat,
+                t_sat,
+                t_sq_sat,
+                use_bilateral,
+                sigma_spatial,
+                sigma_color,
+                n_size_step,
+            )
+            pruning = self.ebsynth_config.search_pruning_threshold
+            full_radius = max(source_w, source_h) // 2
+
+            if self.search_mode == SEARCH_MODE_JFA:
+                for step in jfa_step_sizes(target_h, target_w):
+                    self._timed_operation(
+                        f"jfa_step_{iter_idx}_{step}",
+                        lambda: tk.jfa_step_kernel(
+                            nnf_ti,
+                            error_map,
+                            omega_map,
+                            *images,
+                            step,
+                            uniformity_weight,
+                            mask,
+                            cost_function_mode,
+                            omega_best,
+                            *tail,
+                        ),
+                    )
+                fine_radius = jfa_fine_radius(source_h, source_w)
+                if fine_radius >= 1:
+                    self._timed_operation(
+                        f"random_search_{iter_idx}",
+                        lambda: tk.random_search_kernel(
+                            nnf_ti,
+                            error_map,
+                            omega_map,
+                            *images,
+                            fine_radius,
+                            uniformity_weight,
+                            mask,
+                            pruning,
+                            cost_function_mode,
+                            omega_best,
+                            *tail,
+                        ),
+                    )
+            elif self.search_mode == SEARCH_MODE_MULTICAND:
                 self._timed_operation(
-                    f"pm_step_{iter_idx}_{pm_idx}",
-                    lambda: tk.patchmatch_step_kernel(
+                    f"multicand_refresh_{iter_idx}",
+                    lambda: (
+                        tk.multicand_refresh_kernel(
+                            alt_nnf, alt_err, *images, cost_function_mode, *tail
+                        ),
+                        tk.multicand_promote_kernel(
+                            nnf_ti,
+                            error_map,
+                            alt_nnf,
+                            alt_err,
+                            omega_map,
+                            patch_size,
+                            uniformity_weight,
+                            mask,
+                            omega_best,
+                        ),
+                    ),
+                )
+                for pm_idx in range(patch_match_iters):
+                    self._timed_operation(
+                        f"pm_step_{iter_idx}_{pm_idx}",
+                        lambda: tk.multicand_propagation_kernel(
+                            nnf_ti,
+                            error_map,
+                            alt_nnf,
+                            alt_err,
+                            omega_map,
+                            *images,
+                            pm_idx % 2,
+                            uniformity_weight,
+                            mask,
+                            cost_function_mode,
+                            omega_best,
+                            *tail,
+                        ),
+                    )
+                self._timed_operation(
+                    f"random_search_{iter_idx}",
+                    lambda: tk.multicand_random_search_kernel(
+                        nnf_ti,
+                        error_map,
+                        alt_nnf,
+                        alt_err,
+                        omega_map,
+                        *images,
+                        full_radius,
+                        uniformity_weight,
+                        mask,
+                        pruning,
+                        cost_function_mode,
+                        omega_best,
+                        *tail,
+                    ),
+                )
+            else:
+                for pm_idx in range(patch_match_iters):
+                    self._timed_operation(
+                        f"pm_step_{iter_idx}_{pm_idx}",
+                        lambda: tk.patchmatch_step_kernel(
+                            nnf_ti,
+                            error_map,
+                            omega_map,
+                            *images,
+                            pm_idx % 2,
+                            uniformity_weight,
+                            mask,
+                            cost_function_mode,
+                            omega_best,
+                            *tail,
+                        ),
+                    )
+                self._timed_operation(
+                    f"random_search_{iter_idx}",
+                    lambda: tk.random_search_kernel(
                         nnf_ti,
                         error_map,
                         omega_map,
-                        style_ti,
-                        target_style_prev,
-                        s_guide_ti,
-                        t_guide_ti,
-                        modulation_ti,
-                        use_mod,
-                        s_weights_ti,
-                        g_weights_ti,
-                        patch_size,
-                        pm_idx % 2,
+                        *images,
+                        full_radius,
                         uniformity_weight,
                         mask,
+                        pruning,
                         cost_function_mode,
                         omega_best,
-                        s_sat,
-                        s_sq_sat,
-                        t_sat,
-                        t_sq_sat,
+                        *tail,
+                    ),
+                )
+
+            acc_i, wsum_i = self._vote_get_scratch(output_image)
+            if (
+                self.search_mode == SEARCH_MODE_MULTICAND
+                and vote_mode == EBSYNTH_VOTEMODE_WEIGHTED
+                and not use_bilateral
+            ):
+                self._timed_operation(
+                    f"vote_{iter_idx}",
+                    lambda: tk.vote_weighted_multicand_kernel(
+                        style_ti,
+                        nnf_ti,
+                        error_map,
+                        alt_nnf,
+                        alt_err,
+                        acc_i,
+                        wsum_i,
+                        output_image,
+                        int(patch_size),
+                    ),
+                )
+            else:
+                self._timed_operation(
+                    f"vote_{iter_idx}",
+                    lambda: tk.run_vote_dispatch(
+                        output_image,
+                        style_ti,
+                        target_style_prev,
+                        nnf_ti,
+                        error_map,
+                        patch_size,
+                        vote_mode,
                         use_bilateral,
                         sigma_spatial,
                         sigma_color,
                         n_size_step,
+                        acc_i,
+                        wsum_i,
                     ),
                 )
-
-            self._timed_operation(
-                f"random_search_{iter_idx}",
-                lambda: tk.random_search_kernel(
-                    nnf_ti,
-                    error_map,
-                    omega_map,
-                    style_ti,
-                    target_style_prev,
-                    s_guide_ti,
-                    t_guide_ti,
-                    modulation_ti,
-                    use_mod,
-                    s_weights_ti,
-                    g_weights_ti,
-                    patch_size,
-                    max(source_w, source_h) // 2,
-                    uniformity_weight,
-                    mask,
-                    self.ebsynth_config.search_pruning_threshold,
-                    cost_function_mode,
-                    omega_best,
-                    s_sat,
-                    s_sq_sat,
-                    t_sat,
-                    t_sq_sat,
-                    use_bilateral,
-                    sigma_spatial,
-                    sigma_color,
-                    n_size_step,
-                ),
-            )
-
-            acc_i, wsum_i = self._vote_get_scratch(output_image)
-            self._timed_operation(
-                f"vote_{iter_idx}",
-                lambda: tk.run_vote_dispatch(
-                    output_image,
-                    style_ti,
-                    target_style_prev,
-                    nnf_ti,
-                    error_map,
-                    patch_size,
-                    vote_mode,
-                    use_bilateral,
-                    sigma_spatial,
-                    sigma_color,
-                    n_size_step,
-                    acc_i,
-                    wsum_i,
-                ),
-            )
 
             if iter_idx < search_vote_iters - 1:
                 tk.eval_mask_kernel(

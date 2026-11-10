@@ -109,8 +109,17 @@ class EbsynthParamsConfig(BaseModel):
     sigma_spatial: float = 4.0
     sigma_color: float = 10.0
     n_size_step: int = 1
-    # New: Cost function for patch matching.
-    cost_function: Literal["ssd", "ncc"] = "ssd"
+    # Patch cost: sum of squared differences, normalized cross-correlation (style
+    # channels; guides stay SSD) or sum of absolute differences (L1).
+    cost_function: Literal["ssd", "ncc", "sad"] = "ssd"
+    # Correspondence search (torch / taichi backends; the native backend supports
+    # "patchmatch" only). See ``consts.SEARCH_MODE_*``.
+    search_mode: Literal["patchmatch", "jfa", "multicand"] = "patchmatch"
+    # Matches kept per pixel in "multicand" mode (best match + k-1 alternatives).
+    multicand_k: int = Field(3, ge=2, le=8)
+    # Torch backend: storage dtype of patch grids. Costs, errors and votes are
+    # computed in float32; uint8 inputs are exact in all three dtypes.
+    precision: Literal["float32", "float16", "bfloat16"] = "float32"
     # New: Backend for synthesis operations.
     backend: Literal["cuda", "torch", "taichi"] = "cuda"
     # New: Device for synthesis (allows CPU with C++ extension)

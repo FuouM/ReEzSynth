@@ -23,6 +23,7 @@ def extract_patches(
     *,
     as_float: bool = False,
     clear_device_cache: bool = True,
+    dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """
     Extract all patches from an image using unfold.
@@ -30,6 +31,10 @@ def extract_patches(
     Args:
         image: (H, W, C) tensor
         patch_size: Size of square patches (typically 7)
+        as_float: keep uint8 input as floating point patches instead of rounding
+            back to uint8.
+        dtype: floating dtype of ``as_float`` patches; None keeps float32 for uint8
+            input and the input dtype for floating input.
 
     Returns:
         patches: (H, W, patch_size*patch_size*C) tensor where each position
@@ -45,7 +50,9 @@ def extract_patches(
         image_nchw = image.permute(2, 0, 1).unsqueeze(0)
 
         is_uint8 = image_nchw.dtype == torch.uint8
-        if is_uint8:
+        if as_float and dtype is not None:
+            image_nchw = image_nchw.to(dtype)
+        elif is_uint8:
             image_nchw = image_nchw.float()
 
         # Use replicate padding to match CUDA implementation
@@ -165,7 +172,7 @@ def _patch_offsets(
 
 class ImagePatches:
     """
-    On-demand view of ``extract_patches(image, patch_size, as_float=True)``.
+    On-demand view of ``extract_patches(image, patch_size, as_float=True, dtype=dtype)``.
 
     Holds only the (H, W, C) image and gathers flattened patches for requested
     centers, so memory scales with the number of requested patches instead of
@@ -176,11 +183,20 @@ class ImagePatches:
     ``chunk_pixels`` is the number of patches a consumer may gather at once.
     """
 
-    def __init__(self, image: torch.Tensor, patch_size: int, chunk_pixels: int):
+    def __init__(
+        self,
+        image: torch.Tensor,
+        patch_size: int,
+        chunk_pixels: int,
+        dtype: torch.dtype | None = None,
+    ):
         if patch_size % 2 == 0:
             raise ValueError("patch_size must be odd")
         height, width, channels = image.shape
-        values = image.float() if image.dtype == torch.uint8 else image
+        if dtype is not None:
+            values = image.to(dtype)
+        else:
+            values = image.float() if image.dtype == torch.uint8 else image
         self.pixels = values.reshape(height * width, channels)
         self.patch_size = patch_size
         self.chunk_pixels = max(1, int(chunk_pixels))
@@ -284,8 +300,10 @@ def compute_patch_ssd_vectorized(
     sigma_color: float = 10.0,
     n_size_step: int = 1,
     source_style_patches_for_bilateral: torch.Tensor | None = None,
+    l1: bool = False,
 ) -> torch.Tensor:
-    """Computes SSD. Handles both 2D grid and 1D list of target patches.
+    """Computes SSD (or SAD with ``l1=True``). Handles both 2D grid and 1D list of
+    target patches.
 
     When ``target_modulation_patches`` is set (same layout as ``target_patches``),
     scales each per-pixel guide squared difference by ``mod/255`` to match the
@@ -313,7 +331,10 @@ def compute_patch_ssd_vectorized(
 
     diff = matched_source_patches.float()
     diff.sub_(target_patches)
-    diff.square_()
+    if l1:
+        diff.abs_()
+    else:
+        diff.square_()
     C = len(weights)
     ps_sq = source_patches.shape[2] // C
     patch_size = round(ps_sq**0.5)
@@ -374,11 +395,12 @@ def compute_patch_ssd_style_guide_fused(
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,
     n_size_step: int = 1,
+    l1: bool = False,
 ) -> torch.Tensor:
     """
-    Style + guide SSD in one pass: one NNF flatten/clamp, one bilateral ``W`` when
-    used, and two gathers from the same source indices (less Python than two
-    separate ``compute_patch_ssd_vectorized`` calls).
+    Style + guide SSD (or SAD with ``l1=True``) in one pass: one NNF flatten/clamp,
+    one bilateral ``W`` when used, and two gathers from the same source indices
+    (less Python than two separate ``compute_patch_ssd_vectorized`` calls).
 
     **Parity:** match the legacy two-call path only when ``not use_bilateral`` and
     ``n_size_step == 1`` (dense SSD). Call sites must gate on that; for bilateral
@@ -412,10 +434,16 @@ def compute_patch_ssd_style_guide_fused(
 
     diff_s = ms.float()
     diff_s.sub_(ts)
-    diff_s.square_()
+    if l1:
+        diff_s.abs_()
+    else:
+        diff_s.square_()
     diff_g = mg.float()
     diff_g.sub_(tg)
-    diff_g.square_()
+    if l1:
+        diff_g.abs_()
+    else:
+        diff_g.square_()
     if not use_bilateral and n_size_step == 1:
         ds = diff_s.view(-1, Cs, ps_sq_style)
         dg = diff_g.view(-1, Cg, ps_sq_style)

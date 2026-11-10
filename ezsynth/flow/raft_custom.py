@@ -14,6 +14,7 @@ from ..engines.backends.common import get_auto_torch_device
 from ..raft.raft import RAFT
 from ..raft.utils import InputPadder
 from ..utils.gpu_memory import apply_gpu_memory_limit
+from ..utils.progress import report_progress
 from .types import FlowTorchDevice, RaftCheckpointName
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,7 @@ def _compute_custom_raft_sequence_with_model(
             desc=desc,
             disable=not show_progress,
         ):
+            report_progress("optical flow", i, len(frames) - 1)
             img1 = preprocess_image(frames[i])
             img2 = preprocess_image(frames[i + 1])
             padder = InputPadder(img1.shape)

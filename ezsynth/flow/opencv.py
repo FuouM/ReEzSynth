@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+from ..utils.progress import report_progress
 from .types import OpenCvFlowMethod
 
 
@@ -30,6 +31,7 @@ def compute_opencv_flow_sequence(
         range(len(frames) - 1),
         desc=f"Computing Optical Flow (CV2 {method})",
     ):
+        report_progress("optical flow", i, len(frames) - 1)
         prev_gray = gray_frames[i]
         curr_gray = gray_frames[i + 1]
 

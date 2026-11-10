@@ -8,9 +8,11 @@ This module implements the core PatchMatch operations:
 - random_search_step: Exploration via random offsets
 """
 
+from typing import TYPE_CHECKING
+
 import torch
 
-from ezsynth.consts import COST_FUNCTION_NCC
+from ezsynth.consts import COST_FUNCTION_NCC, COST_FUNCTION_SAD
 
 from .device_cache import clear_torch_device_cache
 from .microprofile import region as _mp_region
@@ -27,6 +29,9 @@ from .patch_ops import (
     compute_patch_ssd_style_guide_fused,
     compute_patch_ssd_vectorized,
 )
+
+if TYPE_CHECKING:
+    from .multicand_ops import CandidateSet
 
 # OPTIMIZATION: Cache for small offset tensors to avoid repeated allocations
 _OFFSET_TENSOR_CACHE = {}
@@ -134,7 +139,7 @@ def _patch_errors(
     *,
     region: str,
 ) -> torch.Tensor:
-    """SSD/NCC patch cost of ``candidate_coords`` against materialized patch grids."""
+    """SSD/NCC/SAD patch cost of ``candidate_coords`` against materialized grids."""
     dev = candidate_coords.device
     if cost_function_mode == COST_FUNCTION_NCC:
         with _mp_region(f"{region}:ncc", dev):
@@ -153,6 +158,7 @@ def _patch_errors(
                 **ssd_kw,
             )
     has_guide = source_guide_patches.numel() > 0
+    l1 = cost_function_mode == COST_FUNCTION_SAD
     if has_guide and not ssd_kw["use_bilateral"] and ssd_kw["n_size_step"] == 1:
         with _mp_region(f"{region}:ssd_fused", dev):
             return compute_patch_ssd_style_guide_fused(
@@ -164,6 +170,7 @@ def _patch_errors(
                 style_weights,
                 guide_weights,
                 target_modulation_patches,
+                l1=l1,
                 **ssd_kw,
             )
     with _mp_region(f"{region}:ssd_style", dev):
@@ -173,6 +180,7 @@ def _patch_errors(
             candidate_coords,
             style_weights,
             None,
+            l1=l1,
             **ssd_kw,
         )
     if has_guide:
@@ -184,6 +192,7 @@ def _patch_errors(
                 guide_weights,
                 target_modulation_patches,
                 source_style_patches_for_bilateral=source_style_patches,
+                l1=l1,
                 **ssd_kw,
             )
     return errors
@@ -199,6 +208,98 @@ def _gather_chunk(grid, ys: torch.Tensor, xs: torch.Tensor, indices: dict, role:
             indices[key] = index
         return grid.gather_index(index)
     return grid[ys, xs]
+
+
+def _dense_pixel_cost(
+    source: ImagePatches,
+    target: ImagePatches,
+    source_index: torch.Tensor,
+    target_index: torch.Tensor,
+    weights: torch.Tensor,
+    modulation: ImagePatches | None,
+    l1: bool,
+) -> torch.Tensor:
+    """Weighted dense SSD/SAD straight from (n, ps*ps, C) pixel gathers.
+
+    Same terms as :func:`compute_patch_ssd_style_guide_fused` on unfolded patches,
+    without building the channel-major patch rows or re-indexing them.
+    """
+    diff = source.pixels[source_index].float()
+    diff.sub_(target.pixels[target_index])
+    if l1:
+        diff.abs_()
+    else:
+        diff.square_()
+    if modulation is None:
+        return (diff.sum(dim=1) * weights.view(1, -1)).sum(dim=1)
+    # Same products and channel-major reduction as the materialized kernel, so both
+    # strategies give identical errors.
+    diff.mul_(modulation.pixels[target_index].float().div_(255.0))
+    diff.mul_(weights.view(1, 1, -1))
+    return diff.transpose(1, 2).contiguous().sum(dim=(1, 2))
+
+
+def _dense_ncc_style_cost(
+    source: ImagePatches,
+    target: ImagePatches,
+    source_index: torch.Tensor,
+    target_index: torch.Tensor,
+    style_weights: torch.Tensor,
+) -> torch.Tensor:
+    """Style term of :func:`compute_patch_ncc_vectorized` from pixel gathers."""
+    epsilon = 1e-6
+    s_vals = source.pixels[source_index].float().mean(dim=2)
+    t_vals = target.pixels[target_index].float().mean(dim=2)
+    mean_s = s_vals.mean(dim=1, keepdim=True)
+    mean_t = t_vals.mean(dim=1, keepdim=True)
+    std_s = s_vals.std(dim=1, keepdim=True, unbiased=False) + epsilon
+    std_t = t_vals.std(dim=1, keepdim=True, unbiased=False) + epsilon
+    cov = ((s_vals - mean_s) * (t_vals - mean_t)).mean(dim=1)
+    ncc = (cov / (std_s.squeeze(1) * std_t.squeeze(1))).clamp(-1.0, 1.0)
+    return (1.0 - ncc) * style_weights[0] * float(source_index.shape[1])
+
+
+def _dense_bounded_errors(
+    sy: torch.Tensor,
+    sx: torch.Tensor,
+    ty: torch.Tensor,
+    tx: torch.Tensor,
+    grids: tuple,
+    style_weights: torch.Tensor,
+    guide_weights: torch.Tensor,
+    cost_function_mode: int,
+    has_guide: bool,
+) -> torch.Tensor:
+    """Dense (no bilateral, ``n_size_step == 1``) patch cost of one chunk."""
+    source_style, target_style, source_guide, target_guide, modulation = grids
+    source_index = source_style.pixel_index(sy, sx)
+    target_index = target_style.pixel_index(ty, tx)
+    l1 = cost_function_mode == COST_FUNCTION_SAD
+    if cost_function_mode == COST_FUNCTION_NCC:
+        error = _dense_ncc_style_cost(
+            source_style, target_style, source_index, target_index, style_weights
+        )
+    else:
+        error = _dense_pixel_cost(
+            source_style,
+            target_style,
+            source_index,
+            target_index,
+            style_weights,
+            None,
+            l1,
+        )
+    if has_guide:
+        error += _dense_pixel_cost(
+            source_guide,
+            target_guide,
+            source_index,
+            target_index,
+            guide_weights,
+            modulation,
+            l1,
+        )
+    return error
 
 
 def _bounded_patch_errors(
@@ -222,9 +323,10 @@ def _bounded_patch_errors(
     Patch cost of ``candidates`` (N, 2) for target pixels (target_ys, target_xs),
     gathering at most ``chunk_pixels`` patches per grid at a time.
 
-    Each chunk's matched source patches become a (1, n, D) grid addressed by
-    ``(x=i, y=0)``, so the same cost kernels as the materialized path run on the
-    same values (results match up to float reduction order).
+    Dense costs (no bilateral, ``n_size_step == 1``) are computed straight from
+    (n, ps*ps, C) pixel gathers. Otherwise each chunk's matched source patches become
+    a (1, n, D) grid addressed by ``(x=i, y=0)`` and the materialized cost kernels
+    run on it. Both give the materialized path's values (up to float reduction order).
     """
     device = candidates.device
     H_s, W_s = source_style_patches.shape[:2]
@@ -237,6 +339,14 @@ def _bounded_patch_errors(
     )
     chunk = min(g.chunk_pixels for g in grids if isinstance(g, ImagePatches))
     has_guide = source_guide_patches.numel() > 0
+    used = [source_style_patches, target_style_patches, target_modulation_patches]
+    if has_guide:
+        used += [source_guide_patches, target_guide_patches]
+    dense = (
+        not ssd_kw["use_bilateral"]
+        and ssd_kw["n_size_step"] == 1
+        and all(isinstance(g, ImagePatches) for g in used if g is not None)
+    )
     total = candidates.shape[0]
     errors = torch.empty(total, dtype=torch.float32, device=device)
     for start in range(0, total, chunk):
@@ -247,6 +357,20 @@ def _bounded_patch_errors(
         sy = cand[:, 1].clamp(0, H_s - 1)
         ty = target_ys[start:end]
         tx = target_xs[start:end]
+        if dense:
+            with _mp_region(f"{region}:dense", device):
+                errors[start:end] = _dense_bounded_errors(
+                    sy,
+                    sx,
+                    ty,
+                    tx,
+                    grids,
+                    style_weights,
+                    guide_weights,
+                    cost_function_mode,
+                    has_guide,
+                )
+            continue
         indices: dict = {}
         ss = _gather_chunk(source_style_patches, sy, sx, indices, "source")
         ts = _gather_chunk(target_style_patches, ty, tx, indices, "target")
@@ -279,6 +403,195 @@ def _bounded_patch_errors(
     return errors
 
 
+def grid_patch_errors(
+    candidate_coords: torch.Tensor,
+    source_style_patches,
+    target_style_patches,
+    source_guide_patches,
+    target_guide_patches,
+    style_weights: torch.Tensor,
+    guide_weights: torch.Tensor,
+    patch_size: int,
+    cost_function_mode: int,
+    target_modulation_patches=None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    use_bilateral: bool = False,
+    sigma_spatial: float = 4.0,
+    sigma_color: float = 10.0,
+    n_size_step: int = 1,
+    *,
+    region: str = "try_patch",
+) -> torch.Tensor:
+    """
+    Patch cost of an (H_t, W_t, 2) candidate grid, one candidate per target pixel.
+
+    Works on materialized unfold grids and on :class:`ImagePatches` views (then the
+    cost is gathered in chunks of ``chunk_pixels`` target pixels).
+    """
+    ssd_kw = {
+        "use_bilateral": use_bilateral,
+        "sigma_spatial": sigma_spatial,
+        "sigma_color": sigma_color,
+        "n_size_step": n_size_step,
+    }
+    if _uses_image_patches(
+        source_style_patches,
+        target_style_patches,
+        source_guide_patches,
+        target_guide_patches,
+        target_modulation_patches,
+    ):
+        if candidate_coords.dim() != 3:
+            raise ValueError("on-demand patch grids need an (H, W, 2) candidate grid")
+        H_t, W_t = candidate_coords.shape[:2]
+        target_ys, target_xs = _target_grid_coords(H_t, W_t, candidate_coords.device)
+        return _bounded_patch_errors(
+            candidate_coords.reshape(-1, 2),
+            target_ys,
+            target_xs,
+            source_style_patches,
+            target_style_patches,
+            source_guide_patches,
+            target_guide_patches,
+            target_modulation_patches,
+            style_weights,
+            guide_weights,
+            patch_size,
+            cost_function_mode,
+            ssd_kw,
+            region=region,
+        ).view(H_t, W_t)
+    return _patch_errors(
+        source_style_patches,
+        target_style_patches,
+        source_guide_patches,
+        target_guide_patches,
+        candidate_coords,
+        style_weights,
+        guide_weights,
+        patch_size,
+        cost_function_mode,
+        target_modulation_patches,
+        ssd_kw,
+        source_stats,
+        target_stats,
+        region=region,
+    )
+
+
+class ActivePatchCost:
+    """
+    Patch cost of (N, 2) candidates for a fixed list of target pixels.
+
+    Materialized grids gather the target-side patches once (they are invariant
+    while the active set is fixed); :class:`ImagePatches` views gather them per
+    chunk instead.
+    """
+
+    def __init__(
+        self,
+        target_ys: torch.Tensor,
+        target_xs: torch.Tensor,
+        source_style_patches,
+        target_style_patches,
+        source_guide_patches,
+        target_guide_patches,
+        style_weights: torch.Tensor,
+        guide_weights: torch.Tensor,
+        patch_size: int,
+        cost_function_mode: int,
+        target_modulation_patches=None,
+        source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+        target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+        use_bilateral: bool = False,
+        sigma_spatial: float = 4.0,
+        sigma_color: float = 10.0,
+        n_size_step: int = 1,
+    ):
+        self.target_ys = target_ys
+        self.target_xs = target_xs
+        self.source_style_patches = source_style_patches
+        self.target_style_patches = target_style_patches
+        self.source_guide_patches = source_guide_patches
+        self.target_guide_patches = target_guide_patches
+        self.target_modulation_patches = target_modulation_patches
+        self.style_weights = style_weights
+        self.guide_weights = guide_weights
+        self.patch_size = patch_size
+        self.cost_function_mode = cost_function_mode
+        self.source_stats = source_stats
+        self.ssd_kw = {
+            "use_bilateral": use_bilateral,
+            "sigma_spatial": sigma_spatial,
+            "sigma_color": sigma_color,
+            "n_size_step": n_size_step,
+        }
+        self.bounded = _uses_image_patches(
+            source_style_patches,
+            target_style_patches,
+            source_guide_patches,
+            target_guide_patches,
+            target_modulation_patches,
+        )
+        self.target_style_v = self.target_guide_v = None
+        self.target_mod_v = self.target_stats_v = None
+        if not self.bounded:
+            self.target_style_v = target_style_patches[target_ys, target_xs]
+            self.target_guide_v = (
+                target_guide_patches[target_ys, target_xs]
+                if target_guide_patches.numel() > 0
+                else target_guide_patches
+            )
+            self.target_mod_v = (
+                target_modulation_patches[target_ys, target_xs]
+                if target_modulation_patches is not None
+                else None
+            )
+            if target_stats is not None:
+                t_vals, t_mean, t_std = target_stats
+                self.target_stats_v = (
+                    t_vals[target_ys, target_xs],
+                    t_mean[target_ys, target_xs],
+                    t_std[target_ys, target_xs],
+                )
+
+    def __call__(self, candidates: torch.Tensor) -> torch.Tensor:
+        if self.bounded:
+            return _bounded_patch_errors(
+                candidates,
+                self.target_ys,
+                self.target_xs,
+                self.source_style_patches,
+                self.target_style_patches,
+                self.source_guide_patches,
+                self.target_guide_patches,
+                self.target_modulation_patches,
+                self.style_weights,
+                self.guide_weights,
+                self.patch_size,
+                self.cost_function_mode,
+                self.ssd_kw,
+                region="rs",
+            )
+        return _patch_errors(
+            self.source_style_patches,
+            self.target_style_v,
+            self.source_guide_patches,
+            self.target_guide_v,
+            candidates,
+            self.style_weights,
+            self.guide_weights,
+            self.patch_size,
+            self.cost_function_mode,
+            self.target_mod_v,
+            self.ssd_kw,
+            self.source_stats,
+            self.target_stats_v,
+            region="rs",
+        )
+
+
 def try_patch_batch(
     candidate_coords: torch.Tensor,
     current_nnf: torch.Tensor,
@@ -304,9 +617,13 @@ def try_patch_batch(
     update_nnf: bool = True,
     *,
     omega_mean_map: torch.Tensor | None = None,
+    candidate_patch_errors: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Try candidate patches and update NNF if better.
+
+    ``candidate_patch_errors`` skips the cost evaluation when the caller already
+    computed :func:`grid_patch_errors` for ``candidate_coords``.
     """
     _dev = candidate_coords.device
     H_s, W_s = source_style_patches.shape[:2]
@@ -318,55 +635,24 @@ def try_patch_batch(
         & (candidate_coords[..., 1] < H_s - r)
     )
 
-    ssd_kw = {
-        "use_bilateral": use_bilateral,
-        "sigma_spatial": sigma_spatial,
-        "sigma_color": sigma_color,
-        "n_size_step": n_size_step,
-    }
-    if _uses_image_patches(
-        source_style_patches,
-        target_style_patches,
-        source_guide_patches,
-        target_guide_patches,
-        target_modulation_patches,
-    ):
-        if candidate_coords.dim() != 3:
-            raise ValueError("on-demand patch grids need an (H, W, 2) candidate grid")
-        H_t, W_t = candidate_coords.shape[:2]
-        target_ys, target_xs = _target_grid_coords(H_t, W_t, _dev)
-        candidate_patch_errors = _bounded_patch_errors(
-            candidate_coords.reshape(-1, 2),
-            target_ys,
-            target_xs,
-            source_style_patches,
-            target_style_patches,
-            source_guide_patches,
-            target_guide_patches,
-            target_modulation_patches,
-            style_weights,
-            guide_weights,
-            patch_size,
-            cost_function_mode,
-            ssd_kw,
-            region="try_patch",
-        ).view(H_t, W_t)
-    else:
-        candidate_patch_errors = _patch_errors(
-            source_style_patches,
-            target_style_patches,
-            source_guide_patches,
-            target_guide_patches,
+    if candidate_patch_errors is None:
+        candidate_patch_errors = grid_patch_errors(
             candidate_coords,
+            source_style_patches,
+            target_style_patches,
+            source_guide_patches,
+            target_guide_patches,
             style_weights,
             guide_weights,
             patch_size,
             cost_function_mode,
             target_modulation_patches,
-            ssd_kw,
             source_stats,
             target_stats,
-            region="try_patch",
+            use_bilateral,
+            sigma_spatial,
+            sigma_color,
+            n_size_step,
         )
 
     if uniformity_weight == 0.0:
@@ -616,10 +902,15 @@ def random_search_step(
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,
     n_size_step: int = 1,
+    alternatives: "CandidateSet | None" = None,
 ):
     """
     Optimized random search with pruning.
     OPTIMIZED: Reduced omega computations and pre-computed constants.
+
+    With ``alternatives`` (multicand mode) every radius also samples around each
+    stored alternative match, and displaced or rejected candidates are offered to
+    the alternative set.
     """
     device = nnf.device
     H_s, W_s = source_style_patches.shape[:2]
@@ -649,41 +940,29 @@ def random_search_step(
         current_nnf_active = nnf[y_coords, x_coords]
         current_errors_active = error_map[y_coords, x_coords]
 
-        bounded = _uses_image_patches(
+        cost = ActivePatchCost(
+            y_coords,
+            x_coords,
             source_style_patches,
             target_style_patches,
             source_guide_patches,
             target_guide_patches,
+            style_weights,
+            guide_weights,
+            patch_size,
+            cost_function_mode,
             target_modulation_patches,
+            source_stats,
+            target_stats,
+            use_bilateral,
+            sigma_spatial,
+            sigma_color,
+            n_size_step,
         )
-        target_style_p_v = target_guide_p_v = target_mod_v = target_stats_v = None
-        if not bounded:
-            # Target-side data is invariant across random-search radii for this
-            # active set. On-demand grids gather it per chunk instead.
-            target_style_p_v = target_style_patches[y_coords, x_coords]
-            target_guide_p_v = (
-                target_guide_patches[y_coords, x_coords]
-                if target_guide_patches.numel() > 0
-                else target_guide_patches
-            )
-            target_mod_v = (
-                target_modulation_patches[y_coords, x_coords]
-                if target_modulation_patches is not None
-                else None
-            )
-            if target_stats is not None:
-                t_vals, t_mean, t_std = target_stats
-                target_stats_v = (
-                    t_vals[y_coords, x_coords],
-                    t_mean[y_coords, x_coords],
-                    t_std[y_coords, x_coords],
-                )
-        ssd_kw = {
-            "use_bilateral": use_bilateral,
-            "sigma_spatial": sigma_spatial,
-            "sigma_color": sigma_color,
-            "n_size_step": n_size_step,
-        }
+        alt_active = alt_present = None
+        if alternatives is not None:
+            alt_active = alternatives.nnf[y_coords, x_coords]
+            alt_present = torch.isfinite(alternatives.errors[y_coords, x_coords])
 
         use_omega_cost = uniformity_weight != 0.0
         omega_mean_buf = None
@@ -698,133 +977,135 @@ def random_search_step(
                 omega_mean_map, current_nnf_active
             )
 
+    def _draw_offsets(radius: int) -> None:
+        if generator is not None:
+            torch.randint(
+                -radius,
+                radius + 1,
+                (num_active,),
+                device=device,
+                generator=generator,
+                out=rand_buf_x,
+            )
+            torch.randint(
+                -radius,
+                radius + 1,
+                (num_active,),
+                device=device,
+                generator=generator,
+                out=rand_buf_y,
+            )
+        else:
+            torch.randint(
+                -radius, radius + 1, (num_active,), device=device, out=rand_buf_x
+            )
+            torch.randint(
+                -radius, radius + 1, (num_active,), device=device, out=rand_buf_y
+            )
+
+    num_bases = 1 if alternatives is None else 1 + alternatives.slots
     radius = initial_radius
     while radius >= 1:
         with _mp_region("rs:radius_iter", device):
-            # --- 2. Generate candidates only for active pixels ---
-            if generator is not None:
-                torch.randint(
-                    -radius,
-                    radius + 1,
-                    (num_active,),
-                    device=device,
-                    generator=generator,
-                    out=rand_buf_x,
+            # Base 0 is the current match; multicand mode also samples around
+            # every stored alternative.
+            for base_index in range(num_bases):
+                # --- 2. Generate candidates only for active pixels ---
+                _draw_offsets(radius)
+                base = (
+                    current_nnf_active
+                    if base_index == 0
+                    else alt_active[:, base_index - 1]
                 )
-                torch.randint(
-                    -radius,
-                    radius + 1,
-                    (num_active,),
-                    device=device,
-                    generator=generator,
-                    out=rand_buf_y,
+                candidate_buf[:, 0].copy_(base[:, 0])
+                candidate_buf[:, 1].copy_(base[:, 1])
+                candidate_buf[:, 0].add_(rand_buf_x)
+                candidate_buf[:, 1].add_(rand_buf_y)
+                cand_v = candidate_buf
+
+                # --- 3. Validate active candidates ---
+                valid_mask_active = (
+                    (cand_v[..., 0] >= r)
+                    & (cand_v[..., 0] < W_s - r)
+                    & (cand_v[..., 1] >= r)
+                    & (cand_v[..., 1] < H_s - r)
                 )
-            else:
-                torch.randint(
-                    -radius, radius + 1, (num_active,), device=device, out=rand_buf_x
-                )
-                torch.randint(
-                    -radius, radius + 1, (num_active,), device=device, out=rand_buf_y
-                )
+                if base_index > 0:
+                    valid_mask_active &= alt_present[:, base_index - 1]
 
-            candidate_buf[:, 0].copy_(current_nnf_active[:, 0])
-            candidate_buf[:, 1].copy_(current_nnf_active[:, 1])
-            candidate_buf[:, 0].add_(rand_buf_x)
-            candidate_buf[:, 1].add_(rand_buf_y)
-            candidate_coords_active = candidate_buf
+                # --- 4. Compute errors for active candidates ---
+                # Keeping the full active set avoids a costly MPS nonzero/compaction
+                # per radius; invalid candidates are masked out before any write.
+                cand_errors_v = cost(cand_v)
 
-            # --- 3. Validate active candidates ---
-            valid_mask_active = (
-                (candidate_coords_active[..., 0] >= r)
-                & (candidate_coords_active[..., 0] < W_s - r)
-                & (candidate_coords_active[..., 1] >= r)
-                & (candidate_coords_active[..., 1] < H_s - r)
-            )
-
-            # --- 4. Compute errors for active candidates ---
-            # Keeping the full active set avoids a costly MPS nonzero/compaction
-            # per radius; invalid candidates are masked out before any write.
-            cand_v = candidate_coords_active
-
-            if bounded:
-                cand_errors_v = _bounded_patch_errors(
-                    cand_v,
-                    y_coords,
-                    x_coords,
-                    source_style_patches,
-                    target_style_patches,
-                    source_guide_patches,
-                    target_guide_patches,
-                    target_modulation_patches,
-                    style_weights,
-                    guide_weights,
-                    patch_size,
-                    cost_function_mode,
-                    ssd_kw,
-                    region="rs",
-                )
-            else:
-                cand_errors_v = _patch_errors(
-                    source_style_patches,
-                    target_style_p_v,
-                    source_guide_patches,
-                    target_guide_p_v,
-                    cand_v,
-                    style_weights,
-                    guide_weights,
-                    patch_size,
-                    cost_function_mode,
-                    target_mod_v,
-                    ssd_kw,
-                    source_stats,
-                    target_stats_v,
-                    region="rs",
-                )
-
-            # --- 5. Compare total error and update ---
-            if use_omega_cost:
-                cand_omega_v = gather_omega_scores_from_patches(omega_mean_map, cand_v)
-                cand_total_error = cand_errors_v + uniformity_factor * cand_omega_v
-                curr_total_error = (
-                    current_errors_active + uniformity_factor * curr_omega_active
-                )
-            else:
-                cand_total_error = cand_errors_v
-                curr_total_error = current_errors_active
-
-            update_mask_v = (cand_total_error < curr_total_error) & valid_mask_active
-
-            update_indices_in_v = update_mask_v.nonzero(as_tuple=True)[0]
-            if update_indices_in_v.numel() > 0:
-                # Get original coordinates of pixels to update
-                final_y = y_coords[update_indices_in_v]
-                final_x = x_coords[update_indices_in_v]
-
-                old_nnf_vals = nnf[final_y, final_x]
-                new_nnf_vals = cand_v[update_indices_in_v]
-
-                update_omega_map(
-                    omega_map,
-                    old_nnf_vals,
-                    new_nnf_vals,
-                    patch_size,
-                    clear_device_cache=False,
-                )
-                nnf[final_y, final_x] = new_nnf_vals.to(nnf.dtype)
-                error_map[final_y, final_x] = cand_errors_v[update_indices_in_v]
-
-                # OPTIMIZATION: Update cached current NNF and omega for updated pixels
-                current_nnf_active[update_indices_in_v] = new_nnf_vals.to(
-                    current_nnf_active.dtype
-                )
+                # --- 5. Compare total error and update ---
                 if use_omega_cost:
-                    curr_omega_active[update_indices_in_v] = cand_omega_v[
+                    cand_omega_v = gather_omega_scores_from_patches(
+                        omega_mean_map, cand_v
+                    )
+                    cand_total_error = cand_errors_v + uniformity_factor * cand_omega_v
+                    curr_total_error = (
+                        current_errors_active + uniformity_factor * curr_omega_active
+                    )
+                else:
+                    cand_total_error = cand_errors_v
+                    curr_total_error = current_errors_active
+
+                update_mask_v = (
+                    cand_total_error < curr_total_error
+                ) & valid_mask_active
+
+                if alternatives is not None:
+                    # Snapshot before the primary update: displaced matches become
+                    # alternatives, rejected valid candidates are offered as well.
+                    offer_coords = torch.where(
+                        update_mask_v.unsqueeze(-1), current_nnf_active, cand_v
+                    )
+                    offer_errors = torch.where(
+                        update_mask_v, current_errors_active, cand_errors_v
+                    )
+
+                update_indices_in_v = update_mask_v.nonzero(as_tuple=True)[0]
+                if update_indices_in_v.numel() > 0:
+                    # Get original coordinates of pixels to update
+                    final_y = y_coords[update_indices_in_v]
+                    final_x = x_coords[update_indices_in_v]
+
+                    old_nnf_vals = nnf[final_y, final_x]
+                    new_nnf_vals = cand_v[update_indices_in_v]
+
+                    update_omega_map(
+                        omega_map,
+                        old_nnf_vals,
+                        new_nnf_vals,
+                        patch_size,
+                        clear_device_cache=False,
+                    )
+                    nnf[final_y, final_x] = new_nnf_vals.to(nnf.dtype)
+                    error_map[final_y, final_x] = cand_errors_v[update_indices_in_v]
+
+                    # OPTIMIZATION: Update cached current NNF and omega for updated pixels
+                    current_nnf_active[update_indices_in_v] = new_nnf_vals.to(
+                        current_nnf_active.dtype
+                    )
+                    if use_omega_cost:
+                        curr_omega_active[update_indices_in_v] = cand_omega_v[
+                            update_indices_in_v
+                        ]
+                        omega_patch_mean_map_into(omega_mean_buf, omega_map, patch_size)
+                        clear_torch_device_cache(device)
+                    current_errors_active[update_indices_in_v] = cand_errors_v[
                         update_indices_in_v
                     ]
-                    omega_patch_mean_map_into(omega_mean_buf, omega_map, patch_size)
-                    clear_torch_device_cache(device)
-                current_errors_active[update_indices_in_v] = cand_errors_v[
-                    update_indices_in_v
-                ]
+
+                if alternatives is not None:
+                    alternatives.offer(
+                        y_coords,
+                        x_coords,
+                        offer_coords,
+                        offer_errors,
+                        nnf,
+                        valid_mask_active,
+                    )
 
         radius //= 2

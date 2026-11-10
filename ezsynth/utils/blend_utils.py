@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .blend_logic import Reconstructor, hist_blender
+from .progress import report_progress
 from .warp_utils import Warp
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,7 @@ class Blender:
 
         hist_blends = []
         for i in tqdm(range(num_blend_frames), desc="Histogram Blending"):
+            report_progress("histogram blending", i, num_blend_frames)
             # --- REPLICATING OLD LOGIC ---
             # The old code paired the error/mask for frame `i+1` with the styled result from frame `i`.
             # This creates a blended result for the keyframe itself.

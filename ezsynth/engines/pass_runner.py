@@ -16,6 +16,7 @@ from ..utils.occlusion import (
     mask_to_bgr,
     modulation_from_mask,
 )
+from ..utils.progress import report_progress
 from ..utils.sequence_utils import SynthesisSequence
 from ..utils.warp_utils import PositionalGuide, Warp
 from .synthesis_engine import EbsynthEngine, PreparedSynthesisContext
@@ -70,7 +71,10 @@ class SynthesisPassRunner:
         pipeline_config = self.engine.pipeline_config
         synthesis_context = None
 
-        for source_idx in tqdm(frame_indices, desc=desc):
+        stage = "forward pass" if is_forward else "reverse pass"
+        num_steps = len(frame_indices)
+        for step_idx, source_idx in enumerate(tqdm(frame_indices, desc=desc)):
+            report_progress(stage, step_idx, num_steps)
             target_idx = source_idx + step
             transition_idx = source_idx if is_forward else target_idx
             flow = self.precompute_state.fwd_flows[transition_idx]

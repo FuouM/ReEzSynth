@@ -79,6 +79,11 @@ def compute_budget_bytes(
     return budget
 
 
+def reserve_bytes() -> int:
+    """GPU memory always left free for other applications (EZSYNTH_GPU_MEMORY_RESERVE_MB)."""
+    return int(_env_float("EZSYNTH_GPU_MEMORY_RESERVE_MB", DEFAULT_RESERVE_MB) * _MIB)
+
+
 def apply_gpu_memory_limit(device: torch.device | str | None = None) -> int | None:
     """Cap the caching allocator on ``device`` once; returns the budget in bytes or None.
 
@@ -110,9 +115,7 @@ def apply_gpu_memory_limit(device: torch.device | str | None = None) -> int | No
             total,
             torch.cuda.memory_reserved(index),
             fraction=_env_float("EZSYNTH_GPU_MEMORY_FRACTION", DEFAULT_FRACTION),
-            reserve_bytes=int(
-                _env_float("EZSYNTH_GPU_MEMORY_RESERVE_MB", DEFAULT_RESERVE_MB) * _MIB
-            ),
+            reserve_bytes=reserve_bytes(),
             limit_bytes=int(float(limit_mb) * _MIB) if limit_mb else None,
         )
         torch.cuda.set_per_process_memory_fraction(budget / total, index)

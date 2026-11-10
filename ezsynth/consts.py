@@ -23,6 +23,22 @@ EBSYNTH_VOTEMODE_WEIGHTED = 0x0002
 # --- Cost Function Constants ---
 COST_FUNCTION_SSD = 0
 COST_FUNCTION_NCC = 1
+COST_FUNCTION_SAD = 2
+
+# --- Search Mode Constants (torch / taichi backends) ---
+# PatchMatch: neighbour propagation + exponentially shrinking random search.
+SEARCH_MODE_PATCHMATCH = 0
+# Jump flooding: propagation from neighbours at halving step sizes, then a fine
+# random search.
+SEARCH_MODE_JFA = 1
+# PatchMatch that also keeps ``multicand_k - 1`` alternative matches per pixel;
+# alternatives seed propagation/random search and blend into weighted voting.
+SEARCH_MODE_MULTICAND = 2
+SEARCH_MODE_BY_NAME = {
+    "patchmatch": SEARCH_MODE_PATCHMATCH,
+    "jfa": SEARCH_MODE_JFA,
+    "multicand": SEARCH_MODE_MULTICAND,
+}
 
 # --- Native extension loader controls ---
 # The loader itself lives in ``ezsynth.native``. When False (default): try the

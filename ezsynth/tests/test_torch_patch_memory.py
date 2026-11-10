@@ -4,6 +4,7 @@ import torch
 from ezsynth.config import EbsynthParamsConfig, PipelineConfig
 from ezsynth.consts import (
     COST_FUNCTION_NCC,
+    COST_FUNCTION_SAD,
     COST_FUNCTION_SSD,
     EBSYNTH_VOTEMODE_WEIGHTED,
 )
@@ -107,6 +108,19 @@ def test_plan_level_switches_on_budget(monkeypatch):
         plan_level(shape, "cpu", iterative=True)
 
 
+def test_plan_level_rejects_alternatives_over_budget(monkeypatch):
+    # 7 alternatives x 4096 pixels need ~1 MiB of candidate state alone.
+    oversize = LevelShape((64, 64), (64, 64), 3, 12, 0, 7, candidate_slots=7)
+    monkeypatch.delenv(STRATEGY_ENV, raising=False)
+    monkeypatch.setenv(BUDGET_ENV, "0.5")
+    with pytest.raises(MemoryError, match="multicand_k"):
+        plan_level(oversize, "cpu", iterative=True)
+
+    # The same level without alternatives fits in bounded chunks.
+    plain = LevelShape((64, 64), (64, 64), 3, 12, 0, 7)
+    assert plan_level(plain, "cpu", iterative=True).strategy == "bounded"
+
+
 def _inputs(device: torch.device, with_modulation: bool):
     gen = torch.Generator().manual_seed(11)
     h_s, w_s, h_t, w_t = 12, 14, 10, 12
@@ -142,9 +156,11 @@ def _inputs(device: torch.device, with_modulation: bool):
     return tuple(t.to(device) for t in tensors)
 
 
-def _run(device, residual, cost, bilateral, inputs):
+def _run(device, residual, cost, bilateral, inputs, **params):
     backend = PyTorchBackend(
-        EbsynthParamsConfig(use_bilateral=bilateral, search_pruning_threshold=40.0),
+        EbsynthParamsConfig(
+            use_bilateral=bilateral, search_pruning_threshold=40.0, **params
+        ),
         PipelineConfig(use_residual_transfer=residual),
     )
     backend.device = device
@@ -209,3 +225,35 @@ def test_bounded_strategy_matches_materialized(
         assert int(image_diff.max()) <= 1
         assert float((image_diff > 0).float().mean()) < 0.05
         torch.testing.assert_close(error, ref_error, rtol=5e-3, atol=1e-3)
+
+
+@pytest.mark.parametrize("residual", [False, True], ids=["plain", "residual"])
+@pytest.mark.parametrize(
+    ("search_mode", "multicand_k", "cost", "with_modulation"),
+    [
+        ("jfa", 3, COST_FUNCTION_SSD, False),
+        ("jfa", 3, COST_FUNCTION_SAD, True),
+        ("multicand", 2, COST_FUNCTION_SSD, False),
+        ("multicand", 3, COST_FUNCTION_SSD, True),
+        ("multicand", 3, COST_FUNCTION_SAD, False),
+    ],
+    ids=["jfa", "jfa-sad-mod", "multicand2", "multicand3-mod", "multicand3-sad"],
+)
+def test_bounded_strategy_matches_materialized_search_modes(
+    monkeypatch, residual, search_mode, multicand_k, cost, with_modulation
+):
+    device = torch.device("cpu")
+    inputs = _inputs(device, with_modulation)
+    params = {"search_mode": search_mode, "multicand_k": multicand_k}
+
+    monkeypatch.setenv(STRATEGY_ENV, "materialized")
+    monkeypatch.delenv(BUDGET_ENV, raising=False)
+    ref = _run(device, residual, cost, False, inputs, **params)
+
+    monkeypatch.setenv(STRATEGY_ENV, "bounded")
+    monkeypatch.setenv(BUDGET_ENV, "0.2")
+    image, error, nnf = _run(device, residual, cost, False, inputs, **params)
+
+    assert torch.equal(nnf, ref[2])
+    assert torch.equal(image, ref[0])
+    assert torch.equal(error, ref[1])

@@ -9,12 +9,14 @@ import torch.nn.functional as F
 from ..config import EbsynthParamsConfig, PipelineConfig
 from ..consts import (
     COST_FUNCTION_NCC,
+    COST_FUNCTION_SAD,
     COST_FUNCTION_SSD,
     EBSYNTH_VOTEMODE_PLAIN,
     EBSYNTH_VOTEMODE_WEIGHTED,
 )
 from ..guide import GuideObject
 from ..utils.gpu_memory import apply_gpu_memory_limit
+from ..utils.progress import report_progress
 from ..utils.timer import SynthesisTimer
 from .backends.common import random_init_nnf, resample_tensor
 
@@ -24,6 +26,19 @@ EngineRunResult = (
     tuple[np.ndarray, np.ndarray | None]
     | tuple[np.ndarray, np.ndarray | None, np.ndarray]
 )
+
+# Seed for the initial random NNF so repeated runs give identical results.
+NNF_INIT_SEED = 2024
+
+
+def _seeded_generator(device) -> torch.Generator | None:
+    """Generator for the initial NNF; MPS randint does not reliably accept one."""
+    device_type = torch.device(device).type
+    if device_type == "mps":
+        return None
+    generator = torch.Generator(device=device_type)
+    generator.manual_seed(NNF_INIT_SEED)
+    return generator
 
 
 class PreparedSynthesisContext:
@@ -252,8 +267,10 @@ class EbsynthEngine:
         # branch-local so optional dependencies do not affect unrelated backends.
         if self.backend_type == "cuda":
             from ..consts import ensure_extension_loaded
-            from .backends.cuda_backend import CudaBackend
+            from .backends.cuda_backend import CudaBackend, validate_native_options
 
+            # Reject unsupported options before a possible JIT build.
+            validate_native_options(ebsynth_config)
             ensure_extension_loaded()
             # Check if device is specified in config (for CPU mode with C++ extension)
             device = getattr(ebsynth_config, "device", None)
@@ -286,6 +303,7 @@ class EbsynthEngine:
         self.cost_function_map = {
             "ssd": COST_FUNCTION_SSD,
             "ncc": COST_FUNCTION_NCC,
+            "sad": COST_FUNCTION_SAD,
         }
         logger.info(
             f"Ebsynth Engine initialized with backend: '{self.backend_type}' on device: '{self.device}'"
@@ -420,6 +438,7 @@ class EbsynthEngine:
                                 p_sh,
                                 p_sw,
                                 self.ebsynth_config.patch_size,
+                                generator=_seeded_generator(self.device),
                             )
                     else:
                         nnf_float = nnf.permute(2, 0, 1).unsqueeze(0).float() * 2.0
@@ -459,6 +478,7 @@ class EbsynthEngine:
                     )
 
                 self._timed_operation(f"pyramid_level_{level}", _process_pyramid_level)
+                report_progress("level", level + 1, context.num_pyramid_levels)
 
         self._timed_operation("pyramid_processing", _run_pyramid_loop)
 

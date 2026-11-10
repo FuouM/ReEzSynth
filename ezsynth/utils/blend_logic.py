@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+from .progress import report_progress
+
 logger = logging.getLogger(__name__)
 
 # --- Optional Dependency Handling ---
@@ -264,6 +266,7 @@ class Reconstructor:
 
         desc = f"Reconstruction ({self.solver})"
         for i in tqdm(range(num_frames), desc=desc):
+            report_progress(f"reconstruction ({self.solver})", i, num_frames)
             if self.solver == "seamless":
                 frame = seamless_clone_blending(
                     style_fwd[i], style_bwd[i], err_masks[i]

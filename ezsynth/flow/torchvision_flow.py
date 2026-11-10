@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
 from ..utils.gpu_memory import apply_gpu_memory_limit
+from ..utils.progress import report_progress
 from .types import FlowTorchDevice, TorchVisionRaftModel
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ def _compute_torchvision_raft_sequence_with_model(
             desc=desc,
             disable=not show_progress,
         ):
+            report_progress("optical flow", i, len(frames) - 1)
             img1 = torch.from_numpy(frames[i]).permute(2, 0, 1).unsqueeze(0).to(dev)
             img2 = torch.from_numpy(frames[i + 1]).permute(2, 0, 1).unsqueeze(0).to(dev)
             img1 = img1.flip(1)

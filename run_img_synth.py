@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 # Constants for synthesis parameters
 USE_RESIDUAL_TRANSFER = True
-COST_FUNCTION = "ssd"
 EXAMPLES_DIR = "examples"
 
 
@@ -72,6 +71,31 @@ def parse_args() -> Namespace:
         default=1,
         help="Patch comparison step size (default: 1, >1 for sparse/faster matching)",
     )
+    parser.add_argument(
+        "--cost-function",
+        choices=["ssd", "ncc", "sad"],
+        default="ssd",
+        help="Patch cost: sum of squared / absolute differences or normalized "
+        "cross-correlation (default: ssd; the cuda/cpu backends support ssd, ncc)",
+    )
+    parser.add_argument(
+        "--search-mode",
+        choices=["patchmatch", "jfa", "multicand"],
+        default="patchmatch",
+        help="Correspondence search (torch/taichi backends; default: patchmatch)",
+    )
+    parser.add_argument(
+        "--multicand-k",
+        type=int,
+        default=3,
+        help="Matches kept per pixel with --search-mode multicand (2-8, default: 3)",
+    )
+    parser.add_argument(
+        "--precision",
+        choices=["float32", "float16", "bfloat16"],
+        default="float32",
+        help="Patch storage precision of the torch backend (default: float32)",
+    )
     return parser.parse_args()
 
 
@@ -113,7 +137,10 @@ def build_config(args: Namespace, **overrides) -> RunConfig:
     params = {
         "backend": backend,
         "use_residual_transfer": USE_RESIDUAL_TRANSFER,
-        "cost_function": COST_FUNCTION,
+        "cost_function": args.cost_function,
+        "search_mode": args.search_mode,
+        "multicand_k": args.multicand_k,
+        "precision": args.precision,
         "device": device,
         "use_optimization": args.optimize,
         "use_bilateral": args.use_bilateral,
@@ -136,7 +163,10 @@ def run_example(args, output_dir, title, base_name, style_image, guides, **overr
     # Guides are (source, target, weight) tuples; paths or arrays are accepted.
     result_img, result_err = ezsynner.run(guides=guides, benchmark=args.benchmark)
     save_synth_result(output_dir, base_name, result_img, result_err)
-    logger.info(f"{title} took: {time.time() - start_example_time:.4f} s")
+    logger.info(
+        f"{title} took: {time.time() - start_example_time:.4f} s, "
+        f"mean error: {float(result_err.mean()):.2f}"
+    )
 
 
 def main():
@@ -147,7 +177,12 @@ def main():
 
     st = time.time()
     mode = "full" if args.full_params else "minimal"
-    output_dir = f"output_synth_api_{args.backend}_{mode}_{COST_FUNCTION}"
+    variant = f"{args.cost_function}_{args.search_mode}"
+    if args.search_mode == "multicand":
+        variant += f"_k{args.multicand_k}"
+    if args.precision != "float32":
+        variant += f"_{args.precision}"
+    output_dir = f"output_synth_api_{args.backend}_{mode}_{variant}"
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Saving output to: {output_dir}")
 

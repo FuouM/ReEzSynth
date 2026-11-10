@@ -3,24 +3,28 @@ import re
 from pathlib import Path
 
 import cv2
-import imageio.v2 as imageio
 import numpy as np
 from tqdm import tqdm
 
 IMG_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 
+def _decode(path: str | Path, flags: int) -> np.ndarray:
+    # np.fromfile + imdecode instead of cv2.imread: handles non-ASCII Windows paths.
+    data = np.fromfile(str(path), dtype=np.uint8)
+    image = cv2.imdecode(data, flags)
+    if image is None:
+        raise OSError(f"Could not decode image at {path}")
+    return image
+
+
 def read_image(path: str | Path) -> np.ndarray:
-    """Reads an image and converts it to BGR format."""
+    """Reads an image as 8-bit 3-channel BGR (alpha dropped, gray expanded).
+
+    EXIF orientation is ignored so pixels match the stored frame layout.
+    """
     try:
-        img = imageio.imread(path)
-        if img.shape[-1] == 4:  # Handle RGBA
-            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-        elif len(img.shape) == 2:  # Handle Grayscale
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        else:  # Handle RGB
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        return img
+        return _decode(path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
     except Exception as e:
         raise OSError(f"Error reading image at {path}: {e}") from e
 
@@ -28,21 +32,18 @@ def read_image(path: str | Path) -> np.ndarray:
 def read_mask(path: str | Path) -> np.ndarray:
     """Reads a mask as a single-channel grayscale image."""
     try:
-        # IMREAD_GRAYSCALE ensures a 2D array
-        mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-        if mask is None:
-            raise OSError(f"Could not read mask at {path}")
-        return mask
+        return _decode(path, cv2.IMREAD_GRAYSCALE)
     except Exception as e:
         raise OSError(f"Error reading mask at {path}: {e}") from e
 
 
 def write_image(path: str | Path, image: np.ndarray):
-    """Writes an image in BGR format to disk."""
+    """Writes a BGR (or grayscale) image; the format follows the file extension."""
     try:
-        # Convert back to RGB for standard image viewers
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        imageio.imwrite(path, image_rgb)
+        ok, encoded = cv2.imencode(Path(path).suffix or ".png", image)
+        if not ok:
+            raise OSError("encoding failed")
+        encoded.tofile(str(path))
     except Exception as e:
         raise OSError(f"Error writing image to {path}: {e}") from e
 

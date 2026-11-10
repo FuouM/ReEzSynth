@@ -2,7 +2,7 @@
 
 import taichi as ti
 
-from ...consts import COST_FUNCTION_NCC, EBSYNTH_VOTEMODE_WEIGHTED
+from ...consts import COST_FUNCTION_NCC, COST_FUNCTION_SAD, EBSYNTH_VOTEMODE_WEIGHTED
 
 
 @ti.func
@@ -254,7 +254,9 @@ def compute_patch_ssd(
     sigma_spatial: float,
     sigma_color: float,
     n_size_step: int,
+    cost_mode: int,
 ):
+    # cost_mode COST_FUNCTION_SAD: L1 per channel; otherwise squared differences.
     r = patch_size // 2
     error = 0.0
 
@@ -307,7 +309,10 @@ def compute_patch_ssd(
                 diff = float(source_style[idx_sy, idx_sx, c]) - float(
                     target_style[idx_ty, idx_tx, c]
                 )
-                error += weight * style_weights[c] * diff * diff
+                if cost_mode == COST_FUNCTION_SAD:
+                    error += weight * style_weights[c] * ti.abs(diff)
+                else:
+                    error += weight * style_weights[c] * diff * diff
                 if error > ebest:
                     inner_break = 1
                     break
@@ -323,7 +328,10 @@ def compute_patch_ssd(
                     if use_modulation
                     else 1.0
                 )
-                error += weight * guide_weights[c] * mod * diff * diff
+                if cost_mode == COST_FUNCTION_SAD:
+                    error += weight * guide_weights[c] * mod * ti.abs(diff)
+                else:
+                    error += weight * guide_weights[c] * mod * diff * diff
                 if error > ebest:
                     inner_break = 1
                     break
@@ -453,6 +461,7 @@ def compute_error_map_kernel(
                 sigma_spatial,
                 sigma_color,
                 n_size_step,
+                cost_mode,
             )
 
 
@@ -568,6 +577,7 @@ def patchmatch_step_kernel(
                             sigma_spatial,
                             sigma_color,
                             n_size_step,
+                            cost_mode,
                         )
 
                     new_total_err = new_err + uniformity_weight * (
@@ -703,6 +713,7 @@ def random_search_kernel(
                         sigma_spatial,
                         sigma_color,
                         n_size_step,
+                        cost_mode,
                     )
 
                 new_total_err = new_err + uniformity_weight * (
@@ -950,3 +961,687 @@ def dilate_mask_kernel(
                 val = ti.u8(255)
                 break
         dst[y, x] = val
+
+
+# ---------------------------------------------------------------------------
+# Jump flooding (search_mode "jfa") and multi-candidate (search_mode "multicand")
+# ---------------------------------------------------------------------------
+
+# Error value of an empty multicand alternative slot.
+ALT_EMPTY = 1e30
+
+
+@ti.func
+def patch_cost(
+    sx: int,
+    sy: int,
+    tx: int,
+    ty: int,
+    patch_size: int,
+    source_style: ti.template(),
+    target_style: ti.template(),
+    source_guide: ti.template(),
+    target_guide: ti.template(),
+    modulation_guide: ti.template(),
+    use_modulation: int,
+    style_weights: ti.template(),
+    guide_weights: ti.template(),
+    ebest: float,
+    cost_mode: int,
+    s_sat: ti.template(),
+    s_sq_sat: ti.template(),
+    t_sat: ti.template(),
+    t_sq_sat: ti.template(),
+    sw: int,
+    sh: int,
+    tw: int,
+    th: int,
+    NSC: int,
+    NGC: int,
+    use_bilateral: int,
+    sigma_spatial: float,
+    sigma_color: float,
+    n_size_step: int,
+):
+    """Patch cost for any cost mode; SSD/SAD may stop early once above ``ebest``."""
+    err = 0.0
+    if cost_mode == COST_FUNCTION_NCC:
+        err = compute_patch_ncc(
+            sx,
+            sy,
+            tx,
+            ty,
+            patch_size,
+            source_style,
+            target_style,
+            source_guide,
+            target_guide,
+            modulation_guide,
+            use_modulation,
+            style_weights,
+            guide_weights,
+            s_sat,
+            s_sq_sat,
+            t_sat,
+            t_sq_sat,
+            sw,
+            sh,
+            tw,
+            th,
+            NSC,
+            NGC,
+            use_bilateral,
+            sigma_spatial,
+            sigma_color,
+            n_size_step,
+        )
+    else:
+        err = compute_patch_ssd(
+            sx,
+            sy,
+            tx,
+            ty,
+            patch_size,
+            source_style,
+            target_style,
+            source_guide,
+            target_guide,
+            modulation_guide,
+            use_modulation,
+            style_weights,
+            guide_weights,
+            ebest,
+            sw,
+            sh,
+            tw,
+            th,
+            NSC,
+            NGC,
+            use_bilateral,
+            sigma_spatial,
+            sigma_color,
+            n_size_step,
+            cost_mode,
+        )
+    return err
+
+
+@ti.kernel
+def jfa_step_kernel(
+    nnf: ti.types.ndarray(),
+    error_map: ti.types.ndarray(),
+    omega_map: ti.types.ndarray(),
+    source_style: ti.types.ndarray(),
+    target_style: ti.types.ndarray(),
+    source_guide: ti.types.ndarray(),
+    target_guide: ti.types.ndarray(),
+    modulation_guide: ti.types.ndarray(),
+    use_modulation: int,
+    style_weights: ti.types.ndarray(),
+    guide_weights: ti.types.ndarray(),
+    patch_size: int,
+    step_size: int,
+    uniformity_weight: float,
+    mask: ti.types.ndarray(),
+    cost_mode: int,
+    omega_best: float,
+    s_sat: ti.types.ndarray(),
+    s_sq_sat: ti.types.ndarray(),
+    t_sat: ti.types.ndarray(),
+    t_sq_sat: ti.types.ndarray(),
+    use_bilateral: int,
+    sigma_spatial: float,
+    sigma_color: float,
+    n_size_step: int,
+):
+    """One jump-flooding pass: try ``nnf[p + d * step] - d * step`` for 8 directions."""
+    th, tw = error_map.shape[0], error_map.shape[1]
+    sh, sw = source_style.shape[0], source_style.shape[1]
+    NSC, NGC = source_style.shape[2], source_guide.shape[2]
+    pixel_count = float(patch_size * patch_size)
+    r = patch_size // 2
+
+    for ty, tx in ti.ndrange(th, tw):
+        if mask[ty, tx] == 0:
+            continue
+
+        best_sx, best_sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
+        best_err = error_map[ty, tx]
+        best_total_err = best_err + uniformity_weight * (
+            get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
+            / pixel_count
+            / omega_best
+        )
+        for dx, dy in ti.static(
+            ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1))
+        ):
+            nx, ny = tx + dx * step_size, ty + dy * step_size
+            if 0 <= nx < tw and 0 <= ny < th:
+                cand_sx = nnf[ny, nx, 0] - dx * step_size
+                cand_sy = nnf[ny, nx, 1] - dy * step_size
+                if r <= cand_sx < sw - r and r <= cand_sy < sh - r:
+                    new_err = patch_cost(
+                        cand_sx,
+                        cand_sy,
+                        tx,
+                        ty,
+                        patch_size,
+                        source_style,
+                        target_style,
+                        source_guide,
+                        target_guide,
+                        modulation_guide,
+                        use_modulation,
+                        style_weights,
+                        guide_weights,
+                        best_total_err,
+                        cost_mode,
+                        s_sat,
+                        s_sq_sat,
+                        t_sat,
+                        t_sq_sat,
+                        sw,
+                        sh,
+                        tw,
+                        th,
+                        NSC,
+                        NGC,
+                        use_bilateral,
+                        sigma_spatial,
+                        sigma_color,
+                        n_size_step,
+                    )
+                    new_total_err = new_err + uniformity_weight * (
+                        get_omega(omega_map, cand_sx, cand_sy, patch_size, sw, sh)
+                        / pixel_count
+                        / omega_best
+                    )
+                    if new_total_err < best_total_err:
+                        patch_omega_atomic_add(
+                            omega_map, best_sx, best_sy, patch_size, sw, sh, -1
+                        )
+                        patch_omega_atomic_add(
+                            omega_map, cand_sx, cand_sy, patch_size, sw, sh, 1
+                        )
+                        best_sx, best_sy = cand_sx, cand_sy
+                        best_err, best_total_err = new_err, new_total_err
+        nnf[ty, tx, 0], nnf[ty, tx, 1] = best_sx, best_sy
+        error_map[ty, tx] = best_err
+
+
+@ti.func
+def worst_alternative_error(alt_err: ti.template(), ty: int, tx: int):
+    worst = alt_err[ty, tx, 0]
+    for s in range(1, alt_err.shape[2]):
+        worst = ti.max(worst, alt_err[ty, tx, s])
+    return worst
+
+
+@ti.func
+def offer_alternative(
+    alt_nnf: ti.template(),
+    alt_err: ti.template(),
+    ty: int,
+    tx: int,
+    sx: int,
+    sy: int,
+    err: float,
+    primary_sx: int,
+    primary_sy: int,
+):
+    """Replace the worst alternative of (ty, tx) with a better, distinct candidate."""
+    duplicate = 0
+    if sx == primary_sx and sy == primary_sy:
+        duplicate = 1
+    worst_slot = 0
+    worst_err = alt_err[ty, tx, 0]
+    for s in range(alt_err.shape[2]):
+        if alt_nnf[ty, tx, s, 0] == sx and alt_nnf[ty, tx, s, 1] == sy:
+            duplicate = 1
+        if alt_err[ty, tx, s] > worst_err:
+            worst_err = alt_err[ty, tx, s]
+            worst_slot = s
+    if duplicate == 0 and err < worst_err:
+        alt_nnf[ty, tx, worst_slot, 0] = sx
+        alt_nnf[ty, tx, worst_slot, 1] = sy
+        alt_err[ty, tx, worst_slot] = err
+
+
+@ti.kernel
+def multicand_refresh_kernel(
+    alt_nnf: ti.types.ndarray(),
+    alt_err: ti.types.ndarray(),
+    source_style: ti.types.ndarray(),
+    target_style: ti.types.ndarray(),
+    source_guide: ti.types.ndarray(),
+    target_guide: ti.types.ndarray(),
+    modulation_guide: ti.types.ndarray(),
+    use_modulation: int,
+    style_weights: ti.types.ndarray(),
+    guide_weights: ti.types.ndarray(),
+    patch_size: int,
+    cost_mode: int,
+    s_sat: ti.types.ndarray(),
+    s_sq_sat: ti.types.ndarray(),
+    t_sat: ti.types.ndarray(),
+    t_sq_sat: ti.types.ndarray(),
+    use_bilateral: int,
+    sigma_spatial: float,
+    sigma_color: float,
+    n_size_step: int,
+):
+    """Re-score stored alternatives against the current target style."""
+    th, tw, slots = alt_err.shape[0], alt_err.shape[1], alt_err.shape[2]
+    sh, sw = source_style.shape[0], source_style.shape[1]
+    NSC, NGC = source_style.shape[2], source_guide.shape[2]
+    for ty, tx, s in ti.ndrange(th, tw, slots):
+        if alt_err[ty, tx, s] < ALT_EMPTY:
+            alt_err[ty, tx, s] = patch_cost(
+                alt_nnf[ty, tx, s, 0],
+                alt_nnf[ty, tx, s, 1],
+                tx,
+                ty,
+                patch_size,
+                source_style,
+                target_style,
+                source_guide,
+                target_guide,
+                modulation_guide,
+                use_modulation,
+                style_weights,
+                guide_weights,
+                1e20,
+                cost_mode,
+                s_sat,
+                s_sq_sat,
+                t_sat,
+                t_sq_sat,
+                sw,
+                sh,
+                tw,
+                th,
+                NSC,
+                NGC,
+                use_bilateral,
+                sigma_spatial,
+                sigma_color,
+                n_size_step,
+            )
+
+
+@ti.kernel
+def multicand_promote_kernel(
+    nnf: ti.types.ndarray(),
+    error_map: ti.types.ndarray(),
+    alt_nnf: ti.types.ndarray(),
+    alt_err: ti.types.ndarray(),
+    omega_map: ti.types.ndarray(),
+    patch_size: int,
+    uniformity_weight: float,
+    mask: ti.types.ndarray(),
+    omega_best: float,
+):
+    """Swap an alternative with the best match where its total cost is lower."""
+    th, tw, slots = alt_err.shape[0], alt_err.shape[1], alt_err.shape[2]
+    sh, sw = omega_map.shape[0], omega_map.shape[1]
+    pixel_count = float(patch_size * patch_size)
+    for ty, tx in ti.ndrange(th, tw):
+        if mask[ty, tx] == 0:
+            continue
+        best_sx, best_sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
+        best_err = error_map[ty, tx]
+        best_total_err = best_err + uniformity_weight * (
+            get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
+            / pixel_count
+            / omega_best
+        )
+        for s in range(slots):
+            alt_e = alt_err[ty, tx, s]
+            if alt_e < ALT_EMPTY:
+                asx, asy = alt_nnf[ty, tx, s, 0], alt_nnf[ty, tx, s, 1]
+                alt_total = alt_e + uniformity_weight * (
+                    get_omega(omega_map, asx, asy, patch_size, sw, sh)
+                    / pixel_count
+                    / omega_best
+                )
+                if alt_total < best_total_err:
+                    patch_omega_atomic_add(
+                        omega_map, best_sx, best_sy, patch_size, sw, sh, -1
+                    )
+                    patch_omega_atomic_add(omega_map, asx, asy, patch_size, sw, sh, 1)
+                    alt_nnf[ty, tx, s, 0], alt_nnf[ty, tx, s, 1] = best_sx, best_sy
+                    alt_err[ty, tx, s] = best_err
+                    best_sx, best_sy = asx, asy
+                    best_err, best_total_err = alt_e, alt_total
+        nnf[ty, tx, 0], nnf[ty, tx, 1] = best_sx, best_sy
+        error_map[ty, tx] = best_err
+
+
+@ti.kernel
+def multicand_propagation_kernel(
+    nnf: ti.types.ndarray(),
+    error_map: ti.types.ndarray(),
+    alt_nnf: ti.types.ndarray(),
+    alt_err: ti.types.ndarray(),
+    omega_map: ti.types.ndarray(),
+    source_style: ti.types.ndarray(),
+    target_style: ti.types.ndarray(),
+    source_guide: ti.types.ndarray(),
+    target_guide: ti.types.ndarray(),
+    modulation_guide: ti.types.ndarray(),
+    use_modulation: int,
+    style_weights: ti.types.ndarray(),
+    guide_weights: ti.types.ndarray(),
+    patch_size: int,
+    is_odd: int,
+    uniformity_weight: float,
+    mask: ti.types.ndarray(),
+    cost_mode: int,
+    omega_best: float,
+    s_sat: ti.types.ndarray(),
+    s_sq_sat: ti.types.ndarray(),
+    t_sat: ti.types.ndarray(),
+    t_sq_sat: ti.types.ndarray(),
+    use_bilateral: int,
+    sigma_spatial: float,
+    sigma_color: float,
+    n_size_step: int,
+):
+    """:func:`patchmatch_step_kernel` over the neighbours' best and alternative
+    matches; displaced and rejected candidates are offered as alternatives."""
+    th, tw, slots = alt_err.shape[0], alt_err.shape[1], alt_err.shape[2]
+    sh, sw = source_style.shape[0], source_style.shape[1]
+    NSC, NGC = source_style.shape[2], source_guide.shape[2]
+    pixel_count = float(patch_size * patch_size)
+    step = 1 if is_odd == 0 else -1
+    r = patch_size // 2
+
+    for y_it, x_it in ti.ndrange(th, tw):
+        tx, ty = (tw - 1 - x_it, th - 1 - y_it) if is_odd == 0 else (x_it, y_it)
+        if mask[ty, tx] == 0:
+            continue
+
+        best_sx, best_sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
+        best_err = error_map[ty, tx]
+        best_total_err = best_err + uniformity_weight * (
+            get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
+            / pixel_count
+            / omega_best
+        )
+        for i in range(2):
+            nx, ny = (tx + step, ty) if i == 0 else (tx, ty + step)
+            if 0 <= nx < tw and 0 <= ny < th:
+                for s in range(slots + 1):
+                    cand_sx, cand_sy = nnf[ny, nx, 0], nnf[ny, nx, 1]
+                    present = 1
+                    if s > 0:
+                        cand_sx, cand_sy = (
+                            alt_nnf[ny, nx, s - 1, 0],
+                            alt_nnf[ny, nx, s - 1, 1],
+                        )
+                        if alt_err[ny, nx, s - 1] >= ALT_EMPTY:
+                            present = 0
+                    cand_sx -= step if i == 0 else 0
+                    cand_sy -= 0 if i == 0 else step
+                    if present == 1 and r <= cand_sx < sw - r and r <= cand_sy < sh - r:
+                        ebest = ti.max(
+                            best_total_err, worst_alternative_error(alt_err, ty, tx)
+                        )
+                        new_err = patch_cost(
+                            cand_sx,
+                            cand_sy,
+                            tx,
+                            ty,
+                            patch_size,
+                            source_style,
+                            target_style,
+                            source_guide,
+                            target_guide,
+                            modulation_guide,
+                            use_modulation,
+                            style_weights,
+                            guide_weights,
+                            ebest,
+                            cost_mode,
+                            s_sat,
+                            s_sq_sat,
+                            t_sat,
+                            t_sq_sat,
+                            sw,
+                            sh,
+                            tw,
+                            th,
+                            NSC,
+                            NGC,
+                            use_bilateral,
+                            sigma_spatial,
+                            sigma_color,
+                            n_size_step,
+                        )
+                        new_total_err = new_err + uniformity_weight * (
+                            get_omega(omega_map, cand_sx, cand_sy, patch_size, sw, sh)
+                            / pixel_count
+                            / omega_best
+                        )
+                        if new_total_err < best_total_err:
+                            patch_omega_atomic_add(
+                                omega_map, best_sx, best_sy, patch_size, sw, sh, -1
+                            )
+                            patch_omega_atomic_add(
+                                omega_map, cand_sx, cand_sy, patch_size, sw, sh, 1
+                            )
+                            offer_alternative(
+                                alt_nnf,
+                                alt_err,
+                                ty,
+                                tx,
+                                best_sx,
+                                best_sy,
+                                best_err,
+                                cand_sx,
+                                cand_sy,
+                            )
+                            best_sx, best_sy = cand_sx, cand_sy
+                            best_err, best_total_err = new_err, new_total_err
+                        else:
+                            offer_alternative(
+                                alt_nnf,
+                                alt_err,
+                                ty,
+                                tx,
+                                cand_sx,
+                                cand_sy,
+                                new_err,
+                                best_sx,
+                                best_sy,
+                            )
+        nnf[ty, tx, 0], nnf[ty, tx, 1] = best_sx, best_sy
+        error_map[ty, tx] = best_err
+
+
+@ti.kernel
+def multicand_random_search_kernel(
+    nnf: ti.types.ndarray(),
+    error_map: ti.types.ndarray(),
+    alt_nnf: ti.types.ndarray(),
+    alt_err: ti.types.ndarray(),
+    omega_map: ti.types.ndarray(),
+    source_style: ti.types.ndarray(),
+    target_style: ti.types.ndarray(),
+    source_guide: ti.types.ndarray(),
+    target_guide: ti.types.ndarray(),
+    modulation_guide: ti.types.ndarray(),
+    use_modulation: int,
+    style_weights: ti.types.ndarray(),
+    guide_weights: ti.types.ndarray(),
+    patch_size: int,
+    radius: int,
+    uniformity_weight: float,
+    mask: ti.types.ndarray(),
+    pruning_threshold: float,
+    cost_mode: int,
+    omega_best: float,
+    s_sat: ti.types.ndarray(),
+    s_sq_sat: ti.types.ndarray(),
+    t_sat: ti.types.ndarray(),
+    t_sq_sat: ti.types.ndarray(),
+    use_bilateral: int,
+    sigma_spatial: float,
+    sigma_color: float,
+    n_size_step: int,
+):
+    """:func:`random_search_kernel` sampling around the best match and every
+    alternative at each radius; displaced/rejected candidates become alternatives."""
+    th, tw, slots = alt_err.shape[0], alt_err.shape[1], alt_err.shape[2]
+    sh, sw = source_style.shape[0], source_style.shape[1]
+    NSC, NGC = source_style.shape[2], source_guide.shape[2]
+    pixel_count = float(patch_size * patch_size)
+    pr = patch_size // 2
+
+    for ty, tx in ti.ndrange(th, tw):
+        if mask[ty, tx] == 0 or (
+            pruning_threshold > 0 and error_map[ty, tx] < pruning_threshold
+        ):
+            continue
+
+        best_sx, best_sy = nnf[ty, tx, 0], nnf[ty, tx, 1]
+        best_err = error_map[ty, tx]
+        best_total_err = best_err + uniformity_weight * (
+            get_omega(omega_map, best_sx, best_sy, patch_size, sw, sh)
+            / pixel_count
+            / omega_best
+        )
+        r = radius
+        while r >= 1:
+            for s in range(slots + 1):
+                base_sx, base_sy = best_sx, best_sy
+                present = 1
+                if s > 0:
+                    base_sx, base_sy = (
+                        alt_nnf[ty, tx, s - 1, 0],
+                        alt_nnf[ty, tx, s - 1, 1],
+                    )
+                    if alt_err[ty, tx, s - 1] >= ALT_EMPTY:
+                        present = 0
+                off_x = int(ti.floor(ti.random() * (2 * r + 1))) - r
+                off_y = int(ti.floor(ti.random() * (2 * r + 1))) - r
+                cand_sx, cand_sy = base_sx + off_x, base_sy + off_y
+                if present == 1 and pr <= cand_sx < sw - pr and pr <= cand_sy < sh - pr:
+                    ebest = ti.max(
+                        best_total_err, worst_alternative_error(alt_err, ty, tx)
+                    )
+                    new_err = patch_cost(
+                        cand_sx,
+                        cand_sy,
+                        tx,
+                        ty,
+                        patch_size,
+                        source_style,
+                        target_style,
+                        source_guide,
+                        target_guide,
+                        modulation_guide,
+                        use_modulation,
+                        style_weights,
+                        guide_weights,
+                        ebest,
+                        cost_mode,
+                        s_sat,
+                        s_sq_sat,
+                        t_sat,
+                        t_sq_sat,
+                        sw,
+                        sh,
+                        tw,
+                        th,
+                        NSC,
+                        NGC,
+                        use_bilateral,
+                        sigma_spatial,
+                        sigma_color,
+                        n_size_step,
+                    )
+                    new_total_err = new_err + uniformity_weight * (
+                        get_omega(omega_map, cand_sx, cand_sy, patch_size, sw, sh)
+                        / pixel_count
+                        / omega_best
+                    )
+                    if new_total_err < best_total_err:
+                        patch_omega_atomic_add(
+                            omega_map, best_sx, best_sy, patch_size, sw, sh, -1
+                        )
+                        patch_omega_atomic_add(
+                            omega_map, cand_sx, cand_sy, patch_size, sw, sh, 1
+                        )
+                        offer_alternative(
+                            alt_nnf,
+                            alt_err,
+                            ty,
+                            tx,
+                            best_sx,
+                            best_sy,
+                            best_err,
+                            cand_sx,
+                            cand_sy,
+                        )
+                        best_sx, best_sy = cand_sx, cand_sy
+                        best_err, best_total_err = new_err, new_total_err
+                    else:
+                        offer_alternative(
+                            alt_nnf,
+                            alt_err,
+                            ty,
+                            tx,
+                            cand_sx,
+                            cand_sy,
+                            new_err,
+                            best_sx,
+                            best_sy,
+                        )
+            r //= 2
+        nnf[ty, tx, 0], nnf[ty, tx, 1] = best_sx, best_sy
+        error_map[ty, tx] = best_err
+
+
+@ti.kernel
+def vote_weighted_multicand_kernel(
+    source_style: ti.types.ndarray(dtype=ti.u8, ndim=3),
+    nnf: ti.types.ndarray(dtype=ti.i32, ndim=3),
+    error_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    alt_nnf: ti.types.ndarray(dtype=ti.i32, ndim=4),
+    alt_err: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    acc: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    wsum: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    output_image: ti.types.ndarray(dtype=ti.u8, ndim=3),
+    patch_size: ti.i32,
+):
+    """:func:`vote_weighted_kernel` with every stored alternative as an extra voter."""
+    th, tw = output_image.shape[0], output_image.shape[1]
+    sh, sw = source_style.shape[0], source_style.shape[1]
+    NSC = source_style.shape[2]
+    slots = alt_err.shape[2]
+    r = patch_size // 2
+    for ty, tx in ti.ndrange(th, tw):
+        for py, px in ti.ndrange((-r, r + 1), (-r, r + 1)):
+            oy = ty - py
+            ox = tx - px
+            if 0 <= ox < tw and 0 <= oy < th:
+                for s in range(slots + 1):
+                    csx, csy = nnf[oy, ox, 0], nnf[oy, ox, 1]
+                    err = error_map[oy, ox]
+                    if s > 0:
+                        csx, csy = alt_nnf[oy, ox, s - 1, 0], alt_nnf[oy, ox, s - 1, 1]
+                        err = alt_err[oy, ox, s - 1]
+                    if err < ALT_EMPTY:
+                        sx = ti.max(0, ti.min(csx + px, sw - 1))
+                        sy = ti.max(0, ti.min(csy + py, sh - 1))
+                        weight = 1.0 / (1.0 + err)
+                        wsum[ty, tx] += weight
+                        for c in range(NSC):
+                            acc[ty, tx, c] += weight * ti.cast(
+                                source_style[sy, sx, c], ti.f32
+                            )
+        weight_sum = ti.max(wsum[ty, tx], 1e-6)
+        for c in range(NSC):
+            val = ti.max(0.0, ti.min(255.0, acc[ty, tx, c] / weight_sum))
+            output_image[ty, tx, c] = ti.u8(ti.cast(val, ti.i32))

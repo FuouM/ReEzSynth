@@ -10,6 +10,26 @@ from ...utils.timer import SynthesisTimer
 
 logger = logging.getLogger(__name__)
 
+# Options implemented by the native ebsynth_torch extension.
+NATIVE_COST_FUNCTIONS = ("ssd", "ncc")
+NATIVE_SEARCH_MODES = ("patchmatch",)
+
+
+def validate_native_options(ebsynth_config: EbsynthParamsConfig) -> None:
+    """Raise ValueError for options the native extension does not implement."""
+    if ebsynth_config.cost_function not in NATIVE_COST_FUNCTIONS:
+        raise ValueError(
+            f"cost_function={ebsynth_config.cost_function!r} is not supported by "
+            f"the native 'cuda' backend (supported: {NATIVE_COST_FUNCTIONS}); "
+            "use backend='torch' or backend='taichi'."
+        )
+    if ebsynth_config.search_mode not in NATIVE_SEARCH_MODES:
+        raise ValueError(
+            f"search_mode={ebsynth_config.search_mode!r} is not supported by the "
+            f"native 'cuda' backend (supported: {NATIVE_SEARCH_MODES}); "
+            "use backend='torch' or backend='taichi'."
+        )
+
 
 class CudaBackend:
     """
@@ -25,6 +45,7 @@ class CudaBackend:
     ):
         self.ebsynth_config = ebsynth_config
         self.pipeline_config = pipeline_config
+        validate_native_options(ebsynth_config)
         if native.module is None:
             raise RuntimeError(
                 "Extension backend selected but ebsynth_torch extension is not available."

@@ -36,6 +36,7 @@ def random_init_nnf(
     source_h: int,
     source_w: int,
     patch_size: int,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """Random NNF field (H, W, 2) int32 on ``device`` with valid patch centers."""
     r = patch_size // 2
@@ -44,6 +45,7 @@ def random_init_nnf(
         source_w - r,
         (target_h, target_w, 1),
         device=device,
+        generator=generator,
         dtype=torch.int32,
     )
     rand_y = torch.randint(
@@ -51,6 +53,7 @@ def random_init_nnf(
         source_h - r,
         (target_h, target_w, 1),
         device=device,
+        generator=generator,
         dtype=torch.int32,
     )
     return torch.cat([rand_x, rand_y], dim=2).contiguous()

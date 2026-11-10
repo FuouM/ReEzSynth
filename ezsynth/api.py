@@ -15,7 +15,7 @@ from .config import (
 )
 from .data import ProjectData
 from .engines.synthesis_engine import EbsynthEngine
-from .guide import GuideObject
+from .guide import GuideObject, load_guide
 from .output import OutputManager
 from .pipeline import SynthesisPipeline
 from .service import SynthesisConfigs
@@ -50,6 +50,9 @@ class RunConfig:
         use_sparse_feature_guide: bool = True,
         use_residual_transfer: bool = True,
         cost_function: str = "ssd",
+        search_mode: str = "patchmatch",
+        multicand_k: int = 3,
+        precision: str = "float32",
         device: str | None = None,
         use_optimization: bool = True,
         use_bilateral: bool = False,
@@ -84,6 +87,9 @@ class RunConfig:
         self.use_sparse_feature_guide = use_sparse_feature_guide
         self.use_residual_transfer = use_residual_transfer
         self.cost_function = cost_function
+        self.search_mode = search_mode
+        self.multicand_k = multicand_k
+        self.precision = precision
         self.device = device
         self.use_optimization = use_optimization
         self.use_bilateral = use_bilateral
@@ -173,18 +179,7 @@ class Ezsynth:
             use_taichi_ops=config.use_taichi_ops,
         )
 
-        ebsynth_params_cfg = EbsynthParamsConfig(
-            uniformity=config.uniformity,
-            patch_size=config.patch_size,
-            search_vote_iters=config.search_vote_iters,
-            patch_match_iters=config.patch_match_iters,
-            extra_pass_3x3=config.extra_pass_3x3,
-            edge_weight=config.edge_weight,
-            image_weight=config.image_weight,
-            pos_weight=config.pos_weight,
-            warp_weight=config.warp_weight,
-            sparse_anchor_weight=config.sparse_anchor_weight,
-        )
+        ebsynth_params_cfg = _ebsynth_params(config)
 
         self.configs = SynthesisConfigs(
             project=project_cfg,
@@ -262,22 +257,7 @@ class ImageSynth:
         config = config if config is not None else RunConfig()
         self.style = GuideObject.load_guide(style_image, style_image).keyframe
 
-        ebsynth_params_cfg = EbsynthParamsConfig(
-            uniformity=config.uniformity,
-            patch_size=config.patch_size,
-            search_vote_iters=config.search_vote_iters,
-            patch_match_iters=config.patch_match_iters,
-            backend=config.backend,
-            extra_pass_3x3=config.extra_pass_3x3,
-            cost_function=config.cost_function,
-            device=config.device,
-            use_optimization=config.use_optimization,
-            use_bilateral=config.use_bilateral,
-            sigma_spatial=config.sigma_spatial,
-            sigma_color=config.sigma_color,
-            n_size_step=config.n_size_step,
-            # Weights are now passed directly to run()
-        )
+        ebsynth_params_cfg = _ebsynth_params(config)
 
         pipeline_cfg = PipelineConfig(
             pyramid_levels=config.pyramid_levels,
@@ -292,15 +272,17 @@ class ImageSynth:
         logger.info("\nImageSynth API initialized successfully.")
 
     def run(
-        self, guides: list[tuple[Any, Any, float]], benchmark: bool = False
+        self,
+        guides: list[GuideObject | tuple[Any, Any, float]],
+        benchmark: bool = False,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Runs the synthesis for a single target image using the provided guides.
 
         Args:
-            guides (List[Tuple[Any, Any, float]]): A list of guide tuples.
-                Each tuple should be (source_guide, target_guide, weight).
-                The guides can be file paths or NumPy arrays.
+            guides: ``GuideObject`` instances (see :func:`load_guide`) or
+                ``(source_guide, target_guide, weight)`` tuples whose images are
+                file paths or uint8 BGR NumPy arrays.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: A tuple containing the stylized image
@@ -309,12 +291,47 @@ class ImageSynth:
         if not guides:
             raise ValueError("At least one guide must be provided to the run() method.")
 
-        processed_guides = [
-            GuideObject.load_guide(src, tgt, weight) for src, tgt, weight in guides
-        ]
+        processed_guides = [_as_guide(guide) for guide in guides]
 
         stylized_image, error_map = self.engine.run(
             self.style, guides=processed_guides, benchmark=benchmark
         )
 
         return stylized_image, error_map
+
+
+def _as_guide(guide: GuideObject | tuple[Any, Any, float]) -> GuideObject:
+    if isinstance(guide, GuideObject):
+        return guide
+    if isinstance(guide, tuple | list) and len(guide) == 3:
+        return load_guide(*guide)
+    raise TypeError(
+        "Each guide must be a GuideObject or a (source, target, weight) tuple, "
+        f"got {type(guide).__name__}."
+    )
+
+
+def _ebsynth_params(config: RunConfig) -> EbsynthParamsConfig:
+    return EbsynthParamsConfig(
+        uniformity=config.uniformity,
+        patch_size=config.patch_size,
+        search_vote_iters=config.search_vote_iters,
+        patch_match_iters=config.patch_match_iters,
+        backend=config.backend,
+        device=config.device,
+        extra_pass_3x3=config.extra_pass_3x3,
+        cost_function=config.cost_function,
+        search_mode=config.search_mode,
+        multicand_k=config.multicand_k,
+        precision=config.precision,
+        use_optimization=config.use_optimization,
+        use_bilateral=config.use_bilateral,
+        sigma_spatial=config.sigma_spatial,
+        sigma_color=config.sigma_color,
+        n_size_step=config.n_size_step,
+        edge_weight=config.edge_weight,
+        image_weight=config.image_weight,
+        pos_weight=config.pos_weight,
+        warp_weight=config.warp_weight,
+        sparse_anchor_weight=config.sparse_anchor_weight,
+    )

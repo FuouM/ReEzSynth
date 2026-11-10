@@ -12,6 +12,7 @@ from tqdm import tqdm
 from ..engines.backends.common import get_auto_torch_device
 from ..neuflow.neuflow import NeuFlow
 from ..utils.gpu_memory import apply_gpu_memory_limit
+from ..utils.progress import report_progress
 from .pad import pad_bgr_to_stride
 from .types import FlowTorchDevice, NeuFlowCheckpointName
 
@@ -118,6 +119,7 @@ def _compute_neuflow_sequence_with_model(
             desc=desc,
             disable=not show_progress,
         ):
+            report_progress("optical flow", i, len(frames) - 1)
             img1 = preprocess_image(frames[i])
             img2 = preprocess_image(frames[i + 1])
             flow_pred = model(img1, img2)[-1]
