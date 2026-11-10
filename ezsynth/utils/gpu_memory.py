@@ -119,3 +119,20 @@ def apply_gpu_memory_limit(device: torch.device | str | None = None) -> int | No
             f"(free {free // _MIB} / total {total // _MIB} MiB)"
         )
         return budget
+
+
+def current_budget_bytes(device: torch.device | str | None = None) -> int | None:
+    """Budget recorded by :func:`apply_gpu_memory_limit` for ``device``, else None.
+
+    Read-only: never applies a cap and never initializes CUDA.
+    """
+    if device is None:
+        if not torch.cuda.is_available():
+            return None
+        device = torch.device("cuda", torch.cuda.current_device())
+    device = torch.device(device)
+    if device.type != "cuda":
+        return None
+    index = device.index if device.index is not None else torch.cuda.current_device()
+    with _lock:
+        return _applied.get(index)

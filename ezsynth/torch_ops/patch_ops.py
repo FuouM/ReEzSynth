@@ -146,6 +146,68 @@ def extract_patches_from_coords(
     return patches
 
 
+# (patch_size, device_str) -> (dy[K], dx[K]) long offsets in unfold order
+_PATCH_OFFSET_CACHE: dict = {}
+
+
+def _patch_offsets(
+    patch_size: int, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor]:
+    key = (patch_size, str(device))
+    entry = _PATCH_OFFSET_CACHE.get(key)
+    if entry is None:
+        r = patch_size // 2
+        k = torch.arange(patch_size * patch_size, device=device, dtype=torch.long)
+        entry = (k // patch_size - r, k % patch_size - r)
+        _PATCH_OFFSET_CACHE[key] = entry
+    return entry
+
+
+class ImagePatches:
+    """
+    On-demand view of ``extract_patches(image, patch_size, as_float=True)``.
+
+    Holds only the (H, W, C) image and gathers flattened patches for requested
+    centers, so memory scales with the number of requested patches instead of
+    ``H * W * C * patch_size**2``. Values are bit-identical to the unfold grid:
+    replicate padding equals clamping each sample coordinate to the image, and the
+    flattened layout is channel-major then kernel row-major, like ``F.unfold``.
+
+    ``chunk_pixels`` is the number of patches a consumer may gather at once.
+    """
+
+    def __init__(self, image: torch.Tensor, patch_size: int, chunk_pixels: int):
+        if patch_size % 2 == 0:
+            raise ValueError("patch_size must be odd")
+        height, width, channels = image.shape
+        values = image.float() if image.dtype == torch.uint8 else image
+        self.pixels = values.reshape(height * width, channels)
+        self.patch_size = patch_size
+        self.chunk_pixels = max(1, int(chunk_pixels))
+        self.shape = torch.Size((height, width, channels * patch_size * patch_size))
+        self.device = image.device
+        self.dtype = values.dtype
+
+    def numel(self) -> int:
+        return self.shape.numel()
+
+    def pixel_index(self, ys: torch.Tensor, xs: torch.Tensor) -> torch.Tensor:
+        """(N, patch_size**2) linear pixel indices of the patches centered at (ys, xs)."""
+        height, width = self.shape[0], self.shape[1]
+        dy, dx = _patch_offsets(self.patch_size, self.device)
+        rows = (ys.long().unsqueeze(1) + dy).clamp_(0, height - 1)
+        cols = (xs.long().unsqueeze(1) + dx).clamp_(0, width - 1)
+        return rows.mul_(width).add_(cols)
+
+    def gather_index(self, index: torch.Tensor) -> torch.Tensor:
+        """(N, C * patch_size**2) patches for indices from :meth:`pixel_index`."""
+        values = self.pixels[index]  # (N, ps*ps, C)
+        return values.transpose(1, 2).reshape(index.shape[0], -1)
+
+    def gather(self, ys: torch.Tensor, xs: torch.Tensor) -> torch.Tensor:
+        return self.gather_index(self.pixel_index(ys, xs))
+
+
 # (patch_size, n_size_step, device_id) -> (k_idx long[K], spatial_sq float[K]) on that device
 _SSD_SPARSE_PATCH_CACHE: dict = {}
 

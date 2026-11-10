@@ -22,6 +22,7 @@ from .omega_ops import (
     update_omega_map,
 )
 from .patch_ops import (
+    ImagePatches,
     compute_patch_ncc_vectorized,
     compute_patch_ssd_style_guide_fused,
     compute_patch_ssd_vectorized,
@@ -39,6 +40,12 @@ _RANDOM_SEARCH_BUFFER_CACHE: dict = {}
 
 # Reused neighbor shifted NNF for propagation (``torch.cat(..., out=buf)``).
 _PROP_NEIGHBOR_NNF_BUF: dict = {}
+
+# (H_t, W_t, device_str) -> (ys, xs) long row/column of every flattened target pixel.
+_TARGET_GRID_CACHE: dict = {}
+
+# device_str -> (N, 2) long ``(x=i, y=0)`` coordinates used to address chunk-local grids.
+_LOCAL_NNF_CACHE: dict = {}
 
 
 def _prop_neighbor_nnf_buf(nnf: torch.Tensor) -> torch.Tensor:
@@ -84,6 +91,194 @@ def _random_search_buffers(
     return rand_x[:num_active], rand_y[:num_active], candidate[:num_active]
 
 
+def _target_grid_coords(
+    height: int, width: int, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor]:
+    key = (height, width, str(device))
+    entry = _TARGET_GRID_CACHE.get(key)
+    if entry is None:
+        flat = torch.arange(height * width, device=device)
+        entry = (flat // width, flat % width)
+        _TARGET_GRID_CACHE[key] = entry
+    return entry
+
+
+def _local_nnf(count: int, device: torch.device) -> torch.Tensor:
+    key = str(device)
+    buf = _LOCAL_NNF_CACHE.get(key)
+    if buf is None or buf.shape[0] < count:
+        buf = torch.zeros((count, 2), dtype=torch.long, device=device)
+        buf[:, 0] = torch.arange(count, device=device)
+        _LOCAL_NNF_CACHE[key] = buf
+    return buf[:count]
+
+
+def _uses_image_patches(*grids) -> bool:
+    return any(isinstance(grid, ImagePatches) for grid in grids)
+
+
+def _patch_errors(
+    source_style_patches,
+    target_style_patches: torch.Tensor,
+    source_guide_patches,
+    target_guide_patches: torch.Tensor,
+    candidate_coords: torch.Tensor,
+    style_weights: torch.Tensor,
+    guide_weights: torch.Tensor,
+    patch_size: int,
+    cost_function_mode: int,
+    target_modulation_patches: torch.Tensor | None,
+    ssd_kw: dict,
+    source_stats=None,
+    target_stats=None,
+    *,
+    region: str,
+) -> torch.Tensor:
+    """SSD/NCC patch cost of ``candidate_coords`` against materialized patch grids."""
+    dev = candidate_coords.device
+    if cost_function_mode == COST_FUNCTION_NCC:
+        with _mp_region(f"{region}:ncc", dev):
+            return compute_patch_ncc_vectorized(
+                source_style_patches,
+                target_style_patches,
+                source_guide_patches,
+                target_guide_patches,
+                candidate_coords,
+                patch_size,
+                style_weights,
+                guide_weights,
+                source_stats,
+                target_stats,
+                target_modulation_patches,
+                **ssd_kw,
+            )
+    has_guide = source_guide_patches.numel() > 0
+    if has_guide and not ssd_kw["use_bilateral"] and ssd_kw["n_size_step"] == 1:
+        with _mp_region(f"{region}:ssd_fused", dev):
+            return compute_patch_ssd_style_guide_fused(
+                source_style_patches,
+                target_style_patches,
+                source_guide_patches,
+                target_guide_patches,
+                candidate_coords,
+                style_weights,
+                guide_weights,
+                target_modulation_patches,
+                **ssd_kw,
+            )
+    with _mp_region(f"{region}:ssd_style", dev):
+        errors = compute_patch_ssd_vectorized(
+            source_style_patches,
+            target_style_patches,
+            candidate_coords,
+            style_weights,
+            None,
+            **ssd_kw,
+        )
+    if has_guide:
+        with _mp_region(f"{region}:ssd_guide", dev):
+            errors = errors + compute_patch_ssd_vectorized(
+                source_guide_patches,
+                target_guide_patches,
+                candidate_coords,
+                guide_weights,
+                target_modulation_patches,
+                source_style_patches_for_bilateral=source_style_patches,
+                **ssd_kw,
+            )
+    return errors
+
+
+def _gather_chunk(grid, ys: torch.Tensor, xs: torch.Tensor, indices: dict, role: str):
+    """Patches of ``grid`` centered at (ys, xs); pixel indices are shared per grid size."""
+    if isinstance(grid, ImagePatches):
+        key = (role, grid.shape[0], grid.shape[1])
+        index = indices.get(key)
+        if index is None:
+            index = grid.pixel_index(ys, xs)
+            indices[key] = index
+        return grid.gather_index(index)
+    return grid[ys, xs]
+
+
+def _bounded_patch_errors(
+    candidates: torch.Tensor,
+    target_ys: torch.Tensor,
+    target_xs: torch.Tensor,
+    source_style_patches,
+    target_style_patches,
+    source_guide_patches,
+    target_guide_patches,
+    target_modulation_patches,
+    style_weights: torch.Tensor,
+    guide_weights: torch.Tensor,
+    patch_size: int,
+    cost_function_mode: int,
+    ssd_kw: dict,
+    *,
+    region: str,
+) -> torch.Tensor:
+    """
+    Patch cost of ``candidates`` (N, 2) for target pixels (target_ys, target_xs),
+    gathering at most ``chunk_pixels`` patches per grid at a time.
+
+    Each chunk's matched source patches become a (1, n, D) grid addressed by
+    ``(x=i, y=0)``, so the same cost kernels as the materialized path run on the
+    same values (results match up to float reduction order).
+    """
+    device = candidates.device
+    H_s, W_s = source_style_patches.shape[:2]
+    grids = (
+        source_style_patches,
+        target_style_patches,
+        source_guide_patches,
+        target_guide_patches,
+        target_modulation_patches,
+    )
+    chunk = min(g.chunk_pixels for g in grids if isinstance(g, ImagePatches))
+    has_guide = source_guide_patches.numel() > 0
+    total = candidates.shape[0]
+    errors = torch.empty(total, dtype=torch.float32, device=device)
+    for start in range(0, total, chunk):
+        end = min(total, start + chunk)
+        count = end - start
+        cand = candidates[start:end]
+        sx = cand[:, 0].clamp(0, W_s - 1)
+        sy = cand[:, 1].clamp(0, H_s - 1)
+        ty = target_ys[start:end]
+        tx = target_xs[start:end]
+        indices: dict = {}
+        ss = _gather_chunk(source_style_patches, sy, sx, indices, "source")
+        ts = _gather_chunk(target_style_patches, ty, tx, indices, "target")
+        if has_guide:
+            sg = _gather_chunk(source_guide_patches, sy, sx, indices, "source")
+            tg = _gather_chunk(target_guide_patches, ty, tx, indices, "target")
+        else:
+            sg = torch.empty((count, 0), dtype=torch.float32, device=device)
+            tg = sg
+        mod = (
+            _gather_chunk(target_modulation_patches, ty, tx, indices, "target")
+            if target_modulation_patches is not None
+            else None
+        )
+        indices.clear()
+        errors[start:end] = _patch_errors(
+            ss.unsqueeze(0),
+            ts,
+            sg.unsqueeze(0),
+            tg,
+            _local_nnf(count, device),
+            style_weights,
+            guide_weights,
+            patch_size,
+            cost_function_mode,
+            mod,
+            ssd_kw,
+            region=region,
+        )
+    return errors
+
+
 def try_patch_batch(
     candidate_coords: torch.Tensor,
     current_nnf: torch.Tensor,
@@ -123,73 +318,56 @@ def try_patch_batch(
         & (candidate_coords[..., 1] < H_s - r)
     )
 
-    if cost_function_mode == COST_FUNCTION_NCC:
-        with _mp_region("try_patch:ncc", _dev):
-            candidate_patch_errors = compute_patch_ncc_vectorized(
-                source_style_patches,
-                target_style_patches,
-                source_guide_patches,
-                target_guide_patches,
-                candidate_coords,
-                patch_size,
-                style_weights,
-                guide_weights,
-                source_stats,
-                target_stats,
-                target_modulation_patches,
-                use_bilateral=use_bilateral,
-                sigma_spatial=sigma_spatial,
-                sigma_color=sigma_color,
-                n_size_step=n_size_step,
-            )
-    else:  # SSD
-        ssd_kw = {
-            "use_bilateral": use_bilateral,
-            "sigma_spatial": sigma_spatial,
-            "sigma_color": sigma_color,
-            "n_size_step": n_size_step,
-        }
-        if (
-            source_guide_patches.numel() > 0
-            and (not use_bilateral)
-            and n_size_step == 1
-        ):
-            with _mp_region("try_patch:ssd_fused", _dev):
-                candidate_patch_errors = compute_patch_ssd_style_guide_fused(
-                    source_style_patches,
-                    target_style_patches,
-                    source_guide_patches,
-                    target_guide_patches,
-                    candidate_coords,
-                    style_weights,
-                    guide_weights,
-                    target_modulation_patches,
-                    **ssd_kw,
-                )
-        else:
-            with _mp_region("try_patch:ssd_style", _dev):
-                candidate_patch_errors = compute_patch_ssd_vectorized(
-                    source_style_patches,
-                    target_style_patches,
-                    candidate_coords,
-                    style_weights,
-                    None,
-                    **ssd_kw,
-                )
-            if source_guide_patches.numel() > 0:
-                with _mp_region("try_patch:ssd_guide", _dev):
-                    candidate_patch_errors = (
-                        candidate_patch_errors
-                        + compute_patch_ssd_vectorized(
-                            source_guide_patches,
-                            target_guide_patches,
-                            candidate_coords,
-                            guide_weights,
-                            target_modulation_patches,
-                            source_style_patches_for_bilateral=source_style_patches,
-                            **ssd_kw,
-                        )
-                    )
+    ssd_kw = {
+        "use_bilateral": use_bilateral,
+        "sigma_spatial": sigma_spatial,
+        "sigma_color": sigma_color,
+        "n_size_step": n_size_step,
+    }
+    if _uses_image_patches(
+        source_style_patches,
+        target_style_patches,
+        source_guide_patches,
+        target_guide_patches,
+        target_modulation_patches,
+    ):
+        if candidate_coords.dim() != 3:
+            raise ValueError("on-demand patch grids need an (H, W, 2) candidate grid")
+        H_t, W_t = candidate_coords.shape[:2]
+        target_ys, target_xs = _target_grid_coords(H_t, W_t, _dev)
+        candidate_patch_errors = _bounded_patch_errors(
+            candidate_coords.reshape(-1, 2),
+            target_ys,
+            target_xs,
+            source_style_patches,
+            target_style_patches,
+            source_guide_patches,
+            target_guide_patches,
+            target_modulation_patches,
+            style_weights,
+            guide_weights,
+            patch_size,
+            cost_function_mode,
+            ssd_kw,
+            region="try_patch",
+        ).view(H_t, W_t)
+    else:
+        candidate_patch_errors = _patch_errors(
+            source_style_patches,
+            target_style_patches,
+            source_guide_patches,
+            target_guide_patches,
+            candidate_coords,
+            style_weights,
+            guide_weights,
+            patch_size,
+            cost_function_mode,
+            target_modulation_patches,
+            ssd_kw,
+            source_stats,
+            target_stats,
+            region="try_patch",
+        )
 
     if uniformity_weight == 0.0:
         with _mp_region("try_patch:omega_gather_and_cost", _dev):
@@ -471,37 +649,41 @@ def random_search_step(
         current_nnf_active = nnf[y_coords, x_coords]
         current_errors_active = error_map[y_coords, x_coords]
 
-        # Target-side data is invariant across random-search radii for this active set.
-        target_style_p_v = target_style_patches[y_coords, x_coords]
-        target_guide_p_v = (
-            target_guide_patches[y_coords, x_coords]
-            if target_guide_patches.numel() > 0
-            else target_guide_patches
+        bounded = _uses_image_patches(
+            source_style_patches,
+            target_style_patches,
+            source_guide_patches,
+            target_guide_patches,
+            target_modulation_patches,
         )
-        target_mod_v = (
-            target_modulation_patches[y_coords, x_coords]
-            if target_modulation_patches is not None
-            else None
-        )
-        target_stats_v = None
-        if target_stats is not None:
-            t_vals, t_mean, t_std = target_stats
-            target_stats_v = (
-                t_vals[y_coords, x_coords],
-                t_mean[y_coords, x_coords],
-                t_std[y_coords, x_coords],
+        target_style_p_v = target_guide_p_v = target_mod_v = target_stats_v = None
+        if not bounded:
+            # Target-side data is invariant across random-search radii for this
+            # active set. On-demand grids gather it per chunk instead.
+            target_style_p_v = target_style_patches[y_coords, x_coords]
+            target_guide_p_v = (
+                target_guide_patches[y_coords, x_coords]
+                if target_guide_patches.numel() > 0
+                else target_guide_patches
             )
+            target_mod_v = (
+                target_modulation_patches[y_coords, x_coords]
+                if target_modulation_patches is not None
+                else None
+            )
+            if target_stats is not None:
+                t_vals, t_mean, t_std = target_stats
+                target_stats_v = (
+                    t_vals[y_coords, x_coords],
+                    t_mean[y_coords, x_coords],
+                    t_std[y_coords, x_coords],
+                )
         ssd_kw = {
             "use_bilateral": use_bilateral,
             "sigma_spatial": sigma_spatial,
             "sigma_color": sigma_color,
             "n_size_step": n_size_step,
         }
-        can_use_fused_ssd = (
-            source_guide_patches.numel() > 0
-            and (not use_bilateral)
-            and n_size_step == 1
-        )
 
         use_omega_cost = uniformity_weight != 0.0
         omega_mean_buf = None
@@ -564,56 +746,40 @@ def random_search_step(
             # per radius; invalid candidates are masked out before any write.
             cand_v = candidate_coords_active
 
-            if cost_function_mode == COST_FUNCTION_NCC:
-                cand_errors_v = compute_patch_ncc_vectorized(
+            if bounded:
+                cand_errors_v = _bounded_patch_errors(
+                    cand_v,
+                    y_coords,
+                    x_coords,
+                    source_style_patches,
+                    target_style_patches,
+                    source_guide_patches,
+                    target_guide_patches,
+                    target_modulation_patches,
+                    style_weights,
+                    guide_weights,
+                    patch_size,
+                    cost_function_mode,
+                    ssd_kw,
+                    region="rs",
+                )
+            else:
+                cand_errors_v = _patch_errors(
                     source_style_patches,
                     target_style_p_v,
                     source_guide_patches,
                     target_guide_p_v,
                     cand_v,
-                    patch_size,
                     style_weights,
                     guide_weights,
+                    patch_size,
+                    cost_function_mode,
+                    target_mod_v,
+                    ssd_kw,
                     source_stats,
                     target_stats_v,
-                    target_mod_v,
-                    use_bilateral=use_bilateral,
-                    sigma_spatial=sigma_spatial,
-                    sigma_color=sigma_color,
-                    n_size_step=n_size_step,
+                    region="rs",
                 )
-            else:  # SSD
-                if can_use_fused_ssd:
-                    cand_errors_v = compute_patch_ssd_style_guide_fused(
-                        source_style_patches,
-                        target_style_p_v,
-                        source_guide_patches,
-                        target_guide_p_v,
-                        cand_v,
-                        style_weights,
-                        guide_weights,
-                        target_mod_v,
-                        **ssd_kw,
-                    )
-                else:
-                    cand_errors_v = compute_patch_ssd_vectorized(
-                        source_style_patches,
-                        target_style_p_v,
-                        cand_v,
-                        style_weights,
-                        None,
-                        **ssd_kw,
-                    )
-                    if source_guide_patches.numel() > 0:
-                        cand_errors_v = cand_errors_v + compute_patch_ssd_vectorized(
-                            source_guide_patches,
-                            target_guide_p_v,
-                            cand_v,
-                            guide_weights,
-                            target_mod_v,
-                            source_style_patches_for_bilateral=source_style_patches,
-                            **ssd_kw,
-                        )
 
             # --- 5. Compare total error and update ---
             if use_omega_cost:

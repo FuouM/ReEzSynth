@@ -7,7 +7,8 @@ from ...consts import EBSYNTH_VOTEMODE_WEIGHTED
 from ...torch_ops.device_cache import clear_torch_device_cache
 from ...torch_ops.mask_ops import dilate_mask, evaluate_mask
 from ...torch_ops.omega_ops import populate_omega_map
-from ...torch_ops.patch_ops import extract_patches
+from ...torch_ops.patch_memory import LevelShape, PatchPlan, plan_level
+from ...torch_ops.patch_ops import ImagePatches, extract_patches
 from ...torch_ops.patchmatch_ops import (
     propagation_step,
     random_search_step,
@@ -34,6 +35,7 @@ class PyTorchBackend:
 
         self.timer = SynthesisTimer()
         self.benchmark_enabled = False
+        self._announced_plans: set[tuple] = set()
 
     def enable_benchmarking(self, enabled: bool = True):
         """Enable or disable detailed benchmarking."""
@@ -64,6 +66,59 @@ class PyTorchBackend:
             as_float=True,
             clear_device_cache=clear_device_cache,
         )
+
+    @classmethod
+    def _patch_grid(
+        cls,
+        tensor: torch.Tensor,
+        patch_size: int,
+        plan: PatchPlan,
+        *,
+        clear_device_cache: bool = True,
+    ) -> torch.Tensor | ImagePatches:
+        """Unfold grid for the materialized plan, on-demand view for the bounded one."""
+        if plan.chunk_pixels is None:
+            return cls._extract_patches(
+                tensor, patch_size, clear_device_cache=clear_device_cache
+            )
+        return ImagePatches(tensor, patch_size, plan.chunk_pixels)
+
+    def _plan_level(
+        self,
+        style_tensor: torch.Tensor,
+        source_guide_tensor: torch.Tensor,
+        target_guide_tensor: torch.Tensor,
+        modulation_tensor: torch.Tensor,
+        patch_size: int,
+        *,
+        iterative: bool,
+    ) -> PatchPlan:
+        shape = LevelShape(
+            source_hw=tuple(style_tensor.shape[:2]),
+            target_hw=tuple(target_guide_tensor.shape[:2]),
+            style_channels=style_tensor.shape[2],
+            guide_channels=source_guide_tensor.shape[2],
+            modulation_channels=(
+                modulation_tensor.shape[2] if modulation_tensor.numel() > 0 else 0
+            ),
+            patch_size=patch_size,
+        )
+        plan = plan_level(shape, style_tensor.device, iterative=iterative)
+        key = (shape, plan.strategy, plan.chunk_pixels)
+        if plan.strategy == "bounded" and key not in self._announced_plans:
+            self._announced_plans.add(key)
+            budget = (
+                f"{plan.budget_bytes >> 20} MiB"
+                if plan.budget_bytes is not None
+                else "unknown"
+            )
+            print(
+                f"[torch backend] level {shape.target_hw[1]}x{shape.target_hw[0]}: "
+                f"materialized patches need ~{plan.estimate_bytes >> 20} MiB "
+                f"(budget {budget}); gathering patches in chunks of "
+                f"{plan.chunk_pixels} pixels"
+            )
+        return plan
 
     def _make_random_generator(self, device: torch.device) -> torch.Generator | None:
         """Return a deterministic generator when PyTorch supports one for the device."""
@@ -178,7 +233,16 @@ class PyTorchBackend:
             "sigma_color": self.ebsynth_config.sigma_color,
         }
 
-        # --- OPTIMIZATION: Pre-compute all patches once before the loops ---
+        # Pre-compute all patch grids once before the loops (unfold grids, or
+        # on-demand views when the unfold grids would not fit the memory budget).
+        plan = self._plan_level(
+            style_tensor,
+            source_guide_tensor,
+            target_guide_tensor,
+            modulation_tensor,
+            patch_size,
+            iterative=False,
+        )
         source_style_patches = None
         target_style_resized = None
         target_style_patches = None
@@ -194,35 +258,34 @@ class PyTorchBackend:
                 source_guide_patches, \
                 target_guide_patches, \
                 target_modulation_patches
-            source_style_patches = self._extract_patches(
-                style_tensor, patch_size, clear_device_cache=False
+            source_style_patches = self._patch_grid(
+                style_tensor, patch_size, plan, clear_device_cache=False
             )
             if H_s == H_t and W_s == W_t:
                 target_style_resized = style_tensor
                 target_style_patches = source_style_patches
             else:
                 target_style_resized = resample_tensor(style_tensor, H_t, W_t)
-                target_style_patches = self._extract_patches(
-                    target_style_resized, patch_size, clear_device_cache=False
+                target_style_patches = self._patch_grid(
+                    target_style_resized, patch_size, plan, clear_device_cache=False
                 )
-            source_guide_patches = self._extract_patches(
-                source_guide_tensor, patch_size, clear_device_cache=False
+            source_guide_patches = self._patch_grid(
+                source_guide_tensor, patch_size, plan, clear_device_cache=False
             )
             if modulation_tensor.numel() > 0:
-                target_guide_patches = self._extract_patches(
-                    target_guide_tensor, patch_size, clear_device_cache=False
+                target_guide_patches = self._patch_grid(
+                    target_guide_tensor, patch_size, plan, clear_device_cache=False
                 )
-                target_modulation_patches = self._extract_patches(
-                    modulation_tensor, patch_size, clear_device_cache=True
+                target_modulation_patches = self._patch_grid(
+                    modulation_tensor, patch_size, plan, clear_device_cache=True
                 )
             else:
-                target_guide_patches = self._extract_patches(
-                    target_guide_tensor, patch_size, clear_device_cache=True
+                target_guide_patches = self._patch_grid(
+                    target_guide_tensor, patch_size, plan, clear_device_cache=True
                 )
                 target_modulation_patches = None
 
         self._timed_operation("patch_extraction", _extract_patches)
-        # --- END OPTIMIZATION ---
 
         omega_map = None
         error_map = None
@@ -444,7 +507,16 @@ class PyTorchBackend:
             "sigma_color": self.ebsynth_config.sigma_color,
         }
 
-        # Pre-extract all source patches once, as they don't change.
+        # Pre-extract all source patches once, as they don't change (unfold grids,
+        # or on-demand views when the unfold grids would not fit the memory budget).
+        plan = self._plan_level(
+            style_tensor,
+            source_guide_tensor,
+            target_guide_tensor,
+            modulation_tensor,
+            patch_size,
+            iterative=True,
+        )
         source_style_patches = None
         source_guide_patches = None
         target_guide_patches = None
@@ -456,24 +528,24 @@ class PyTorchBackend:
                 source_guide_patches, \
                 target_guide_patches, \
                 target_modulation_patches
-            source_style_patches = self._extract_patches(
-                style_tensor, patch_size, clear_device_cache=False
+            source_style_patches = self._patch_grid(
+                style_tensor, patch_size, plan, clear_device_cache=False
             )
-            source_guide_patches = self._extract_patches(
-                source_guide_tensor, patch_size, clear_device_cache=False
+            source_guide_patches = self._patch_grid(
+                source_guide_tensor, patch_size, plan, clear_device_cache=False
             )
             # --- OPTIMIZATION: Hoist target guide patch extraction out of the loop ---
             # The target guide tensor does not change during the iterative process.
             if modulation_tensor.numel() > 0:
-                target_guide_patches = self._extract_patches(
-                    target_guide_tensor, patch_size, clear_device_cache=False
+                target_guide_patches = self._patch_grid(
+                    target_guide_tensor, patch_size, plan, clear_device_cache=False
                 )
-                target_modulation_patches = self._extract_patches(
-                    modulation_tensor, patch_size, clear_device_cache=True
+                target_modulation_patches = self._patch_grid(
+                    modulation_tensor, patch_size, plan, clear_device_cache=True
                 )
             else:
-                target_guide_patches = self._extract_patches(
-                    target_guide_tensor, patch_size, clear_device_cache=True
+                target_guide_patches = self._patch_grid(
+                    target_guide_tensor, patch_size, plan, clear_device_cache=True
                 )
                 target_modulation_patches = None
 
@@ -521,8 +593,8 @@ class PyTorchBackend:
 
                 def _extract_target_patches():
                     nonlocal target_style_patches_current
-                    target_style_patches_current = self._extract_patches(
-                        target_style_prev, patch_size
+                    target_style_patches_current = self._patch_grid(
+                        target_style_prev, patch_size, plan
                     )
 
                 self._timed_operation(
@@ -673,7 +745,7 @@ class PyTorchBackend:
                 source_guide_patches, \
                 target_guide_patches
             output_image = target_style_temp
-            final_target_patches = self._extract_patches(output_image, patch_size)
+            final_target_patches = self._patch_grid(output_image, patch_size, plan)
             # Use pre-computed target_guide_patches here as well
             output_error = try_patch_batch(
                 nnf,

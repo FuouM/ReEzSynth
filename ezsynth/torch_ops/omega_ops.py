@@ -9,11 +9,12 @@ NNF, enabling a uniformity penalty that discourages overuse of popular patches.
 import torch
 import torch.nn.functional as F
 
+from ..consts import vote_chunk_budget_bytes
 from .device_cache import clear_torch_device_cache
 
 # conv2d kernels for box-filter omega (device, patch_size, dtype) -> cached tensor
 _OMEGA_BOX_KERNEL: dict = {}
-# patch coverage offsets (device, patch_size) -> (ps, ps, 2) tensor
+# patch coverage offsets (device, patch_size) -> (dy[K], dx[K]) long, K = patch_size**2
 _OMEGA_PATCH_OFFSETS: dict = {}
 # scatter delta buffers (device, dtype) -> (minus_one, plus_one)
 _OMEGA_DELTA_CACHE: dict = {}
@@ -36,17 +37,31 @@ def _omega_box_kernel(
     return _OMEGA_BOX_KERNEL[key]
 
 
-def _omega_patch_offsets(patch_size: int, device: torch.device) -> torch.Tensor:
+def _omega_patch_offsets(
+    patch_size: int, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor]:
     key = (patch_size, str(device))
     if key not in _OMEGA_PATCH_OFFSETS:
         r = patch_size // 2
-        offsets_y, offsets_x = torch.meshgrid(
-            torch.arange(-r, r + 1, device=device),
-            torch.arange(-r, r + 1, device=device),
-            indexing="ij",
-        )
-        _OMEGA_PATCH_OFFSETS[key] = torch.stack([offsets_x, offsets_y], dim=-1)
+        k = torch.arange(patch_size * patch_size, device=device, dtype=torch.long)
+        _OMEGA_PATCH_OFFSETS[key] = (k // patch_size - r, k % patch_size - r)
     return _OMEGA_PATCH_OFFSETS[key]
+
+
+def _omega_chunk_centers(patch_size: int) -> int:
+    """Patch centers expanded at once: two live int64 ``(n, patch_size**2)`` tensors."""
+    per_center = patch_size * patch_size * 8 * 2
+    return max(1, vote_chunk_budget_bytes() // per_center)
+
+
+def _omega_linear_indices(
+    centers: torch.Tensor, patch_size: int, H_s: int, W_s: int
+) -> torch.Tensor:
+    """Flat indices of the clamped patch_size x patch_size pixels around each center."""
+    dy, dx = _omega_patch_offsets(patch_size, centers.device)
+    xs = (centers[:, 0:1].long() + dx).clamp_(0, W_s - 1)
+    linear = (centers[:, 1:2].long() + dy).clamp_(0, H_s - 1)
+    return linear.mul_(W_s).add_(xs).view(-1)
 
 
 def _omega_scatter_deltas(
@@ -71,9 +86,6 @@ def populate_omega_map(
     """
     Count how many target patches reference each source pixel.
 
-    ACCELERATED VERSION: Uses Metal kernels on Apple Silicon for maximum performance.
-    Falls back to optimized PyTorch implementation.
-
     For each NNF entry pointing to a source patch center, increment counts
     for all pixels covered by that patch (patch_size x patch_size region).
 
@@ -85,39 +97,25 @@ def populate_omega_map(
     Returns:
         omega_map: (H_s, W_s) int32 tensor with usage counts
 
-    Implementation Strategy:
-    - For each NNF entry, expand to cover patch_size x patch_size region
-    - Use scatter_add to efficiently accumulate counts
-    - Clamp coordinates to valid range
+    Implementation: expand NNF centers to their clamped patch pixels in chunks of
+    ``_omega_chunk_centers`` (bounded by ``vote_chunk_budget_bytes``) and
+    scatter-add the counts.
     """
 
-    _H_t, _W_t = nnf.shape[:2]
     H_s, W_s = source_shape
     device = nnf.device
-
-    omega_map = torch.zeros((H_s, W_s), dtype=torch.int32, device=device)
-
-    offsets = _omega_patch_offsets(patch_size, device)
-
-    # Expand NNF to all patch pixels
-    # nnf: (H_t, W_t, 2) -> (H_t, W_t, 1, 1, 2) + (1, 1, ps, ps, 2) = (H_t, W_t, ps, ps, 2)
-    expanded_coords = nnf.unsqueeze(2).unsqueeze(3) + offsets.unsqueeze(0).unsqueeze(0)
-
-    # Flatten to list of all coordinates: (H_t * W_t * ps * ps, 2)
-    all_coords = expanded_coords.reshape(-1, 2)
-
-    # Clamp to valid range
-    all_coords[:, 0].clamp_(0, W_s - 1)
-    all_coords[:, 1].clamp_(0, H_s - 1)
-
-    # Convert to linear indices for scatter_add
-    linear_indices = all_coords[:, 1] * W_s + all_coords[:, 0]
-
-    # Count occurrences using bincount, then reshape to (H_s, W_s)
-    counts = torch.bincount(linear_indices, minlength=H_s * W_s)
-    omega_map = counts.view(H_s, W_s).to(torch.int32)
-
-    return omega_map
+    centers = nnf.reshape(-1, 2)
+    omega_flat = torch.zeros(H_s * W_s, dtype=torch.int32, device=device)
+    # Expand centers to their (clamped) patch pixels in bounded chunks; integer
+    # scatter-adds are exact, so the counts do not depend on the chunking.
+    chunk = _omega_chunk_centers(patch_size)
+    for start in range(0, centers.shape[0], chunk):
+        linear = _omega_linear_indices(
+            centers[start : start + chunk], patch_size, H_s, W_s
+        )
+        _dec, inc = _omega_scatter_deltas(linear.numel(), device, omega_flat.dtype)
+        omega_flat.scatter_add_(0, linear, inc)
+    return omega_flat.view(H_s, W_s)
 
 
 def _omega_float_scratch(device: torch.device, H: int, W: int) -> torch.Tensor:
@@ -293,37 +291,23 @@ def update_omega_map(
         new_coords: Source coordinates to increment (N, 2)
         patch_size: Size of patches
         clear_device_cache: If True, clear MPS/CUDA cache after scatter when enabled in consts.
-    - Expand coordinates to cover patch regions
-    - Use scatter_add to efficiently update counts
+
+    Coordinates are expanded to their clamped patch pixels in bounded chunks and
+    scatter-added (exact integer arithmetic, independent of the chunking).
     """
     H_s, W_s = omega_map.shape
     device = omega_map.device
-    # N = old_coords.shape[0]
-
-    offsets = _omega_patch_offsets(patch_size, device)
-
-    # Expand coordinates to patch coverage
-    old_expanded = old_coords.unsqueeze(1).unsqueeze(2) + offsets  # (N, ps, ps, 2)
-    new_expanded = new_coords.unsqueeze(1).unsqueeze(2) + offsets
-
-    old_flat = old_expanded.reshape(-1, 2)  # (N*ps*ps, 2)
-    new_flat = new_expanded.reshape(-1, 2)
-
-    # Clamp coordinates
-    old_flat[:, 0].clamp_(0, W_s - 1)
-    old_flat[:, 1].clamp_(0, H_s - 1)
-    new_flat[:, 0].clamp_(0, W_s - 1)
-    new_flat[:, 1].clamp_(0, H_s - 1)
-
-    # Convert to linear indices
-    old_linear = old_flat[:, 1] * W_s + old_flat[:, 0]
-    new_linear = new_flat[:, 1] * W_s + new_flat[:, 0]
-
-    # Update counts: decrement old, increment new
     omega_flat = omega_map.view(-1)
-    dec, inc = _omega_scatter_deltas(old_linear.numel(), device, omega_flat.dtype)
-    omega_flat.scatter_add_(0, old_linear, dec)
-    omega_flat.scatter_add_(0, new_linear, inc)
+    # Expand coordinates to patch coverage in bounded chunks (exact integer adds).
+    chunk = _omega_chunk_centers(patch_size)
+    for start in range(0, old_coords.shape[0], chunk):
+        end = start + chunk
+        old_linear = _omega_linear_indices(old_coords[start:end], patch_size, H_s, W_s)
+        dec, inc = _omega_scatter_deltas(old_linear.numel(), device, omega_flat.dtype)
+        omega_flat.scatter_add_(0, old_linear, dec)
+        del old_linear
+        new_linear = _omega_linear_indices(new_coords[start:end], patch_size, H_s, W_s)
+        omega_flat.scatter_add_(0, new_linear, inc)
 
     if clear_device_cache:
         clear_torch_device_cache(device)
