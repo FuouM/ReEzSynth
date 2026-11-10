@@ -327,7 +327,7 @@ class PyramidPatchMatcherCore(ABC):
         self.use_pairwise_patch_error = use_pairwise_patch_error
         self.tracking_window_size = tracking_window_size
         self.initialize = initialize
-        apply_gpu_memory_limit(self._pyramid_torch_device())
+        apply_gpu_memory_limit(self._pyramid_torch_device)
 
         maximum_patch_size = minimum_patch_size + (num_iter - 1) * 2
         self.pyramid_level = int(

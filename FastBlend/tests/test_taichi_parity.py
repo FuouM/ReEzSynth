@@ -72,3 +72,15 @@ def test_estimate_nnf_keeps_coordinates_in_bounds(matcher):
     assert nnf_new.shape == nnf.shape
     assert int(nnf_new[..., 0].min()) >= 0 and int(nnf_new[..., 0].max()) < H
     assert int(nnf_new[..., 1].min()) >= 0 and int(nnf_new[..., 1].max()) < W
+
+
+def test_pyramid_estimate_returns_full_resolution_in_bounds_nnf():
+    size = 64
+    pyramid = taichi_backend.PyramidPatchMatcherTaichi(size, size, C, 5, num_iter=2)
+    torch.manual_seed(0)
+    guide = torch.rand((1, size, size, C), device=pyramid._pyramid_torch_device)
+    style = torch.rand_like(guide)
+    nnf, target_style = pyramid.estimate_nnf(guide, guide, style)
+    assert nnf.shape == (1, size, size, 2)
+    assert target_style.shape == (1, size, size, C)
+    assert int(nnf.min()) >= 0 and int(nnf.max()) < size
