@@ -80,9 +80,11 @@ Different Loss functions
 1. **Clone the Repository**:
 
     ```bash
-    git clone https://github.com/FuouM/ReEzSynth.git
+    git clone --filter=blob:none https://github.com/FuouM/ReEzSynth.git
     cd ReEzSynth
     ```
+
+    `--filter=blob:none` makes a partial clone: file contents are downloaded only for the checked-out commit, so the large example media stored in older history is skipped (current media comes from Git LFS). To skip the example media entirely, prefix the clone with `GIT_LFS_SKIP_SMUDGE=1`, then fetch what you need later, e.g. `git lfs pull --include="examples/**"`.
 
 2. **Create the environment**:
     `uv sync` creates `.venv` with Python 3.10 and installs the locked dependencies, including PyTorch built for CUDA 12.6 (CPU/MPS build on macOS).
@@ -110,7 +112,7 @@ Different Loss functions
 
 ### ComfyUI
 
-1. Clone into `ComfyUI/custom_nodes/ReEzSynth` (with [Git LFS](https://git-lfs.com/) installed if you want the example media).
+1. Clone into `ComfyUI/custom_nodes/ReEzSynth`, preferably as a partial clone without media: `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/FuouM/ReEzSynth.git` (on Windows `cmd`: `set GIT_LFS_SKIP_SMUDGE=1` first).
 2. Install `requirements.txt` into ComfyUI's Python; torch/torchvision come from ComfyUI. Add `taichi` for the Taichi backend.
 3. Restart ComfyUI. Nodes appear under the `ReEzSynth` prefix: Guide, Guides Append, Image Synth Config, Image Synth, Video Style Keyframe(s), Video Synth Config, Video Synth.
 4. Example graphs are in `workflows/` (`reezsynth_imgsynth_facestyle.json`, `reezsynth_imgsynth_stylelit.json`, `reezsynth_imgsynth_texbynum.json`, `reezsynth_videosynth.json`); drag one onto the canvas.
