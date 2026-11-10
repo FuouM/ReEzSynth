@@ -13,9 +13,13 @@ MODULE_NAME = "fastblend_extension_cuda"
 _ext_dir = Path(__file__).resolve().parent.parent / "fastblend_extension"
 _source_files_str = [
     str(_ext_dir / "extension.cpp"),
-    str(_ext_dir / "dispatch.cu"),
+    str(_ext_dir / "dispatch.cpp"),
     str(_ext_dir / "kernels.cu"),
 ]
+# kernels.cu includes no PyTorch headers, so nvcc can compile it as C++17 (PyTorch
+# adds -std=c++20 first; nvcc keeps the last -std). Host .cpp files keep PyTorch's
+# own standard. CUDA architectures come from TORCH_CUDA_ARCH_LIST or the local GPU.
+_EXTRA_CUDA_CFLAGS = ["-std=c++17"]
 
 _cached: Any | None = None
 _load_attempted = False
@@ -43,6 +47,7 @@ def load_fastblend_extension():
         _cached = torch.utils.cpp_extension.load(
             name=MODULE_NAME,
             sources=_source_files_str,
+            extra_cuda_cflags=_EXTRA_CUDA_CFLAGS,
             verbose=verbose,
         )
     except Exception as e:

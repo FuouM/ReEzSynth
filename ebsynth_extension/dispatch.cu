@@ -1,164 +1,130 @@
 // ReEzSynth/ebsynth_extension/dispatch.cu
-#include "dispatch.h"
-
-// Include modular headers
+//
+// Kernel orchestration for one synthesis level. No PyTorch headers here (see
+// accessor.h); the PyTorch-facing entry points live in cuda_dispatch.cpp.
+// All work is enqueued on the caller's stream (PyTorch's current stream), so it is
+// ordered with surrounding tensor ops and needs no host synchronization.
+#include "cuda_launch.h"
 #include "kernels.h"
-#include "cost_functions.h"
-#include "omega_ops.h"
-#include "mask_ops.h"
-#include "voting.h"
-#include "patchmatch.h"
-#include "utils.h"
-#include "integral_image.h"
 
-#include <stdexcept>
+#include <algorithm>
+#include <utility>
 
-// ===================================================================
-//                MAIN DISPATCH FUNCTION (SINGLE LEVEL)
-// ===================================================================
-void ebsynth_cuda_run_level(
-    torch::Tensor output_image, torch::Tensor output_error,
-    torch::Tensor nnf,
-    torch::Tensor style_level, torch::Tensor source_guide_level,
-    torch::Tensor target_guide_level, torch::Tensor target_modulation_level,
-    torch::Tensor style_weights, torch::Tensor guide_weights,
-    float uniformity_weight, int patch_size, int vote_mode,
-    int num_search_vote_iters, int num_patch_match_iters,
-    int stop_threshold, torch::Tensor rand_states_tensor,
-    float search_pruning_threshold, int cost_function_mode,
-    bool use_optimization,
-    bool use_bilateral,
-    float sigma_spatial,
-    float sigma_color,
-    int n_size_step)
+#define EBS_RETURN_IF_ERROR(expr)      \
+    do                                 \
+    {                                  \
+        const cudaError_t _err = expr; \
+        if (_err != cudaSuccess)       \
+            return _err;               \
+    } while (0)
+
+// Launch-configuration errors are reported by cudaGetLastError right after a launch.
+#define EBS_LAUNCH_CHECK() EBS_RETURN_IF_ERROR(cudaGetLastError())
+
+namespace ebs
 {
 
-    const int source_h = style_level.size(0);
-    const int source_w = style_level.size(1);
-    const int target_h = target_guide_level.size(0);
-    const int target_w = target_guide_level.size(1);
+namespace
+{
+cudaError_t copy_image(PackedAccessor32<uint8_t, 3> dst, PackedAccessor32<uint8_t, 3> src, cudaStream_t stream)
+{
+    const std::size_t bytes = static_cast<std::size_t>(src.size(0)) * src.size(1) * src.size(2);
+    return cudaMemcpyAsync(dst.data(), src.data(), bytes, cudaMemcpyDeviceToDevice, stream);
+}
+} // namespace
 
-    auto nnf_acc = nnf.packed_accessor32<int32_t, 3>();
-    auto error_acc = output_error.packed_accessor32<float, 2>();
-    auto source_style_acc = style_level.packed_accessor32<uint8_t, 3>();
-    auto source_guide_acc = source_guide_level.packed_accessor32<uint8_t, 3>();
-    auto target_guide_acc = target_guide_level.packed_accessor32<uint8_t, 3>();
-
-    bool use_modulation = target_modulation_level.numel() > 0;
-    auto target_modulation_guide_acc = use_modulation ? target_modulation_level.packed_accessor32<uint8_t, 3>() : source_guide_acc; // dummy if not used
-
-    auto style_weights_acc = style_weights.packed_accessor32<float, 1>();
-    auto guide_weights_acc = guide_weights.packed_accessor32<float, 1>();
+cudaError_t run_level_cuda(LevelBuffers b, const LevelParams &p, cudaStream_t stream)
+{
+    const int source_h = b.source_style.size(0);
+    const int source_w = b.source_style.size(1);
+    const int target_h = b.target_guide.size(0);
+    const int target_w = b.target_guide.size(1);
+    const int patch_size = p.patch_size;
+    const bool ncc = p.cost_function_mode == COST_FUNCTION_NCC;
 
     const dim3 threads(16, 16);
     const dim3 blocks((target_w + threads.x - 1) / threads.x, (target_h + threads.y - 1) / threads.y);
 
-    torch::Tensor omega_map = torch::zeros({source_h, source_w}, torch::kInt32).to(style_level.device());
-    auto omega_acc = omega_map.packed_accessor32<int32_t, 2>();
-    populate_initial_omega_kernel<<<blocks, threads>>>(omega_acc, nnf_acc, patch_size);
+    populate_initial_omega_kernel<<<blocks, threads, 0, stream>>>(b.omega, b.nnf, patch_size);
+    EBS_LAUNCH_CHECK();
 
-    torch::Tensor target_style_temp = torch::zeros_like(output_image);
-    torch::Tensor target_style_prev = torch::zeros_like(output_image);
-    torch::Tensor mask = torch::full({target_h, target_w}, 255, torch::kUInt8).to(style_level.device());
-    torch::Tensor mask2 = torch::empty_like(mask);
-
-    auto target_style_temp_acc = target_style_temp.packed_accessor32<uint8_t, 3>();
-    auto target_style_prev_acc = target_style_prev.packed_accessor32<uint8_t, 3>();
-    auto mask_acc = mask.packed_accessor32<uint8_t, 2>();
-    auto mask2_acc = mask2.packed_accessor32<uint8_t, 2>();
-
-    // ===================================================================
-    //                PRECOMPUTATION FOR NCC (SATs)
-    // ===================================================================
-    auto sat_options = torch::TensorOptions().device(style_level.device()).dtype(torch::kFloat64);
-    // Source SATs - computed once per level
-    torch::Tensor source_style_sat = torch::empty({source_h, source_w}, sat_options);
-    torch::Tensor source_style_sq_sat = torch::empty({source_h, source_w}, sat_options);
-    if (cost_function_mode == COST_FUNCTION_NCC)
+    // Source SATs are computed once per level; target SATs every iteration.
+    if (ncc)
     {
-        compute_integral_image_cuda(source_style_sat, style_level, PREP_GRAY);
-        compute_integral_image_cuda(source_style_sq_sat, style_level, PREP_GRAY_SQR);
+        EBS_RETURN_IF_ERROR(compute_integral_image_cuda(b.source_sat, b.source_style, b.sat_scratch, PREP_GRAY, stream));
+        EBS_RETURN_IF_ERROR(compute_integral_image_cuda(b.source_sq_sat, b.source_style, b.sat_scratch, PREP_GRAY_SQR, stream));
     }
-    auto source_style_sat_acc = source_style_sat.packed_accessor64<double, 2>();
-    auto source_style_sq_sat_acc = source_style_sq_sat.packed_accessor64<double, 2>();
 
-    // Target SATs - recomputed every iteration
-    torch::Tensor target_style_sat = torch::empty({target_h, target_w}, sat_options);
-    torch::Tensor target_style_sq_sat = torch::empty({target_h, target_w}, sat_options);
-    auto target_style_sat_acc = target_style_sat.packed_accessor64<double, 2>();
-    auto target_style_sq_sat_acc = target_style_sq_sat.packed_accessor64<double, 2>();
-    // ===================================================================
+    krnlVoteWeighted<<<blocks, threads, 0, stream>>>(b.style_temp, b.source_style, b.nnf, b.error, patch_size);
+    EBS_LAUNCH_CHECK();
+    EBS_RETURN_IF_ERROR(copy_image(b.style_prev, b.style_temp, stream));
 
-    krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);
-    target_style_prev.copy_(target_style_temp);
+    // One curandState per target pixel, indexed y * target_w + x by the kernels.
+    // States persist across calls, so successive levels/frames keep advancing them.
+    curandState *rand_states = static_cast<curandState *>(b.rand_states);
 
-    curandState *rand_states = (curandState *)rand_states_tensor.data_ptr();
-
-    for (int iter = 0; iter < num_search_vote_iters; ++iter)
+    for (int iter = 0; iter < p.num_search_vote_iters; ++iter)
     {
-        if (cost_function_mode == COST_FUNCTION_NCC)
+        if (ncc)
         {
-            // Recompute target-dependent SATs
-            compute_integral_image_cuda(target_style_sat, target_style_prev, PREP_GRAY);
-            compute_integral_image_cuda(target_style_sq_sat, target_style_prev, PREP_GRAY_SQR);
+            EBS_RETURN_IF_ERROR(compute_integral_image_cuda(b.target_sat, b.style_prev, b.sat_scratch, PREP_GRAY, stream));
+            EBS_RETURN_IF_ERROR(compute_integral_image_cuda(b.target_sq_sat, b.style_prev, b.sat_scratch, PREP_GRAY_SQR, stream));
         }
 
-        compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc, cost_function_mode, use_bilateral, sigma_spatial, sigma_color, n_size_step);
+        compute_initial_error_kernel<<<blocks, threads, 0, stream>>>(b.nnf, b.error, b.source_style, b.style_prev, b.source_guide, b.target_guide, b.target_modulation, b.use_modulation, patch_size, b.style_weights, b.guide_weights, p.cost_function_mode, p.use_bilateral, p.sigma_spatial, p.sigma_color, p.n_size_step);
+        EBS_LAUNCH_CHECK();
 
-        for (int i = 0; i < num_patch_match_iters; ++i)
+        for (int i = 0; i < p.num_patch_match_iters; ++i)
         {
-            propagation_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, (i % 2 == 1), uniformity_weight, mask_acc, cost_function_mode, source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc, use_bilateral, sigma_spatial, sigma_color, n_size_step);
+            propagation_step_kernel<<<blocks, threads, 0, stream>>>(b.nnf, b.error, b.omega, b.source_style, b.style_prev, b.source_guide, b.target_guide, b.target_modulation, b.use_modulation, b.style_weights, b.guide_weights, patch_size, (i % 2 == 1), p.uniformity_weight, b.mask, p.cost_function_mode, b.source_sat, b.source_sq_sat, b.target_sat, b.target_sq_sat, p.use_bilateral, p.sigma_spatial, p.sigma_color, p.n_size_step);
+            EBS_LAUNCH_CHECK();
         }
 
-        random_search_step_kernel<<<blocks, threads>>>(nnf_acc, error_acc, omega_acc, source_style_acc, target_style_prev_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, style_weights_acc, guide_weights_acc, patch_size, std::max(source_w, source_h) / 2, uniformity_weight, rand_states, mask_acc, search_pruning_threshold, cost_function_mode, source_style_sat_acc, source_style_sq_sat_acc, target_style_sat_acc, target_style_sq_sat_acc, use_bilateral, sigma_spatial, sigma_color, n_size_step);
+        random_search_step_kernel<<<blocks, threads, 0, stream>>>(b.nnf, b.error, b.omega, b.source_style, b.style_prev, b.source_guide, b.target_guide, b.target_modulation, b.use_modulation, b.style_weights, b.guide_weights, patch_size, std::max(source_w, source_h) / 2, p.uniformity_weight, rand_states, b.mask, p.search_pruning_threshold, p.cost_function_mode, b.source_sat, b.source_sq_sat, b.target_sat, b.target_sq_sat, p.use_bilateral, p.sigma_spatial, p.sigma_color, p.n_size_step);
+        EBS_LAUNCH_CHECK();
 
-        if (vote_mode == EBSYNTH_VOTEMODE_WEIGHTED)
+        if (p.vote_mode == EBSYNTH_VOTEMODE_WEIGHTED)
         {
-            krnlVoteWeighted<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, error_acc, patch_size);
+            krnlVoteWeighted<<<blocks, threads, 0, stream>>>(b.style_temp, b.source_style, b.nnf, b.error, patch_size);
         }
         else
         {
-            krnlVotePlain<<<blocks, threads>>>(target_style_temp_acc, source_style_acc, nnf_acc, patch_size);
+            krnlVotePlain<<<blocks, threads, 0, stream>>>(b.style_temp, b.source_style, b.nnf, patch_size);
         }
+        EBS_LAUNCH_CHECK();
 
-        if (iter < num_search_vote_iters - 1)
+        if (iter < p.num_search_vote_iters - 1)
         {
-            eval_mask_kernel<<<blocks, threads>>>(mask_acc, target_style_temp_acc, target_style_prev_acc, stop_threshold);
-            dilate_mask_kernel<<<blocks, threads>>>(mask2_acc, mask_acc, patch_size);
-            std::swap(mask, mask2);
-            mask_acc = mask.packed_accessor32<uint8_t, 2>();
-            mask2_acc = mask2.packed_accessor32<uint8_t, 2>();
+            eval_mask_kernel<<<blocks, threads, 0, stream>>>(b.mask, b.style_temp, b.style_prev, p.stop_threshold);
+            EBS_LAUNCH_CHECK();
+            dilate_mask_kernel<<<blocks, threads, 0, stream>>>(b.mask2, b.mask, patch_size);
+            EBS_LAUNCH_CHECK();
+            std::swap(b.mask, b.mask2);
         }
 
-        target_style_prev.copy_(target_style_temp);
+        EBS_RETURN_IF_ERROR(copy_image(b.style_prev, b.style_temp, stream));
     }
 
-    output_image.copy_(target_style_temp);
+    EBS_RETURN_IF_ERROR(copy_image(b.output, b.style_temp, stream));
 
-    compute_initial_error_kernel<<<blocks, threads>>>(nnf_acc, error_acc, source_style_acc, target_style_temp_acc, source_guide_acc, target_guide_acc, target_modulation_guide_acc, use_modulation, patch_size, style_weights_acc, guide_weights_acc, cost_function_mode, use_bilateral, sigma_spatial, sigma_color, n_size_step);
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
-        throw std::runtime_error(cudaGetErrorString(err));
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess)
-        throw std::runtime_error(cudaGetErrorString(err));
+    compute_initial_error_kernel<<<blocks, threads, 0, stream>>>(b.nnf, b.error, b.source_style, b.style_temp, b.source_guide, b.target_guide, b.target_modulation, b.use_modulation, patch_size, b.style_weights, b.guide_weights, p.cost_function_mode, p.use_bilateral, p.sigma_spatial, p.sigma_color, p.n_size_step);
+    EBS_LAUNCH_CHECK();
+    return cudaSuccess;
 }
 
-// ===================================================================
-//                RNG STATE INITIALIZER
-// ===================================================================
-void init_rand_states_cuda(torch::Tensor rand_states_tensor)
+std::size_t curand_state_size()
 {
-    curandState *states_ptr = (curandState *)rand_states_tensor.data_ptr();
-    int num_states = rand_states_tensor.numel() * rand_states_tensor.element_size() / sizeof(curandState);
-
-    const int threads_per_block = 256;
-    const int num_blocks = (num_states + threads_per_block - 1) / threads_per_block;
-
-    init_rand_states_kernel<<<num_blocks, threads_per_block>>>(states_ptr, num_states);
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
-        throw std::runtime_error(cudaGetErrorString(err));
+    return sizeof(curandState);
 }
+
+cudaError_t init_rand_states_cuda_launch(void *states, int64_t num_states, cudaStream_t stream)
+{
+    if (num_states <= 0)
+        return cudaSuccess;
+    const int threads_per_block = 256;
+    const int num_blocks = static_cast<int>((num_states + threads_per_block - 1) / threads_per_block);
+    init_rand_states_kernel<<<num_blocks, threads_per_block, 0, stream>>>(static_cast<curandState *>(states), static_cast<int>(num_states));
+    return cudaGetLastError();
+}
+
+} // namespace ebs

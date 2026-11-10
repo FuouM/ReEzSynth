@@ -23,10 +23,6 @@
 
 #include "kernels.h"
 
-#include <iostream>
-#include <limits>
-#include <vector>
-
 // Remapping kernel - applies NNF to remap source style to target
 __global__ void remap_kernel(
     const int height,
@@ -170,128 +166,48 @@ __global__ void pairwise_patch_error_kernel(
     error[batch_idx * height * width + x * width + y] = e;
 }
 
-// Optimized remapping with shared memory for better performance
-__global__ void remap_kernel_shared(
-    const int height,
-    const int width,
-    const int channel,
-    const int patch_size,
-    const int pad_size,
-    const float* __restrict__ source_style,
-    const int* __restrict__ nnf,
-    float* __restrict__ target_style,
-    const int batch_idx
-) {
-    extern __shared__ float shared_patch[];
-
-    const int r = (patch_size - 1) / 2;
-    const int patch_area = (2 * r + 1) * (2 * r + 1);
-    const int shared_patch_size = patch_area * channel;
-
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-
-    if (x >= height || y >= width) return;
-
-    // Load NNF value for this pixel
-    const int nid = x * width + y;
-    const int x_ = nnf[batch_idx * height * width * 2 + nid * 2 + 0];  // NNF[0] = x
-    const int y_ = nnf[batch_idx * height * width * 2 + nid * 2 + 1];  // NNF[1] = y
-
-    // Clamp bounds
-    const int min_px = x < r ? -x : -r;
-    const int max_px = x + r > height - 1 ? height - 1 - x : r;
-    const int min_py = y < r ? -y : -r;
-    const int max_py = y + r > width - 1 ? width - 1 - y : r;
-
-    // Initialize shared memory to zero
-    for (int i = tid; i < shared_patch_size; i += blockDim.x * blockDim.y) {
-        shared_patch[i] = 0.0f;
-    }
-    __syncthreads();
-
-    // Accumulate patch values in shared memory
-    int count = 0;
-    for (int px = min_px; px <= max_px; px++) {
-        for (int py = min_py; py <= max_py; py++) {
-            const int src_x = x_ - px;
-            const int src_y = y_ - py;
-            if (src_x >= 0 && src_x < height && src_y >= 0 && src_y < width) {
-                const int pid_ = (src_x + pad_size) * (width + pad_size * 2) + (src_y + pad_size);
-                const int z = batch_idx * (height + pad_size * 2) * (width + pad_size * 2) * channel;
-
-                #pragma unroll
-                for (int c = 0; c < channel; c++) {
-                    const int patch_idx = (count * channel) + c;
-                    if (patch_idx < shared_patch_size) {
-                        shared_patch[patch_idx] += source_style[z + pid_ * channel + c];
-                    }
-                }
-                count++;
-            }
-        }
-    }
-    __syncthreads();
-
-    // Write averaged result
-    if (count > 0) {
-        const int z = batch_idx * (height + pad_size * 2) * (width + pad_size * 2) * channel;
-        const int pid = (x + pad_size) * (width + pad_size * 2) + (y + pad_size);
-
-        #pragma unroll
-        for (int c = 0; c < channel; c++) {
-            float sum = 0.0f;
-            for (int i = 0; i < count; i++) {
-                const int patch_idx = (i * channel) + c;
-                if (patch_idx < shared_patch_size) {
-                    sum += shared_patch[patch_idx];
-                }
-            }
-            target_style[z + pid * channel + c] = sum / count;
-        }
-    }
-}
-
 // CUDA kernel launchers
-void launch_remap_kernel(
+cudaError_t launch_remap_kernel(
     const int height, const int width, const int channel, const int patch_size, const int pad_size,
     const float* source_style, const int* nnf, float* target_style,
-    const int batch_size
+    const int batch_size, cudaStream_t stream
 ) {
     dim3 block(16, 16);
     dim3 grid((height + block.x - 1) / block.x, (width + block.y - 1) / block.y, batch_size);
 
-    remap_kernel<<<grid, block>>>(
+    remap_kernel<<<grid, block, 0, stream>>>(
         height, width, channel, patch_size, pad_size,
         source_style, nnf, target_style
     );
+    return cudaGetLastError();
 }
 
-void launch_patch_error_kernel(
+cudaError_t launch_patch_error_kernel(
     const int height, const int width, const int channel, const int patch_size, const int pad_size,
     const float* source, const int* nnf, const float* target, float* error,
-    const int batch_size
+    const int batch_size, cudaStream_t stream
 ) {
     dim3 block(16, 16);
     dim3 grid((height + block.x - 1) / block.x, (width + block.y - 1) / block.y, batch_size);
 
-    patch_error_kernel<<<grid, block>>>(
+    patch_error_kernel<<<grid, block, 0, stream>>>(
         height, width, channel, patch_size, pad_size,
         source, nnf, target, error
     );
+    return cudaGetLastError();
 }
 
-void launch_pairwise_patch_error_kernel(
+cudaError_t launch_pairwise_patch_error_kernel(
     const int height, const int width, const int channel, const int patch_size, const int pad_size,
     const float* source_a, const int* nnf_a, const float* source_b, const int* nnf_b, float* error,
-    const int batch_size
+    const int batch_size, cudaStream_t stream
 ) {
     dim3 block(16, 16);
     dim3 grid((height + block.x - 1) / block.x, (width + block.y - 1) / block.y, batch_size);
 
-    pairwise_patch_error_kernel<<<grid, block>>>(
+    pairwise_patch_error_kernel<<<grid, block, 0, stream>>>(
         height, width, channel, patch_size, pad_size,
         source_a, nnf_a, source_b, nnf_b, error
     );
+    return cudaGetLastError();
 }

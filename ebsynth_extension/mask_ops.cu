@@ -8,9 +8,9 @@
 // ===================================================================
 
 __global__ void eval_mask_kernel(
-    torch::PackedTensorAccessor32<uint8_t, 2> mask,
-    torch::PackedTensorAccessor32<uint8_t, 3> style1,
-    torch::PackedTensorAccessor32<uint8_t, 3> style2,
+    ebs::PackedAccessor32<uint8_t, 2> mask,
+    ebs::PackedAccessor32<uint8_t, 3> style1,
+    ebs::PackedAccessor32<uint8_t, 3> style2,
     int stop_threshold)
 {
 
@@ -35,8 +35,8 @@ __global__ void eval_mask_kernel(
 }
 
 __global__ void dilate_mask_kernel(
-    torch::PackedTensorAccessor32<uint8_t, 2> mask_out,
-    torch::PackedTensorAccessor32<uint8_t, 2> mask_in,
+    ebs::PackedAccessor32<uint8_t, 2> mask_out,
+    ebs::PackedAccessor32<uint8_t, 2> mask_in,
     int patch_size)
 {
 

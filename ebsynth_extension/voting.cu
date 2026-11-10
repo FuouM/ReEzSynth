@@ -8,9 +8,9 @@
 // ===================================================================
 
 __global__ void krnlVotePlain(
-    torch::PackedTensorAccessor32<uint8_t, 3> target,
-    torch::PackedTensorAccessor32<uint8_t, 3> source,
-    torch::PackedTensorAccessor32<int32_t, 3> nnf,
+    ebs::PackedAccessor32<uint8_t, 3> target,
+    ebs::PackedAccessor32<uint8_t, 3> source,
+    ebs::PackedAccessor32<int32_t, 3> nnf,
     int patch_size)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -62,10 +62,10 @@ __global__ void krnlVotePlain(
 }
 
 __global__ void krnlVoteWeighted(
-    torch::PackedTensorAccessor32<uint8_t, 3> target,
-    torch::PackedTensorAccessor32<uint8_t, 3> source,
-    torch::PackedTensorAccessor32<int32_t, 3> nnf,
-    torch::PackedTensorAccessor32<float, 2> error_map,
+    ebs::PackedAccessor32<uint8_t, 3> target,
+    ebs::PackedAccessor32<uint8_t, 3> source,
+    ebs::PackedAccessor32<int32_t, 3> nnf,
+    ebs::PackedAccessor32<float, 2> error_map,
     int patch_size)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;

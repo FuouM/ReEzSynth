@@ -88,3 +88,6 @@ void ebsynth_cpu_run_level(
 
 // CPU function to initialize random states (no-op for compatibility)
 void init_rand_states_cpu(torch::Tensor rand_states_tensor);
+
+// True when the CUDA kernels were compiled in (i.e. not a CPU_ONLY build)
+bool compiled_with_cuda();

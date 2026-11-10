@@ -6,7 +6,7 @@
 // ===================================================================
 
 __device__ void update_omega(
-    torch::PackedTensorAccessor32<int32_t, 2> omega_map,
+    ebs::PackedAccessor32<int32_t, 2> omega_map,
     int sx, int sy, int patch_size, int incdec)
 {
     const int r = patch_size / 2;
@@ -25,7 +25,7 @@ __device__ void update_omega(
 }
 
 __device__ float patch_omega(
-    torch::PackedTensorAccessor32<int32_t, 2> omega_map,
+    ebs::PackedAccessor32<int32_t, 2> omega_map,
     int sx, int sy, int patch_size)
 {
     const int r = patch_size / 2;
@@ -46,8 +46,8 @@ __device__ float patch_omega(
 }
 
 __global__ void populate_initial_omega_kernel(
-    torch::PackedTensorAccessor32<int32_t, 2> omega_map,
-    torch::PackedTensorAccessor32<int32_t, 3> nnf,
+    ebs::PackedAccessor32<int32_t, 2> omega_map,
+    ebs::PackedAccessor32<int32_t, 3> nnf,
     int patch_size)
 {
     const int tx = blockIdx.x * blockDim.x + threadIdx.x;

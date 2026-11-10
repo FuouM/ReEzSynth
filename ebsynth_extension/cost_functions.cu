@@ -9,15 +9,15 @@
 // ===================================================================
 
 __device__ float compute_patch_ssd_split(
-    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
+    ebs::PackedAccessor32<uint8_t, 3> source_style,
+    ebs::PackedAccessor32<uint8_t, 3> target_style,
+    ebs::PackedAccessor32<uint8_t, 3> source_guide,
+    ebs::PackedAccessor32<uint8_t, 3> target_guide,
+    ebs::PackedAccessor32<uint8_t, 3> target_modulation_guide,
     bool use_modulation,
     int sx, int sy, int tx, int ty, int patch_size,
-    const torch::PackedTensorAccessor32<float, 1> style_weights,
-    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    const ebs::PackedAccessor32<float, 1> style_weights,
+    const ebs::PackedAccessor32<float, 1> guide_weights,
     float ebest,
     bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
@@ -88,7 +88,7 @@ __device__ float compute_patch_ssd_split(
 // ===================================================================
 
 __device__ double query_sat(
-    torch::PackedTensorAccessor64<double, 2> sat,
+    ebs::PackedAccessor64<double, 2> sat,
     int x1, int y1, int x2, int y2)
 {
 
@@ -114,19 +114,19 @@ __device__ double query_sat(
  * The cross-correlation term still requires an O(P^2) loop.
  */
 __device__ float compute_patch_ncc_sat(
-    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
+    ebs::PackedAccessor32<uint8_t, 3> source_style,
+    ebs::PackedAccessor32<uint8_t, 3> target_style,
+    ebs::PackedAccessor32<uint8_t, 3> source_guide,
+    ebs::PackedAccessor32<uint8_t, 3> target_guide,
+    ebs::PackedAccessor32<uint8_t, 3> target_modulation_guide,
     bool use_modulation,
     int sx, int sy, int tx, int ty, int patch_size,
-    const torch::PackedTensorAccessor32<float, 1> style_weights,
-    const torch::PackedTensorAccessor32<float, 1> guide_weights,
-    torch::PackedTensorAccessor64<double, 2> source_style_sat,
-    torch::PackedTensorAccessor64<double, 2> source_style_sq_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sat,
-    torch::PackedTensorAccessor64<double, 2> target_style_sq_sat,
+    const ebs::PackedAccessor32<float, 1> style_weights,
+    const ebs::PackedAccessor32<float, 1> guide_weights,
+    ebs::PackedAccessor64<double, 2> source_style_sat,
+    ebs::PackedAccessor64<double, 2> source_style_sq_sat,
+    ebs::PackedAccessor64<double, 2> target_style_sat,
+    ebs::PackedAccessor64<double, 2> target_style_sq_sat,
     bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {
 
@@ -209,15 +209,15 @@ __device__ float compute_patch_ncc_sat(
  * https://github.com/GhiXu/ACMH
  */
 __device__ float compute_patch_ncc_split(
-    torch::PackedTensorAccessor32<uint8_t, 3> source_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_style,
-    torch::PackedTensorAccessor32<uint8_t, 3> source_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_guide,
-    torch::PackedTensorAccessor32<uint8_t, 3> target_modulation_guide,
+    ebs::PackedAccessor32<uint8_t, 3> source_style,
+    ebs::PackedAccessor32<uint8_t, 3> target_style,
+    ebs::PackedAccessor32<uint8_t, 3> source_guide,
+    ebs::PackedAccessor32<uint8_t, 3> target_guide,
+    ebs::PackedAccessor32<uint8_t, 3> target_modulation_guide,
     bool use_modulation,
     int sx, int sy, int tx, int ty, int patch_size,
-    const torch::PackedTensorAccessor32<float, 1> style_weights,
-    const torch::PackedTensorAccessor32<float, 1> guide_weights,
+    const ebs::PackedAccessor32<float, 1> style_weights,
+    const ebs::PackedAccessor32<float, 1> guide_weights,
     float ebest,
     bool use_bilateral, float sigma_spatial, float sigma_color, int n_size_step)
 {

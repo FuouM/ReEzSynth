@@ -105,4 +105,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
           py::arg("sigma_color") = 10.0f,
           py::arg("n_size_step") = 1);
     m.def("init_rand_states", &init_rand_states_wrapper, "Initialize random number generator states (CPU or CUDA)");
+    m.def("compiled_with_cuda", &compiled_with_cuda, "True if the extension was built with its CUDA kernels");
 }

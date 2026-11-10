@@ -2,7 +2,8 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <torch/all.h>
+
+#include "accessor.h"
 
 // Vote mode constants
 #define EBSYNTH_VOTEMODE_PLAIN 0x0001
@@ -21,15 +22,15 @@ struct Vec
 
 // Plain voting - uniform weights
 __global__ void krnlVotePlain(
-    torch::PackedTensorAccessor32<uint8_t, 3> target,
-    torch::PackedTensorAccessor32<uint8_t, 3> source,
-    torch::PackedTensorAccessor32<int32_t, 3> nnf,
+    ebs::PackedAccessor32<uint8_t, 3> target,
+    ebs::PackedAccessor32<uint8_t, 3> source,
+    ebs::PackedAccessor32<int32_t, 3> nnf,
     int patch_size);
 
 // Weighted voting - weights based on patch error
 __global__ void krnlVoteWeighted(
-    torch::PackedTensorAccessor32<uint8_t, 3> target,
-    torch::PackedTensorAccessor32<uint8_t, 3> source,
-    torch::PackedTensorAccessor32<int32_t, 3> nnf,
-    torch::PackedTensorAccessor32<float, 2> error_map,
+    ebs::PackedAccessor32<uint8_t, 3> target,
+    ebs::PackedAccessor32<uint8_t, 3> source,
+    ebs::PackedAccessor32<int32_t, 3> nnf,
+    ebs::PackedAccessor32<float, 2> error_map,
     int patch_size);

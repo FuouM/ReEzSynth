@@ -1,6 +1,14 @@
-// FastBlend CUDA dispatch functions
+// FastBlend CUDA dispatch functions (PyTorch-facing; compiled by the host compiler).
+//
+// Each entry point runs on the input tensor's device and enqueues the torch-free
+// kernels (kernels.cu) on PyTorch's current stream for it, so results are ordered
+// with surrounding tensor ops. Launch errors are raised via C10_CUDA_CHECK.
 #include "dispatch.h"
 #include "kernels.h"
+
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAException.h>
+#include <c10/cuda/CUDAGuard.h>
 
 // CUDA dispatch function for remapping
 void fastblend_cuda_remap(
@@ -10,18 +18,20 @@ void fastblend_cuda_remap(
     int patch_size,
     int pad_size
 ) {
+    const at::cuda::OptionalCUDAGuard guard(source_style.device());
     const int batch_size = source_style.size(0);
     const int height = source_style.size(1) - 2 * pad_size;
     const int width = source_style.size(2) - 2 * pad_size;
     const int channel = source_style.size(3);
 
-    launch_remap_kernel(
+    C10_CUDA_CHECK(launch_remap_kernel(
         height, width, channel, patch_size, pad_size,
         source_style.data_ptr<float>(),
         nnf.data_ptr<int>(),
         target_style.data_ptr<float>(),
-        batch_size
-    );
+        batch_size,
+        at::cuda::getCurrentCUDAStream()
+    ));
 }
 
 // CUDA dispatch function for patch error
@@ -33,19 +43,21 @@ void fastblend_cuda_patch_error(
     int patch_size,
     int pad_size
 ) {
+    const at::cuda::OptionalCUDAGuard guard(source.device());
     const int batch_size = source.size(0);
     const int height = source.size(1) - 2 * pad_size;
     const int width = source.size(2) - 2 * pad_size;
     const int channel = source.size(3);
 
-    launch_patch_error_kernel(
+    C10_CUDA_CHECK(launch_patch_error_kernel(
         height, width, channel, patch_size, pad_size,
         source.data_ptr<float>(),
         nnf.data_ptr<int>(),
         target.data_ptr<float>(),
         error.data_ptr<float>(),
-        batch_size
-    );
+        batch_size,
+        at::cuda::getCurrentCUDAStream()
+    ));
 }
 
 // CUDA dispatch function for pairwise patch error
@@ -58,18 +70,20 @@ void fastblend_cuda_pairwise_patch_error(
     int patch_size,
     int pad_size
 ) {
+    const at::cuda::OptionalCUDAGuard guard(source_a.device());
     const int batch_size = source_a.size(0);
     const int height = source_a.size(1) - 2 * pad_size;
     const int width = source_a.size(2) - 2 * pad_size;
     const int channel = source_a.size(3);
 
-    launch_pairwise_patch_error_kernel(
+    C10_CUDA_CHECK(launch_pairwise_patch_error_kernel(
         height, width, channel, patch_size, pad_size,
         source_a.data_ptr<float>(),
         nnf_a.data_ptr<int>(),
         source_b.data_ptr<float>(),
         nnf_b.data_ptr<int>(),
         error.data_ptr<float>(),
-        batch_size
-    );
+        batch_size,
+        at::cuda::getCurrentCUDAStream()
+    ));
 }
