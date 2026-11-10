@@ -77,7 +77,7 @@ def dfs_seed_grow(
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 4-connectivity
 
     while pq:
-        error, ty, tx = heapq.heappop(pq)
+        _error, ty, tx = heapq.heappop(pq)
 
         if visited[ty, tx] or covered_pixels[ty, tx] != 0:
             continue

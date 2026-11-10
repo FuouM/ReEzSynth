@@ -14,8 +14,8 @@ class Project:
     def __init__(
         self,
         config_path: str,
-        backend: str = None,
-        forward_warp: bool = None,
+        backend: str | None = None,
+        forward_warp: bool | None = None,
     ):
         self.config_path = Path(config_path)
         if not self.config_path.exists():

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import torch
 
 from ..consts import TORCH_CUDA_CLEAR_CACHE, TORCH_MPS_CLEAR_CACHE
@@ -21,6 +20,5 @@ def clear_torch_device_cache(device: DeviceLike) -> None:
         if TORCH_MPS_CLEAR_CACHE and torch.backends.mps.is_available():
             torch.mps.empty_cache()
         return
-    if d.type == "cuda":
-        if TORCH_CUDA_CLEAR_CACHE and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+    if d.type == "cuda" and TORCH_CUDA_CLEAR_CACHE and torch.cuda.is_available():
+        torch.cuda.empty_cache()

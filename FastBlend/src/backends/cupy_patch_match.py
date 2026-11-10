@@ -30,7 +30,7 @@ class PatchMatcherCupy(FaceBlitPatchMatcherCore):
         nnf_cp = cp.asarray(nnf.detach())
         target_cp = cp.asarray(target.detach())
         remapping_kernel(
-            self.grid + (batch_size,),
+            (*self.grid, batch_size),
             self.block,
             (
                 self.height,
@@ -60,7 +60,7 @@ class PatchMatcherCupy(FaceBlitPatchMatcherCore):
         target_cp = cp.asarray(target.detach())
         error_cp = cp.asarray(error.detach())
         patch_error_kernel(
-            self.grid + (batch_size,),
+            (*self.grid, batch_size),
             self.block,
             (
                 self.height,
@@ -94,7 +94,7 @@ class PatchMatcherCupy(FaceBlitPatchMatcherCore):
         nnf_b_cp = cp.asarray(nnf_b.detach())
         error_cp = cp.asarray(error.detach())
         pairwise_patch_error_kernel(
-            self.grid + (batch_size,),
+            (*self.grid, batch_size),
             self.block,
             (
                 self.height,

@@ -180,7 +180,7 @@ config = RunConfig(
     pyramid_levels=5,
     uniformity=4000.0,
     use_sparse_feature_guide=True,
-    use_temporal_nnf_propagation=True
+    use_temporal_nnf_propagation=True,
 )
 
 # 2. Initialize the synthesizer
@@ -189,7 +189,7 @@ synth = Ezsynth(
     style_paths=["projects/my_project/style/00123.png"],
     style_indices=[123],
     output_dir="output/api_video_output",
-    config=config
+    config=config,
 )
 
 # 3. Run and get the results
@@ -207,16 +207,15 @@ from ezsynth.utils.io_utils import write_image
 config = RunConfig(patch_size=7, uniformity=4000)
 
 # 2. Initialize the synthesizer
-synth = ImageSynth(
-    style_image="path/to/style.png",
-    config=config
-)
+synth = ImageSynth(style_image="path/to/style.png", config=config)
 
 # 3. Run synthesis by providing a list of guides
-stylized_image, error_map = synth.run(guides=[
-    load_guide("source_guide1.png", "target_guide1.png", weight=2.0),
-    load_guide("source_guide2.png", "target_guide2.png", weight=1.5),
-])
+stylized_image, error_map = synth.run(
+    guides=[
+        load_guide("source_guide1.png", "target_guide1.png", weight=2.0),
+        load_guide("source_guide2.png", "target_guide2.png", weight=1.5),
+    ]
+)
 
 # 4. Save the output
 write_image("output/stylized.png", stylized_image)

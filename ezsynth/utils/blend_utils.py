@@ -39,7 +39,7 @@ class Blender:
         err_fwd_arr = np.array(err_fwd)
         err_bwd_arr = np.array(err_bwd)
         selection_masks = np.where(err_fwd_arr < err_bwd_arr, 0, 1).astype(np.uint8)
-        return [mask for mask in selection_masks]
+        return list(selection_masks)
 
     def warp_masks(
         self, flows_fwd: list[np.ndarray], masks: list[np.ndarray]

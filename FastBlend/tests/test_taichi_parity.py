@@ -3,7 +3,7 @@ import torch
 
 pytest.importorskip("taichi")
 
-from FastBlend.src.backends import taichi_backend  # noqa: E402
+from FastBlend.src.backends import taichi_backend
 
 B, H, W, C = 1, 16, 16, 3
 PATCH_SIZE = 7

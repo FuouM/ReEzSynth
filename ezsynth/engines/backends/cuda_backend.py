@@ -17,7 +17,7 @@ class CudaBackend:
         self,
         ebsynth_config: EbsynthParamsConfig,
         pipeline_config: PipelineConfig,
-        device: str = None,
+        device: str | None = None,
     ):
         self.ebsynth_config = ebsynth_config
         self.pipeline_config = pipeline_config

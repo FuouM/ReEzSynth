@@ -8,7 +8,9 @@ import torch
 
 def _single_batch_image(tensor: torch.Tensor) -> torch.Tensor:
     if tensor.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape {tuple(tensor.shape)}.")
+        raise ValueError(
+            f"Expected IMAGE tensor [B,H,W,C], got shape {tuple(tensor.shape)}."
+        )
     if tensor.shape[0] != 1:
         raise ValueError(
             f"ReEzSynth nodes expect batch size 1 (got {tensor.shape[0]}). "
@@ -31,7 +33,9 @@ def image_tensor_to_bgr_uint8(tensor: torch.Tensor) -> np.ndarray:
 def image_tensor_to_rgb_float_sequence(tensor: torch.Tensor) -> list[np.ndarray]:
     """Convert a ComfyUI IMAGE batch to RGB float HWC frames."""
     if tensor.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape {tuple(tensor.shape)}.")
+        raise ValueError(
+            f"Expected IMAGE tensor [B,H,W,C], got shape {tuple(tensor.shape)}."
+        )
     if tensor.shape[0] < 1:
         raise ValueError("Expected at least one IMAGE frame.")
 

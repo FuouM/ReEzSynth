@@ -220,7 +220,7 @@ config = FastBlendConfig(
     num_iter=5,
     guide_weight=10.0,
     backend="cuda",
-    gpu_id=0
+    gpu_id=0,
 )
 ```
 

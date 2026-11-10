@@ -8,7 +8,6 @@ This module implements the core PatchMatch operations:
 - random_search_step: Exploration via random offsets
 """
 
-
 import torch
 
 from ezsynth.consts import COST_FUNCTION_NCC
@@ -100,8 +99,8 @@ def try_patch_batch(
     patch_size: int,
     cost_function_mode: int,
     omega_best: float,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
@@ -144,12 +143,12 @@ def try_patch_batch(
                 n_size_step=n_size_step,
             )
     else:  # SSD
-        ssd_kw = dict(
-            use_bilateral=use_bilateral,
-            sigma_spatial=sigma_spatial,
-            sigma_color=sigma_color,
-            n_size_step=n_size_step,
-        )
+        ssd_kw = {
+            "use_bilateral": use_bilateral,
+            "sigma_spatial": sigma_spatial,
+            "sigma_color": sigma_color,
+            "n_size_step": n_size_step,
+        }
         if (
             source_guide_patches.numel() > 0
             and (not use_bilateral)
@@ -254,8 +253,8 @@ def propagation_step(
     mask: torch.Tensor,
     cost_function_mode: int,
     omega_best: float,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
@@ -432,8 +431,8 @@ def random_search_step(
     cost_function_mode: int,
     omega_best: float,
     generator: torch.Generator = None,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = None,
+    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
@@ -492,12 +491,12 @@ def random_search_step(
                 t_mean[y_coords, x_coords],
                 t_std[y_coords, x_coords],
             )
-        ssd_kw = dict(
-            use_bilateral=use_bilateral,
-            sigma_spatial=sigma_spatial,
-            sigma_color=sigma_color,
-            n_size_step=n_size_step,
-        )
+        ssd_kw = {
+            "use_bilateral": use_bilateral,
+            "sigma_spatial": sigma_spatial,
+            "sigma_color": sigma_color,
+            "n_size_step": n_size_step,
+        }
         can_use_fused_ssd = (
             source_guide_patches.numel() > 0
             and (not use_bilateral)

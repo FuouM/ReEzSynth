@@ -164,19 +164,19 @@ class PyTorchBackend:
         Taichi: all propagation substeps run first, then one random-search step
         (not interleaved). Pass direction matches ``(i % 2 == 1)`` on the CUDA side.
         """
-        H_s, W_s, C_s = style_tensor.shape
-        H_t, W_t, C_g = target_guide_tensor.shape
-        bilateral_kw = dict(
-            use_bilateral=self.ebsynth_config.use_bilateral,
-            sigma_spatial=self.ebsynth_config.sigma_spatial,
-            sigma_color=self.ebsynth_config.sigma_color,
-            n_size_step=self.ebsynth_config.n_size_step,
-        )
-        vote_bilateral_kw = dict(
-            use_bilateral=self.ebsynth_config.use_bilateral,
-            sigma_spatial=self.ebsynth_config.sigma_spatial,
-            sigma_color=self.ebsynth_config.sigma_color,
-        )
+        H_s, W_s, _C_s = style_tensor.shape
+        H_t, W_t, _C_g = target_guide_tensor.shape
+        bilateral_kw = {
+            "use_bilateral": self.ebsynth_config.use_bilateral,
+            "sigma_spatial": self.ebsynth_config.sigma_spatial,
+            "sigma_color": self.ebsynth_config.sigma_color,
+            "n_size_step": self.ebsynth_config.n_size_step,
+        }
+        vote_bilateral_kw = {
+            "use_bilateral": self.ebsynth_config.use_bilateral,
+            "sigma_spatial": self.ebsynth_config.sigma_spatial,
+            "sigma_color": self.ebsynth_config.sigma_color,
+        }
 
         # --- OPTIMIZATION: Pre-compute all patches once before the loops ---
         source_style_patches = None
@@ -432,17 +432,17 @@ class PyTorchBackend:
         """
         H_s, W_s, _ = style_tensor.shape
         H_t, W_t, _ = target_guide_tensor.shape
-        bilateral_kw = dict(
-            use_bilateral=self.ebsynth_config.use_bilateral,
-            sigma_spatial=self.ebsynth_config.sigma_spatial,
-            sigma_color=self.ebsynth_config.sigma_color,
-            n_size_step=self.ebsynth_config.n_size_step,
-        )
-        vote_bilateral_kw = dict(
-            use_bilateral=self.ebsynth_config.use_bilateral,
-            sigma_spatial=self.ebsynth_config.sigma_spatial,
-            sigma_color=self.ebsynth_config.sigma_color,
-        )
+        bilateral_kw = {
+            "use_bilateral": self.ebsynth_config.use_bilateral,
+            "sigma_spatial": self.ebsynth_config.sigma_spatial,
+            "sigma_color": self.ebsynth_config.sigma_color,
+            "n_size_step": self.ebsynth_config.n_size_step,
+        }
+        vote_bilateral_kw = {
+            "use_bilateral": self.ebsynth_config.use_bilateral,
+            "sigma_spatial": self.ebsynth_config.sigma_spatial,
+            "sigma_color": self.ebsynth_config.sigma_color,
+        }
 
         # Pre-extract all source patches once, as they don't change.
         source_style_patches = None

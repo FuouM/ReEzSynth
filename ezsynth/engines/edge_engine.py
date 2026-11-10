@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from ..edge.batch import compute_edge

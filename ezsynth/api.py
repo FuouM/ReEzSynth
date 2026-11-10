@@ -47,7 +47,7 @@ class RunConfig:
         use_sparse_feature_guide: bool = True,
         use_residual_transfer: bool = True,
         cost_function: str = "ssd",
-        device: str = None,
+        device: str | None = None,
         use_optimization: bool = True,
         use_bilateral: bool = False,
         sigma_spatial: float = 4.0,

@@ -109,7 +109,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Stylize video by warping a style frame through optical flow."
     )
     parser.add_argument("--video", type=str, required=True)
-    parser.add_argument("--style", type=str, required=True, help="Style image for frame 0")
+    parser.add_argument(
+        "--style", type=str, required=True, help="Style image for frame 0"
+    )
     parser.add_argument("--output", type=str, default="output/cat_warped.mp4")
     parser.add_argument("--num_frames", type=int, default=50)
     parser.add_argument(

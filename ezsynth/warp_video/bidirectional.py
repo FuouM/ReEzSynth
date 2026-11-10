@@ -33,8 +33,7 @@ def run(args: argparse.Namespace) -> None:
 
     sorted_keys = sorted(keyframes.keys())
     style_imgs = {
-        idx: cv2.resize(cv2.imread(path), (w, h))
-        for idx, path in keyframes.items()
+        idx: cv2.resize(cv2.imread(path), (w, h)) for idx, path in keyframes.items()
     }
 
     warper = Warp(h, w, use_taichi=True)
@@ -139,7 +138,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--engine", type=str, default="NeuFlow", choices=["RAFT", "NeuFlow", "OpenCV"]
     )
     parser.add_argument("--flow-model", type=str, default=None)
-    parser.add_argument("--output", type=str, default="output/cat_multi_bidirectional.mp4")
+    parser.add_argument(
+        "--output", type=str, default="output/cat_multi_bidirectional.mp4"
+    )
     parser.add_argument("--fps", type=float, default=20.0)
     return parser
 

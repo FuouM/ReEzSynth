@@ -1,6 +1,5 @@
 """Video synthesis scheduling and blend orchestration."""
 
-
 import numpy as np
 
 from .config import BlendingConfig, DebugConfig
@@ -127,4 +126,4 @@ class SynthesisScheduler:
             bwd_errors=bwd_err,
             fwd_flows=fwd_flows_used,
         )
-        return blended_frames + [bwd_frames[-1]]
+        return [*blended_frames, bwd_frames[-1]]

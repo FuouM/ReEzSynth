@@ -21,7 +21,7 @@ def coords_grid(b, h, w, device, amp):
 
 
 def bilinear_sample(img, sample_coords):
-    b, _, h, w = sample_coords.shape
+    _b, _, h, w = sample_coords.shape
 
     # Normalize to [-1, 1]
     x_grid = 2 * sample_coords[:, 0] / (w - 1) - 1
@@ -37,7 +37,7 @@ def bilinear_sample(img, sample_coords):
 
 
 def flow_warp(feature, flow):
-    b, c, h, w = feature.size()
+    b, _c, h, w = feature.size()
 
     grid = coords_grid(b, h, w).to(flow.device) + flow  # [B, 2, H, W]
 

@@ -16,10 +16,7 @@ def check_python_dev_headers() -> bool:
         return (Path(sys.base_prefix) / "include" / "Python.h").exists()
 
     python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-    if (include_path / python_version / "Python.h").exists():
-        return True
-
-    return False
+    return bool((include_path / python_version / "Python.h").exists())
 
 
 def ebsynth_jit_cflags() -> list[str]:

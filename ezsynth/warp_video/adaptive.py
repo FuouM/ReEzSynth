@@ -93,9 +93,7 @@ def _build_hole_refine_guides(
     gi = _bgr_to_gray3(frames_i)
     return [
         GuideObject(gk[y0:y1, x0:x1], gi[y0:y1, x0:x1], app_weight),
-        GuideObject(
-            pristine_pos[y0:y1, x0:x1], target_pos[y0:y1, x0:x1], pos_weight
-        ),
+        GuideObject(pristine_pos[y0:y1, x0:x1], target_pos[y0:y1, x0:x1], pos_weight),
     ]
 
 
@@ -131,16 +129,16 @@ def _refine_records_with_imagesynth(
         pre, post = rec["best_pre"], rec["best_post"]
         f_pre = get_flow_pair(pre, rec["index"])
         f_post = get_flow_pair(post, rec["index"])
-        err_pre = _mean_sq_error_on_mask(warper, frames[pre], frames[rec["index"]], f_pre, k_dilate)
+        err_pre = _mean_sq_error_on_mask(
+            warper, frames[pre], frames[rec["index"]], f_pre, k_dilate
+        )
         err_post = _mean_sq_error_on_mask(
             warper, frames[post], frames[rec["index"]], f_post, k_dilate
         )
         anchor = pre if err_pre <= err_post else post
         f_ak = f_pre if anchor == pre else f_post
 
-        y0, y1, x0, x1 = _padded_bbox_from_mask(
-            k_dilate, hole_pad, hole_min_crop, h, w
-        )
+        y0, y1, x0, x1 = _padded_bbox_from_mask(k_dilate, hole_pad, hole_min_crop, h, w)
         pristine = pos_guider.get_pristine_guide_uint8()
         tgt_pos = pos_guider.create_from_flow(f_ak)
         guides = _build_hole_refine_guides(
@@ -163,8 +161,10 @@ def _refine_records_with_imagesynth(
         roi = base[y0:y1, x0:x1].copy()
         alpha = _feather_alpha(hm[y0:y1, x0:x1], feather_sigma)[..., np.newaxis]
         blended = (
-            roi.astype(np.float32) * (1.0 - alpha) + patch.astype(np.float32) * alpha
-        ).clip(0, 255).astype(np.uint8)
+            (roi.astype(np.float32) * (1.0 - alpha) + patch.astype(np.float32) * alpha)
+            .clip(0, 255)
+            .astype(np.uint8)
+        )
         out = base.copy()
         out[y0:y1, x0:x1] = blended
         rec["stylized"] = out
@@ -196,14 +196,16 @@ def _propagate_hole_fills(
     for j in range(n - 1):
         f_j_to_jp1 = flow_fwd(j, j + 1)
         prop = warper.run_warping(styl[j], -f_j_to_jp1).astype(np.float32)
-        m_prop = warper.run_warping((hole[j] > 0).astype(np.float32), -f_j_to_jp1).astype(
-            np.float32
-        )
+        m_prop = warper.run_warping(
+            (hole[j] > 0).astype(np.float32), -f_j_to_jp1
+        ).astype(np.float32)
         k = _feather_alpha(hole[j + 1], feather_sigma)
         alpha = np.clip(k[..., np.newaxis] + 0.35 * m_prop[..., np.newaxis], 0.0, 1.0)
         styl[j + 1] = (
-            styl[j + 1].astype(np.float32) * (1.0 - alpha) + prop * alpha
-        ).clip(0, 255).astype(np.uint8)
+            (styl[j + 1].astype(np.float32) * (1.0 - alpha) + prop * alpha)
+            .clip(0, 255)
+            .astype(np.uint8)
+        )
 
     if bidirectional:
         for j in range(n - 1, 0, -1):
@@ -212,8 +214,10 @@ def _propagate_hole_fills(
             k = _feather_alpha(hole[j - 1], feather_sigma)
             alpha = np.clip(k[..., np.newaxis], 0.0, 1.0)
             styl[j - 1] = (
-                styl[j - 1].astype(np.float32) * (1.0 - alpha) + prop * alpha
-            ).clip(0, 255).astype(np.uint8)
+                (styl[j - 1].astype(np.float32) * (1.0 - alpha) + prop * alpha)
+                .clip(0, 255)
+                .astype(np.uint8)
+            )
 
     for rec, s in zip(records, styl, strict=True):
         rec["stylized"] = s
@@ -232,8 +236,7 @@ def run(args: argparse.Namespace) -> None:
         )
 
     style_imgs = {
-        idx: cv2.resize(cv2.imread(keyframes[idx]), (w, h))
-        for idx in sorted_keys
+        idx: cv2.resize(cv2.imread(keyframes[idx]), (w, h)) for idx in sorted_keys
     }
     warper = Warp(h, w, use_taichi=True)
     engine = cast(FlowEngineName, args.engine)
@@ -271,7 +274,9 @@ def run(args: argparse.Namespace) -> None:
                 hole_mask = np.zeros((h, w), dtype=np.uint8)
             else:
                 pre_candidates = [k for k in sorted_keys if k < i] or [min(sorted_keys)]
-                post_candidates = [k for k in sorted_keys if k > i] or [max(sorted_keys)]
+                post_candidates = [k for k in sorted_keys if k > i] or [
+                    max(sorted_keys)
+                ]
 
                 best_pre_score = -1.0
                 best_pre = pre_candidates[-1]
@@ -301,12 +306,18 @@ def run(args: argparse.Namespace) -> None:
 
                 hz = float(args.anchor_hysteresis_db)
                 if hz > 0 and i > 0 and prev_pre is not None and prev_post is not None:
-                    if prev_pre in scores_pre and prev_pre != best_pre:
-                        if best_pre_score - scores_pre[prev_pre] <= hz:
-                            best_pre = prev_pre
-                    if prev_post in scores_post and prev_post != best_post:
-                        if best_post_score - scores_post[prev_post] <= hz:
-                            best_post = prev_post
+                    if (
+                        prev_pre in scores_pre
+                        and prev_pre != best_pre
+                        and best_pre_score - scores_pre[prev_pre] <= hz
+                    ):
+                        best_pre = prev_pre
+                    if (
+                        prev_post in scores_post
+                        and prev_post != best_post
+                        and best_post_score - scores_post[prev_post] <= hz
+                    ):
+                        best_post = prev_post
 
                 best_f0 = get_flow_pair(best_pre, i)
                 best_f1 = get_flow_pair(best_post, i)

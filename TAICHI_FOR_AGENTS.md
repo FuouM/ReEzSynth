@@ -52,10 +52,10 @@ def sequential_task_kernel(data: ti.types.ndarray()):
     for y_it, x_it in ti.ndrange(H, W):
         # Sequential logic for a single pixel (e.g., propagation)
         best_match = ...
-        for step in [-1, 1]: # sequential loop inside a parallel thread
-             cand = try_neighbor(..., step)
-             if better(cand, best_match):
-                 best_match = cand
+        for step in [-1, 1]:  # sequential loop inside a parallel thread
+            cand = try_neighbor(..., step)
+            if better(cand, best_match):
+                best_match = cand
 ```
 
 ### 2.2 The `ti.template()` Dependency

@@ -70,10 +70,14 @@ class FeatureAttention(torch.nn.Module):
     ):
         super().__init__()
 
-        self.layers = torch.nn.ModuleList([
-            TransformerLayer(feature_dim, ffn=ffn, ffn_dim_expansion=ffn_dim_expansion)
-            for i in range(num_layers)
-        ])
+        self.layers = torch.nn.ModuleList(
+            [
+                TransformerLayer(
+                    feature_dim, ffn=ffn, ffn_dim_expansion=ffn_dim_expansion
+                )
+                for i in range(num_layers)
+            ]
+        )
 
         self.post_norm = post_norm
 

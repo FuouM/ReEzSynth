@@ -6,7 +6,6 @@ The omega map tracks how many times each source pixel is used in the current
 NNF, enabling a uniformity penalty that discourages overuse of popular patches.
 """
 
-
 import torch
 import torch.nn.functional as F
 
@@ -92,7 +91,7 @@ def populate_omega_map(
     - Clamp coordinates to valid range
     """
 
-    H_t, W_t = nnf.shape[:2]
+    _H_t, _W_t = nnf.shape[:2]
     H_s, W_s = source_shape
     device = nnf.device
 

@@ -146,11 +146,8 @@ def warp_mls_similarity(
     grid_size: int = 10,
 ) -> torch.Tensor:
     """Warp image using Moving Least Squares (similarity)."""
-    if image.ndim == 3:
-        img = image.unsqueeze(0)
-    else:
-        img = image
-    _, c, h, w = img.shape
+    img = image.unsqueeze(0) if image.ndim == 3 else image
+    _, _c, h, w = img.shape
     device = img.device
     # src_points/dst_points are expected as (x, y)
 

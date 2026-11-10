@@ -385,41 +385,38 @@ def initialize_nnf_dfs_kernel(
                         and 0 <= tx < w_t
                         and 0 <= sy < h_s
                         and 0 <= sx < w_s
-                    ):
-                        if covered_pixels[ty, tx] == 0:
-                            pos_err = ti.abs(
-                                ti.i32(target_pos_r[ty, tx])
-                                - ti.i32(style_pos_r[sy, sx])
-                            ) + ti.abs(
-                                ti.i32(target_pos_g[ty, tx])
-                                - ti.i32(style_pos_g[sy, sx])
-                            )
-                            app_err = ti.abs(
-                                ti.i32(target_app[ty, tx]) - ti.i32(style_app[sy, sx])
-                            )
-                            error = lambda_pos * pos_err + lambda_app * app_err
+                    ) and covered_pixels[ty, tx] == 0:
+                        pos_err = ti.abs(
+                            ti.i32(target_pos_r[ty, tx]) - ti.i32(style_pos_r[sy, sx])
+                        ) + ti.abs(
+                            ti.i32(target_pos_g[ty, tx]) - ti.i32(style_pos_g[sy, sx])
+                        )
+                        app_err = ti.abs(
+                            ti.i32(target_app[ty, tx]) - ti.i32(style_app[sy, sx])
+                        )
+                        error = lambda_pos * pos_err + lambda_app * app_err
 
-                            if error < threshold or (dy == 0 and dx == 0):
-                                nnf[ty, tx, 0] = sy
-                                nnf[ty, tx, 1] = sx
-                                covered_pixels[ty, tx] = chunk_number
+                        if error < threshold or (dy == 0 and dx == 0):
+                            nnf[ty, tx, 0] = sy
+                            nnf[ty, tx, 1] = sx
+                            covered_pixels[ty, tx] = chunk_number
 
-                                if ty > 0 and tail < max_q:
-                                    q_y[tail] = ty - 1
-                                    q_x[tail] = tx
-                                    tail += 1
-                                if ty + 1 < h_t and tail < max_q:
-                                    q_y[tail] = ty + 1
-                                    q_x[tail] = tx
-                                    tail += 1
-                                if tx > 0 and tail < max_q:
-                                    q_y[tail] = ty
-                                    q_x[tail] = tx - 1
-                                    tail += 1
-                                if tx + 1 < w_t and tail < max_q:
-                                    q_y[tail] = ty
-                                    q_x[tail] = tx + 1
-                                    tail += 1
+                            if ty > 0 and tail < max_q:
+                                q_y[tail] = ty - 1
+                                q_x[tail] = tx
+                                tail += 1
+                            if ty + 1 < h_t and tail < max_q:
+                                q_y[tail] = ty + 1
+                                q_x[tail] = tx
+                                tail += 1
+                            if tx > 0 and tail < max_q:
+                                q_y[tail] = ty
+                                q_x[tail] = tx - 1
+                                tail += 1
+                            if tx + 1 < w_t and tail < max_q:
+                                q_y[tail] = ty
+                                q_x[tail] = tx + 1
+                                tail += 1
 
                 chunk_number += 1
 

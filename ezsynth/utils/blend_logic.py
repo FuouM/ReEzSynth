@@ -31,7 +31,7 @@ except ImportError:
 
 def seamless_clone_blending(frame_fwd, frame_bwd, mask):
     """Blends using OpenCV's seamlessClone."""
-    h, w, _ = frame_fwd.shape
+    _h, _w, _ = frame_fwd.shape
     # seamlessClone requires a single-channel mask
     if len(mask.shape) > 2:
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)

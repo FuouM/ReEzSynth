@@ -6,7 +6,6 @@ This module contains vectorized PyTorch implementations of patch-based
 operations that form the core of the PatchMatch algorithm.
 """
 
-
 import torch
 import torch.nn.functional as F
 
@@ -85,7 +84,7 @@ def extract_patches_from_coords(
     Returns:
         patches: (N, C*ps*ps) flattened patches
     """
-    H, W, C = image.shape
+    H, W, _C = image.shape
     N = coords.shape[0]
 
     # Ensure coords are long for indexing
@@ -255,7 +254,7 @@ def compute_patch_ssd_vectorized(
     diff.square_()
     C = len(weights)
     ps_sq = source_patches.shape[2] // C
-    patch_size = int(round(ps_sq**0.5))
+    patch_size = round(ps_sq**0.5)
     if patch_size * patch_size != ps_sq:
         raise ValueError("patch flatten size must be a perfect square")
 
@@ -328,7 +327,7 @@ def compute_patch_ssd_style_guide_fused(
     Cg = int(guide_weights.shape[0])
     ps_sq_style = source_style_patches.shape[2] // Cs
     ps_sq_guide = source_guide_patches.shape[2] // Cg
-    patch_size = int(round(ps_sq_style**0.5))
+    patch_size = round(ps_sq_style**0.5)
     if patch_size * patch_size != ps_sq_style or ps_sq_style != ps_sq_guide:
         raise ValueError("style/guide patch layouts must match for fused SSD")
 

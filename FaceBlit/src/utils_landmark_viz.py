@@ -336,7 +336,7 @@ def _collect_carried_landmark_sequence(
 
 
 def _landmarks_to_int_tuples(lm: np.ndarray) -> list[tuple[int, int]]:
-    return [(int(round(lm[i, 0])), int(round(lm[i, 1]))) for i in range(68)]
+    return [(round(lm[i, 0]), round(lm[i, 1])) for i in range(68)]
 
 
 # Representative dlib-68 indices for trajectory plots (jaw, brow, nose, eye, mouth)
@@ -564,10 +564,7 @@ def write_landmarks_preview_mp4(
 
     n_cols = 1
     if smooth_landmarks:
-        if faceblit_taichi_solo:
-            n_cols = 1
-        else:
-            n_cols = 3 if faceblit_taichi_triplet else 2
+        n_cols = 1 if faceblit_taichi_solo else 3 if faceblit_taichi_triplet else 2
     out_w = w * n_cols
     out_h = h
 

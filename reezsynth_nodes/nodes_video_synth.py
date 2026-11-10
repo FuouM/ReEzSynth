@@ -19,7 +19,14 @@ REEZ_VIDEO_STYLES = "REEZ_VIDEO_STYLES"
 REEZ_VIDEO_SYNTH_CONFIG = "REEZ_VIDEO_SYNTH_CONFIG"
 
 _FLOW_ENGINES = ("NeuFlow", "RAFT", "OpenCV", "TorchVision")
-_FLOW_MODELS = ("neuflow_mixed", "neuflow_sintel", "neuflow_things", "sintel", "kitti", "small")
+_FLOW_MODELS = (
+    "neuflow_mixed",
+    "neuflow_sintel",
+    "neuflow_things",
+    "sintel",
+    "kitti",
+    "small",
+)
 _EDGE_METHODS = ("Classic", "PAGE", "PST")
 _OPENCV_FLOW_METHODS = ("DIS", "FARNEBACK")
 _TORCHVISION_FLOW_MODELS = ("raft_large", "raft_small")
@@ -31,9 +38,13 @@ _VOTE_MODES = ("weighted", "plain")
 
 def _parse_indices(style_indices: str) -> list[int]:
     try:
-        indices = [int(part.strip()) for part in style_indices.split(",") if part.strip()]
+        indices = [
+            int(part.strip()) for part in style_indices.split(",") if part.strip()
+        ]
     except ValueError as exc:
-        raise ValueError("style_indices must be comma-separated frame numbers, e.g. 0, 24, 48.") from exc
+        raise ValueError(
+            "style_indices must be comma-separated frame numbers, e.g. 0, 24, 48."
+        ) from exc
     if not indices:
         raise ValueError("At least one style index is required.")
     if any(index < 0 for index in indices):
@@ -173,7 +184,10 @@ class ReEzSynthVideoStyleKeyframe:
         return {
             "required": {
                 "style_image": ("IMAGE",),
-                "style_index": ("INT", {"default": 0, "min": 0, "max": 1000000, "step": 1}),
+                "style_index": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 1000000, "step": 1},
+                ),
             },
         }
 
@@ -259,9 +273,18 @@ class ReEzSynthVideoSynthConfig:
                 "flow_model": (list(_FLOW_MODELS), {"default": "sintel"}),
                 "edge_method": (list(_EDGE_METHODS), {"default": "Classic"}),
                 "opencv_flow_method": (list(_OPENCV_FLOW_METHODS), {"default": "DIS"}),
-                "torchvision_flow_model": (list(_TORCHVISION_FLOW_MODELS), {"default": "raft_large"}),
-                "pyramid_levels": ("INT", {"default": 6, "min": 1, "max": 12, "step": 1}),
-                "alpha": ("FLOAT", {"default": 0.75, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "torchvision_flow_model": (
+                    list(_TORCHVISION_FLOW_MODELS),
+                    {"default": "raft_large"},
+                ),
+                "pyramid_levels": (
+                    "INT",
+                    {"default": 6, "min": 1, "max": 12, "step": 1},
+                ),
+                "alpha": (
+                    "FLOAT",
+                    {"default": 0.75, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
                 "use_residual_transfer": ("BOOLEAN", {"default": False}),
                 "use_temporal_nnf_propagation": ("BOOLEAN", {"default": False}),
                 "use_sparse_feature_guide": ("BOOLEAN", {"default": False}),
@@ -269,31 +292,70 @@ class ReEzSynthVideoSynthConfig:
                 "use_flow_occlusion_masks": ("BOOLEAN", {"default": False}),
                 "use_forward_warping": ("BOOLEAN", {"default": False}),
                 "poisson_solver": (list(_POISSON_SOLVERS), {"default": "disabled"}),
-                "poisson_maxiter": ("INT", {"default": 0, "min": 0, "max": 10000, "step": 1}),
-                "poisson_grad_weight_l": ("FLOAT", {"default": 2.5, "min": 0.0, "max": 20.0, "step": 0.1}),
-                "poisson_grad_weight_ab": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 20.0, "step": 0.1}),
+                "poisson_maxiter": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 10000, "step": 1},
+                ),
+                "poisson_grad_weight_l": (
+                    "FLOAT",
+                    {"default": 2.5, "min": 0.0, "max": 20.0, "step": 0.1},
+                ),
+                "poisson_grad_weight_ab": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0.0, "max": 20.0, "step": 0.1},
+                ),
                 "use_taichi_ops": ("BOOLEAN", {"default": False}),
                 "backend": (list(_BACKENDS), {"default": "taichi"}),
                 "cost_function": (list(_COST_FUNCTIONS), {"default": "ncc"}),
                 "vote_mode": (list(_VOTE_MODES), {"default": "weighted"}),
-                "uniformity": ("FLOAT", {"default": 3500.0, "min": 0.0, "max": 20000.0, "step": 10.0}),
+                "uniformity": (
+                    "FLOAT",
+                    {"default": 3500.0, "min": 0.0, "max": 20000.0, "step": 10.0},
+                ),
                 "patch_size": ("INT", {"default": 7, "min": 3, "max": 31, "step": 2}),
-                "search_vote_iters": ("INT", {"default": 12, "min": 1, "max": 64, "step": 1}),
-                "patch_match_iters": ("INT", {"default": 6, "min": 1, "max": 32, "step": 1}),
-                "stop_threshold": ("INT", {"default": 5, "min": 0, "max": 255, "step": 1}),
+                "search_vote_iters": (
+                    "INT",
+                    {"default": 12, "min": 1, "max": 64, "step": 1},
+                ),
+                "patch_match_iters": (
+                    "INT",
+                    {"default": 6, "min": 1, "max": 32, "step": 1},
+                ),
+                "stop_threshold": (
+                    "INT",
+                    {"default": 5, "min": 0, "max": 255, "step": 1},
+                ),
                 "search_pruning_threshold": (
                     "FLOAT",
                     {"default": 50.0, "min": 0.0, "max": 10000.0, "step": 1.0},
                 ),
                 "use_bilateral": ("BOOLEAN", {"default": False}),
-                "sigma_spatial": ("FLOAT", {"default": 4.0, "min": 0.1, "max": 64.0, "step": 0.1}),
-                "sigma_color": ("FLOAT", {"default": 10.0, "min": 0.1, "max": 255.0, "step": 0.1}),
+                "sigma_spatial": (
+                    "FLOAT",
+                    {"default": 4.0, "min": 0.1, "max": 64.0, "step": 0.1},
+                ),
+                "sigma_color": (
+                    "FLOAT",
+                    {"default": 10.0, "min": 0.1, "max": 255.0, "step": 0.1},
+                ),
                 "n_size_step": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
                 "extra_pass_3x3": ("BOOLEAN", {"default": False}),
-                "image_weight": ("FLOAT", {"default": 6.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "edge_weight": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "pos_weight": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "warp_weight": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 100.0, "step": 0.1}),
+                "image_weight": (
+                    "FLOAT",
+                    {"default": 6.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                ),
+                "edge_weight": (
+                    "FLOAT",
+                    {"default": 1.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                ),
+                "pos_weight": (
+                    "FLOAT",
+                    {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                ),
+                "warp_weight": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0.0, "max": 100.0, "step": 0.1},
+                ),
                 "sparse_anchor_weight": (
                     "FLOAT",
                     {"default": 50.0, "min": 0.0, "max": 200.0, "step": 0.1},
@@ -324,7 +386,10 @@ class ReEzSynthVideoSynth:
                 "content_images": ("IMAGE",),
                 "styles": (REEZ_VIDEO_STYLES,),
                 "config": (REEZ_VIDEO_SYNTH_CONFIG,),
-                "frame_rate": ("FLOAT", {"default": 8.0, "min": 0.001, "max": 240.0, "step": 0.001}),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 8.0, "min": 0.001, "max": 240.0, "step": 0.001},
+                ),
                 "save_outputs": ("BOOLEAN", {"default": False}),
             },
             "optional": {
@@ -367,7 +432,9 @@ class ReEzSynthVideoSynth:
             )
 
         resolved_fps = _fps_from_video_info(video_info, frame_rate)
-        precomputation, pipeline, blending, ebsynth_params, debug = _build_configs(config)
+        precomputation, pipeline, blending, ebsynth_params, debug = _build_configs(
+            config
+        )
         out_dir = _path_or_none(output_dir)
         cache = _path_or_none(cache_dir)
 

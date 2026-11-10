@@ -108,9 +108,8 @@ def _load_extension():
     if EXTENSION_AVAILABLE and ebsynth_torch is not None:
         return
 
-    if FORCE_EBSYNTH_JIT_LOADER:
-        if JIT_VERBOSE:
-            print("Forcing JIT loader for ebsynth_torch (direct import disabled).")
+    if FORCE_EBSYNTH_JIT_LOADER and JIT_VERBOSE:
+        print("Forcing JIT loader for ebsynth_torch (direct import disabled).")
 
     # Initialize variables
     force_jit = True

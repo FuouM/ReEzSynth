@@ -4,6 +4,8 @@ Interpolation mode runner for FastBlend.
 This module implements keyframe interpolation using patch matching between keyframes.
 """
 
+import itertools
+
 import numpy as np
 from tqdm import tqdm
 
@@ -48,7 +50,7 @@ class InterpolationModeRunner:
             task_group.append(tasks)
 
         # Handle frames between keyframes
-        for l, r in zip(index_style[:-1], index_style[1:]):
+        for l, r in itertools.pairwise(index_style):
             tasks = []
             for m in range(l, r):
                 tasks.append((l, m, r))

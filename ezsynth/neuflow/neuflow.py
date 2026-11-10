@@ -134,7 +134,7 @@ class NeuFlow(torch.nn.Module, PyTorchModelHubMixin):
     def split_features(self, features, context_dim, feature_dim):
         context, features = torch.split(features, [context_dim, feature_dim], dim=1)
         context, _ = context.chunk(chunks=2, dim=0)
-        feature0, feature1 = features.chunk(chunks=2, dim=0)
+        _feature0, _feature1 = features.chunk(chunks=2, dim=0)
         return features, torch.relu(context)
 
     def forward(self, img0, img1, iters_s16=1, iters_s8=8):

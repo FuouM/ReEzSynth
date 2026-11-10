@@ -11,9 +11,9 @@ from torch import nn
 from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
-from ..utils.gpu_memory import apply_gpu_memory_limit
 from ..raft.raft import RAFT
 from ..raft.utils import InputPadder
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from .types import FlowTorchDevice, RaftCheckpointName
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]

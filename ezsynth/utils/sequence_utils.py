@@ -1,5 +1,6 @@
 """Keyframe ranges and synthesis modes for multi-pass blending."""
 
+import itertools
 from dataclasses import dataclass
 
 
@@ -27,9 +28,10 @@ def create_sequences(
         return _default_sequence(num_frames)
 
     sequences = _endpoint_sequences(keyframes)
-    for (left_style_idx, left_frame), (right_style_idx, right_frame) in zip(
-        keyframes, keyframes[1:]
-    ):
+    for (left_style_idx, left_frame), (
+        right_style_idx,
+        right_frame,
+    ) in itertools.pairwise(keyframes):
         sequences.append(
             SynthesisSequence(
                 left_frame,
@@ -56,7 +58,7 @@ def create_directional_sequences(
         return _default_sequence(num_frames)
 
     sequences = _endpoint_sequences(keyframes)
-    for (left_style_idx, left_frame), (_, right_frame) in zip(keyframes, keyframes[1:]):
+    for (left_style_idx, left_frame), (_, right_frame) in itertools.pairwise(keyframes):
         sequences.append(
             SynthesisSequence(
                 left_frame,

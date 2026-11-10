@@ -136,7 +136,10 @@ class ReEzSynthImageSynthConfig:
                     {"default": 3500.0, "min": 0.0, "max": 20000.0, "step": 10.0},
                 ),
                 "patch_size": ("INT", {"default": 7, "min": 3, "max": 31, "step": 2}),
-                "pyramid_levels": ("INT", {"default": 6, "min": 1, "max": 12, "step": 1}),
+                "pyramid_levels": (
+                    "INT",
+                    {"default": 6, "min": 1, "max": 12, "step": 1},
+                ),
                 "search_vote_iters": (
                     "INT",
                     {"default": 12, "min": 1, "max": 64, "step": 1},
@@ -220,7 +223,9 @@ class ReEzSynthImageSynth:
         benchmark: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if not guides.guides:
-            raise ValueError("At least one guide is required. Chain ReEzSynth Guide nodes.")
+            raise ValueError(
+                "At least one guide is required. Chain ReEzSynth Guide nodes."
+            )
 
         from ezsynth.api import ImageSynth
 

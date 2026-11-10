@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main, overhaul]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uvx ruff@0.17.4 check .
+      - run: uvx ruff@0.17.4 format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --extra taichi --extra pyamg
+      - run: uv run pytest

@@ -36,7 +36,8 @@ all = ["reezsynth[taichi,cupy,pyamg,neuflow,faceblit]"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.13",
+    "ruff==0.17.4",
+    "pre-commit>=4.0",
 ]
 
 [tool.uv]
