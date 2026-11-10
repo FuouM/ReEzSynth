@@ -113,11 +113,25 @@ Different Loss functions
 ### ComfyUI
 
 1. Clone into `ComfyUI/custom_nodes/ReEzSynth`, preferably as a partial clone without media: `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/FuouM/ReEzSynth.git` (on Windows `cmd`: `set GIT_LFS_SKIP_SMUDGE=1` first).
-2. Install `requirements.txt` into ComfyUI's Python; torch/torchvision come from ComfyUI. Add `taichi` for the Taichi backend.
-3. Restart ComfyUI. Nodes appear under the `ReEzSynth` prefix: Guide, Guides Append, Image Synth Config, Image Synth, Video Style Keyframe(s), Video Synth Config, Video Synth.
-4. Example graphs are in `workflows/` (`reezsynth_imgsynth_facestyle.json`, `reezsynth_imgsynth_stylelit.json`, `reezsynth_imgsynth_texbynum.json`, `reezsynth_videosynth.json`); drag one onto the canvas.
+2. Install the requirements into ComfyUI's Python (torch/torchvision come from ComfyUI); they include `taichi`, the nodes' default synthesis backend. Portable build: `python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ReEzSynth\requirements.txt`. Taichi has no wheels for Python 3.13+; there, select the `torch` backend (pure PyTorch, about 10x slower at full resolution).
+3. For video synthesis with the default RAFT flow engine, put the RAFT checkpoints in `models/raft/` (see `models/model_files.md`). The TorchVision flow engine downloads its weights automatically; OpenCV needs none.
+4. Restart ComfyUI. Nodes appear under the `ReEzSynth` prefix: Guide, Guides Append, Image Synth Config, Image Synth, Video Style Keyframe(s), Video Style Keyframes Append, Video Synth Config, Video Synth, FastBlend Interpolate, FaceBlit.
+5. Example graphs are in `workflows/` (`reezsynth_imgsynth_facestyle.json`, `reezsynth_imgsynth_stylelit.json`, `reezsynth_imgsynth_texbynum.json`, `reezsynth_videosynth.json`, `reezsynth_fastblend.json`, `reezsynth_faceblit.json`); drag one onto the canvas.
 
-Inside ComfyUI the GPU memory budget above is disabled; ComfyUI manages VRAM for its process.
+Optional packages, needed only by the options that use them (a node that needs a missing one stops with the `pip install` command to run):
+
+| Package | Needed for |
+|:-|:-|
+| `cupy-cuda12x` | FastBlend `cupy` backend (FastBlend `auto` uses it only when Taichi is missing) |
+| `phycv` | PAGE / PST edge methods |
+| `pyamg` | `amg` Poisson solver |
+| `huggingface-hub` | NeuFlow flow engine (checkpoints in `models/neuflow/`) |
+| `face-alignment` | FaceBlit landmark detection when no landmarks are connected (weights download on first use) |
+| `numba` | FaceBlit `numba` DFS mode with the non-vectorized torch path |
+
+The `cuda` synthesis and FastBlend backends JIT-build the native extension, which needs a C++ compiler and the CUDA Toolkit matching ComfyUI's PyTorch.
+
+Inside ComfyUI the allocator cap above is disabled (ComfyUI manages VRAM for its process). The nodes ask ComfyUI to offload its models before synthesis, report progress to the ComfyUI progress bar and stop at the next frame or pyramid level when you cancel. The torch backend still sizes its patch tensors so that `EZSYNTH_GPU_MEMORY_RESERVE_MB` (1.5 GiB by default) stays free for the desktop.
 
 A prototype `ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl` exists in the Releases (SHA256 `180c6eeb2e2f6aac4062069cdd0fa5928d577b8404ce34131fab87bd4a7ae703`). It predates the current sources and was built against an older PyTorch, so it does not match the locked torch version; use the JIT build.
 

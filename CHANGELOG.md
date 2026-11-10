@@ -20,6 +20,8 @@
 - Library messages go through `logging` (CLIs configure it; `EZSYNTH_LOG_LEVEL` overrides the level).
 - `ezsynth.utils.taichi_runtime`: one Taichi runtime shared by ezsynth, FastBlend and FaceBlit.
 - CI (ruff + pytest on Linux), pre-commit hooks, `NOTICE` for bundled third-party code, ComfyUI and development docs.
+- Synthesis options `cost_function="sad"`, `search_mode="jfa"|"multicand"` (with `multicand_k` 2–8) and `precision="float16"|"bfloat16"` for the torch and Taichi backends (`run_img_synth.py` flags `--cost-function`, `--search-mode`, `--multicand-k`, `--precision`). The native `cuda` backend rejects them with a clear error. Votes stay float32.
+- ComfyUI: FastBlend Interpolate and FaceBlit nodes with example workflows; ComfyUI progress bar, Cancel support and model offloading before synthesis; nodes that need a missing optional package stop with the `pip install` command.
 
 ### Changed
 - Works with NumPy 2, OpenCV 5, current PyTorch (checkpoints load with `weights_only=True`).
@@ -29,6 +31,10 @@
 - Repository formatted with ruff 0.17; wider lint rule set.
 - Native extensions: single lazy loader (`ezsynth.native`); kernels launch on PyTorch's current stream with device guards and launch checks; no per-level device sync; `.cu` files are torch-free (nvcc C++17) while host glue uses PyTorch's C++ standard, so CUDA 12.4 builds against torch ≥ 2.12; portable host flags (`EZSYNTH_NATIVE_ARCH=1` opts in to native tuning); `ninja` is a dependency.
 - FastBlend `is_available()` returns False (cached) instead of raising when its CUDA build fails.
+- ComfyUI nodes and example workflows default to the Taichi backend (about 10x faster than pure PyTorch at full resolution); `taichi` is in `requirements.txt`. The video workflow uses ComfyUI's core video load/save nodes.
+- Initial NNF is seeded (2024), so repeated runs give identical output.
+- Torch patch planner always keeps `EZSYNTH_GPU_MEMORY_RESERVE_MB` free (also inside ComfyUI, where no allocator cap is set) and materializes patch grids only up to 2 GiB. The bounded strategy computes dense SSD/SAD/NCC costs straight from pixel gathers (same values, ~20% faster than before).
+- `phycv` is optional for ComfyUI installs (only the PAGE/PST edge methods use it).
 
 ### Fixed
 - `run_img_synth.py` passed `GuideObject`s where `ImageSynth.run` expects `(source, target, weight)` tuples.
@@ -37,3 +43,4 @@
 - NaN optical flow from RAFT on inputs smaller than ~128 px (division by zero at 1-pixel correlation levels).
 - `ezsynth/ebsynth_extension/dispatch.cpp` had been overwritten by a copy of `dispatch.h`, so the native extension could not link.
 - FastBlend pyramid matchers crashed on construction (property called as a function).
+- FaceBlit landmark detection allocated ~9 GiB of cuDNN workspace under PyTorch's `cudaMallocAsync` allocator (ComfyUI's default); cuDNN is disabled around FAN inference (peak now ~0.8 GiB).
