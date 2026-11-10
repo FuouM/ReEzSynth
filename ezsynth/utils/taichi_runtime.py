@@ -12,6 +12,7 @@ Verbosity: set ``EZSYNTH_TAICHI_INIT_VERBOSE=1`` (``consts.TAICHI_INIT_VERBOSE``
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import threading
@@ -20,6 +21,8 @@ from typing import Any
 import torch
 
 from .. import consts
+
+logger = logging.getLogger(__name__)
 
 TAICHI_RANDOM_SEED = 42
 
@@ -96,7 +99,7 @@ def ensure_ti_init(device: torch.device | str | None = None):
             random_seed=TAICHI_RANDOM_SEED,
         )
         if verbose:
-            print(f"[Taichi] Initialized with arch: {arch}")
+            logger.info(f"[Taichi] Initialized with arch: {arch}")
         _ti_arch = arch
         return arch
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -13,6 +14,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 # Open polyline index lists for iBUG 68 / dlib ordering
 _DLIB_68_OPEN_CHAINS: tuple[list[int], ...] = (
@@ -580,7 +583,7 @@ def write_landmarks_preview_mp4(
             faceblit_style_cache_dir
             or (output_mp4.parent / f"_fb_style_cache_{style_p.stem}")
         )
-        print(f"[landmark viz] Precomputing Taichi style assets → {cache}")
+        logger.info(f"[landmark viz] Precomputing Taichi style assets → {cache}")
         fb_style = _prepare_faceblit_style_taichi(
             style_p,
             cache,

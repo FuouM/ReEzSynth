@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,8 @@ from ..neuflow.neuflow import NeuFlow
 from ..utils.gpu_memory import apply_gpu_memory_limit
 from .pad import pad_bgr_to_stride
 from .types import FlowTorchDevice, NeuFlowCheckpointName
+
+logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -58,7 +61,7 @@ def _load_neuflow_model(
     model_name: NeuFlowCheckpointName,
     device: FlowTorchDevice,
 ) -> tuple[NeuFlow, torch.device, torch.dtype, bool]:
-    print(f"Initializing NeuFlow Engine (model: {model_name})...")
+    logger.info(f"Initializing NeuFlow Engine (model: {model_name})...")
     if device == "auto":
         dev = torch.device(get_auto_torch_device())
     else:
@@ -96,7 +99,7 @@ def _compute_neuflow_sequence_with_model(
     init_key = (ph, pw, str(dev), use_amp)
     prev_key = getattr(model, "_ezsynth_bhwd_key", None)
     if prev_key != init_key:
-        print(
+        logger.info(
             f"  - Initializing NeuFlow for resolution: {w0}x{h0} "
             f"(padded to {pw}x{ph} for alignment)"
         )

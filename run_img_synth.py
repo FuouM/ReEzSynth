@@ -1,4 +1,5 @@
 import gc
+import logging
 import os
 import time
 from argparse import ArgumentParser, Namespace
@@ -7,7 +8,10 @@ import numpy as np
 import torch
 
 from ezsynth.api import ImageSynth, RunConfig
+from ezsynth.logging_setup import configure_cli_logging
 from ezsynth.utils.io_utils import write_image
+
+logger = logging.getLogger(__name__)
 
 # Constants for synthesis parameters
 USE_RESIDUAL_TRANSFER = True
@@ -124,7 +128,7 @@ def build_config(args: Namespace, **overrides) -> RunConfig:
 
 
 def run_example(args, output_dir, title, base_name, style_image, guides, **overrides):
-    print(f"\n--- Running: {title} ---")
+    logger.info(f"\n--- Running: {title} ---")
     start_example_time = time.time()
     ezsynner = ImageSynth(
         style_image=style_image, config=build_config(args, **overrides)
@@ -132,19 +136,20 @@ def run_example(args, output_dir, title, base_name, style_image, guides, **overr
     # Guides are (source, target, weight) tuples; paths or arrays are accepted.
     result_img, result_err = ezsynner.run(guides=guides, benchmark=args.benchmark)
     save_synth_result(output_dir, base_name, result_img, result_err)
-    print(f"{title} took: {time.time() - start_example_time:.4f} s")
+    logger.info(f"{title} took: {time.time() - start_example_time:.4f} s")
 
 
 def main():
+    configure_cli_logging()
     args = parse_args()
-    print(f"Using backend: {args.backend}")
-    print(f"Using full parameters: {args.full_params}")
+    logger.info(f"Using backend: {args.backend}")
+    logger.info(f"Using full parameters: {args.full_params}")
 
     st = time.time()
     mode = "full" if args.full_params else "minimal"
     output_dir = f"output_synth_api_{args.backend}_{mode}_{COST_FUNCTION}"
     os.makedirs(output_dir, exist_ok=True)
-    print(f"Saving output to: {output_dir}")
+    logger.info(f"Saving output to: {output_dir}")
 
     run_example(
         args,
@@ -214,7 +219,7 @@ def main():
     )
     clear_memory()
 
-    print(f"\nTotal time taken: {time.time() - st:.4f} s")
+    logger.info(f"\nTotal time taken: {time.time() - st:.4f} s")
 
 
 if __name__ == "__main__":

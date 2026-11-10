@@ -1,5 +1,6 @@
 """Precompute state and cache-aware guide computation helpers."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -7,6 +8,8 @@ from pathlib import Path
 import numpy as np
 
 from .utils.pipeline_utils import has_exact_cache_files
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,5 +46,5 @@ def compute_guide(
         result = compute_fn(content_frames, **(compute_kwargs or {}))
         save_fn(result, cache_path)
 
-    print(f"{title} pre-computation finished.")
+    logger.info(f"{title} pre-computation finished.")
     return result

@@ -1,4 +1,5 @@
 # ezsynth/project.py
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,8 @@ from .data import ProjectData
 from .output import OutputManager
 from .pipeline import SynthesisPipeline
 from .service import SynthesisConfigs
+
+logger = logging.getLogger(__name__)
 
 
 class Project:
@@ -57,7 +60,7 @@ class Project:
         Returns:
             List[np.ndarray]: The final stylized frames.
         """
-        print("\n--- Starting Synthesis Pipeline ---")
+        logger.info("\n--- Starting Synthesis Pipeline ---")
         # The pipeline now returns the frames instead of saving them.
         final_frames = self.pipeline.run()
 
@@ -67,7 +70,7 @@ class Project:
             visible_output_dir=self.data.output_dir,
         )
 
-        print("\n--- Project Execution Complete ---")
-        print(f"Output saved to: {self.data.output_dir}")
+        logger.info("\n--- Project Execution Complete ---")
+        logger.info(f"Output saved to: {self.data.output_dir}")
 
         return final_frames

@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 
 import numpy as np
@@ -6,6 +7,8 @@ from tqdm import tqdm
 
 from .patch_match import build_pyramid_patch_matcher, resolve_fastblend_backend
 from .runtime.torch_device import balanced_mode_torch_device
+
+logger = logging.getLogger(__name__)
 
 
 class GPUAccumulator:
@@ -168,7 +171,7 @@ class BalancedModeRunner:
         resolved = resolve_fastblend_backend(backend)
 
         suffix = " (auto)" if backend == "auto" else ""
-        print(f"FastBlend: Using {resolved} backend{suffix}")
+        logger.info(f"FastBlend: Using {resolved} backend{suffix}")
 
         pm_cfg = {k: v for k, v in patch_matcher_config.items() if k != "backend"}
         # Setup Engine
@@ -192,7 +195,7 @@ class BalancedModeRunner:
                     tasks.append((source, target))
 
         total_tasks = len(tasks)
-        print(
+        logger.info(
             f"FastBlend: Processing {total_tasks} frame pairs in {len(frames_style)} frames"
         )
 
@@ -269,5 +272,5 @@ class BalancedModeRunner:
                 # Fallback if something went wrong or single frame
                 output[i] = frames_style[i]
 
-        print(f"FastBlend: Completed processing {completed_frames}/{n} frames")
+        logger.info(f"FastBlend: Completed processing {completed_frames}/{n} frames")
         return output

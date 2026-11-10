@@ -1,4 +1,5 @@
 # ezsynth/utils/blend_logic.py
+import logging
 import time
 from importlib.util import find_spec
 from types import ModuleType
@@ -6,6 +7,8 @@ from types import ModuleType
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 # --- Optional Dependency Handling ---
 # Availability is probed without importing; scipy, pyamg and taichi load on first use.
@@ -146,7 +149,7 @@ def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
         (vdy, (indgy_x, indgy_y)), shape=(h * w, h * w)
     ).tocsc()
     As = [scipy.sparse.vstack([Gx * weight, Gy * weight, Ix]) for weight in grad_weight]
-    print(f"Constructing Poisson matrix 'A' took {time.time() - st:.4f} s")
+    logger.debug(f"Constructing Poisson matrix 'A' took {time.time() - st:.4f} s")
     return As
 
 
@@ -231,7 +234,7 @@ class Reconstructor:
         if hw_key in self._cache:
             return self._cache[hw_key]
 
-        print(f"Preparing solver cache for resolution {w}x{h}...")
+        logger.info(f"Preparing solver cache for resolution {w}x{h}...")
         size_cache = {}
         # Only construct matrices if a solver that needs them is selected
         if self.solver in ["lsqr", "lsmr", "cg", "amg"]:
@@ -242,7 +245,7 @@ class Reconstructor:
             if self.solver == "amg":
                 import pyamg
 
-                print("  - Building AMG solver...")
+                logger.debug("  - Building AMG solver...")
                 size_cache["MLs"] = [
                     pyamg.ruge_stuben_solver(AtA) for AtA in size_cache["AtAs"]
                 ]

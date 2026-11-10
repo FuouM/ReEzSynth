@@ -1,6 +1,10 @@
+import logging
+
 import numpy as np
 
 from ..edge.batch import compute_edge
+
+logger = logging.getLogger(__name__)
 
 
 class EdgeEngine:
@@ -16,9 +20,9 @@ class EdgeEngine:
         Args:
             method (str): The edge detection algorithm to use ('Classic', 'PAGE', 'PST').
         """
-        print(f"Initializing Edge Engine (method: {method})...")
+        logger.info(f"Initializing Edge Engine (method: {method})...")
         self.method = method
-        print("Edge Engine initialized.")
+        logger.info("Edge Engine initialized.")
 
     def compute(self, frames: list[np.ndarray]) -> list[np.ndarray]:
         """

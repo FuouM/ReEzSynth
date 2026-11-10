@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from argparse import Namespace
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from ..raft.raft import RAFT
 from ..raft.utils import InputPadder
 from ..utils.gpu_memory import apply_gpu_memory_limit
 from .types import FlowTorchDevice, RaftCheckpointName
+
+logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -57,7 +60,7 @@ def _load_raft_model(
     model_name: RaftCheckpointName,
     device: FlowTorchDevice,
 ) -> tuple[RAFT, torch.device]:
-    print(f"Initializing RAFT Flow Engine (model: {model_name})...")
+    logger.info(f"Initializing RAFT Flow Engine (model: {model_name})...")
     if device == "auto":
         dev = torch.device(get_auto_torch_device())
     else:
@@ -72,7 +75,7 @@ def _load_raft_model(
     # Official checkpoints were saved from nn.DataParallel ("module." key prefix).
     model.load_state_dict({k.removeprefix("module."): v for k, v in state_dict.items()})
     model.to(dev).eval()
-    print("RAFT Flow Engine initialized.")
+    logger.info("RAFT Flow Engine initialized.")
     return model, dev
 
 

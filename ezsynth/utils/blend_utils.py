@@ -1,10 +1,14 @@
 # ezsynth/utils/blend_utils.py
 
+import logging
+
 import numpy as np
 from tqdm import tqdm
 
 from .blend_logic import Reconstructor, hist_blender
 from .warp_utils import Warp
+
+logger = logging.getLogger(__name__)
 
 
 class Blender:
@@ -71,7 +75,7 @@ class Blender:
         return warped_masks
 
     def run(self, fwd_frames, bwd_frames, fwd_errors, bwd_errors, fwd_flows):
-        print("Starting blend process...")
+        logger.info("Starting blend process...")
 
         num_blend_frames = len(fwd_errors)
         if num_blend_frames <= 0:
@@ -99,5 +103,5 @@ class Blender:
             err_masks=warped_selection_masks,
         )
 
-        print("Blending complete.")
+        logger.info("Blending complete.")
         return final_blends

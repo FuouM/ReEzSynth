@@ -20,10 +20,12 @@ Usage:
 """
 
 import argparse
+import logging
 from pathlib import Path
 
 import torch
 
+from ezsynth.logging_setup import configure_cli_logging
 from ezsynth.utils.fastblend_cli import (
     create_fastblend_config,
     load_frames_sorted,
@@ -32,8 +34,11 @@ from ezsynth.utils.fastblend_cli import (
 from ezsynth.utils.video import export_frames_to_browser_h264_mp4
 from FastBlend.src.engine import FastBlendEngine, FastBlendInput_Sequence
 
+logger = logging.getLogger(__name__)
+
 
 def main():
+    configure_cli_logging()
     parser = argparse.ArgumentParser(
         description="Standalone FastBlend Post-Processing for ReEzSynth",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -112,15 +117,15 @@ def main():
     args = parser.parse_args()
 
     # Welcome message
-    print("=" * 60)
-    print("    Standalone FastBlend Post-Processing")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("    Standalone FastBlend Post-Processing")
+    logger.info("=" * 60)
 
     # Check CUDA availability
     if torch.cuda.is_available():
-        print(f"CUDA available: {torch.cuda.get_device_name(0)}")
+        logger.info(f"CUDA available: {torch.cuda.get_device_name(0)}")
     else:
-        print("Running on CPU (slower but works without CUDA)")
+        logger.info("Running on CPU (slower but works without CUDA)")
 
     # Load configuration
     fastblend_params = {}
@@ -134,42 +139,44 @@ def main():
         fastblend_params["batch_size"] = args.batch_size
     fastblend_params["backend"] = args.backend  # Always set backend
 
-    print(f"FastBlend parameters: {fastblend_params}")
+    logger.info(f"FastBlend parameters: {fastblend_params}")
 
     # Create FastBlend configuration
     fastblend_config = create_fastblend_config(fastblend_params)
 
     # Load frames
-    print("\nLoading input frames...")
+    logger.info("\nLoading input frames...")
     content_frames = load_frames_sorted(args.content_dir)
     style_frames = load_frames_sorted(args.style_dir)
 
     # Validate frame counts
     if len(content_frames) != len(style_frames):
-        print(
+        logger.warning(
             f"Warning: Content frames ({len(content_frames)}) and style frames ({len(style_frames)}) have different counts"
         )
-        print(f"Using minimum count: {min(len(content_frames), len(style_frames))}")
+        logger.info(
+            f"Using minimum count: {min(len(content_frames), len(style_frames))}"
+        )
         min_count = min(len(content_frames), len(style_frames))
         content_frames = content_frames[:min_count]
         style_frames = style_frames[:min_count]
 
     if len(content_frames) == 0:
-        print("Error: No frames to process")
+        logger.error("Error: No frames to process")
         return
 
-    print(f"Processing {len(content_frames)} frames with FastBlend...")
-    print("FastBlend Configuration:")
-    print(f"  - Accuracy: {fastblend_config.accuracy}")
-    print(f"  - Window size: {fastblend_config.window_size}")
-    print(f"  - Batch size: {fastblend_config.batch_size}")
-    print(f"  - Minimum patch size: {fastblend_config.minimum_patch_size}")
-    print(f"  - Number of iterations: {fastblend_config.num_iter}")
-    print(f"  - Guide weight: {fastblend_config.guide_weight}")
-    print(f"  - Backend: {fastblend_config.backend}")
+    logger.info(f"Processing {len(content_frames)} frames with FastBlend...")
+    logger.info("FastBlend Configuration:")
+    logger.info(f"  - Accuracy: {fastblend_config.accuracy}")
+    logger.info(f"  - Window size: {fastblend_config.window_size}")
+    logger.info(f"  - Batch size: {fastblend_config.batch_size}")
+    logger.info(f"  - Minimum patch size: {fastblend_config.minimum_patch_size}")
+    logger.info(f"  - Number of iterations: {fastblend_config.num_iter}")
+    logger.info(f"  - Guide weight: {fastblend_config.guide_weight}")
+    logger.info(f"  - Backend: {fastblend_config.backend}")
 
     if not fastblend_config.enabled:
-        print("FastBlend is disabled in configuration")
+        logger.info("FastBlend is disabled in configuration")
         return
 
     def progress_callback(_current_frame, _total_frames):
@@ -184,7 +191,7 @@ def main():
     )
 
     # Save results
-    print("\nSaving FastBlend results...")
+    logger.info("\nSaving FastBlend results...")
     save_frames(fastblend_frames, args.output_dir, args.prefix)
 
     if args.export_mp4:
@@ -196,18 +203,17 @@ def main():
                 mp4_path = od.parent / f"{od.name}.mp4"
             export_frames_to_browser_h264_mp4(fastblend_frames, mp4_path, args.mp4_fps)
         except FileNotFoundError as e:
-            print(f"\n[ERROR] {e}")
+            logger.error(f"\n[ERROR] {e}")
             if "ffmpeg" not in str(e).lower():
-                print("Please check --output_dir, --mp4-output, and related paths.")
+                logger.error(
+                    "Please check --output_dir, --mp4-output, and related paths."
+                )
         except Exception as e:
-            print(f"\n[ERROR] MP4 export failed: {e}")
-            import traceback
+            logger.exception(f"\n[ERROR] MP4 export failed: {e}")
 
-            traceback.print_exc()
-
-    print("\nFastBlend processing complete!")
-    print(f"Results saved to: {args.output_dir}")
-    print(f"Total frames processed: {len(fastblend_frames)}")
+    logger.info("\nFastBlend processing complete!")
+    logger.info(f"Results saved to: {args.output_dir}")
+    logger.info(f"Total frames processed: {len(fastblend_frames)}")
 
 
 if __name__ == "__main__":

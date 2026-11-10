@@ -1,9 +1,11 @@
+import logging
 import time
 from pathlib import Path
 from typing import Literal
 
 import cv2
 
+from ezsynth.logging_setup import configure_cli_logging
 from FaceBlit.src.backends.taichi_backend import ensure_ti_init
 from FaceBlit.src.engine import (
     FaceBlitEngine,
@@ -11,6 +13,8 @@ from FaceBlit.src.engine import (
     FaceBlitInput_Target,
 )
 from FaceBlit.src.utils_face import detect_landmarks
+
+logger = logging.getLogger(__name__)
 
 # Run from the repository root: python -m FaceBlit.src.faceblit_run
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -35,7 +39,7 @@ def run_faceblit(
     if backend == "taichi":
         ensure_ti_init(device)
 
-    print(f"[Demo] {backend} FaceBlit")
+    logger.info(f"[Demo] {backend} FaceBlit")
     t0 = time.time()
     faceblit_engine = FaceBlitEngine()
 
@@ -81,7 +85,7 @@ def run_faceblit(
         backend=backend,
     )
 
-    print(f"[Demo] {backend}: stylization: {time.time() - t0:.4f}s")
+    logger.info(f"[Demo] {backend}: stylization: {time.time() - t0:.4f}s")
 
     out_file = output_dir / f"{target_stem}_stylized_{backend}.png"
     cv2.imwrite(str(out_file), result)
@@ -89,10 +93,11 @@ def run_faceblit(
     pos_out = output_dir / f"{target_stem}_target_pos_{backend}.png"
     cv2.imwrite(str(pos_out), target_pos_guide)
 
-    print(f"[Demo] Success! Saved to {out_file} (pos guide: {pos_out})")
+    logger.info(f"[Demo] Success! Saved to {out_file} (pos guide: {pos_out})")
 
 
 if __name__ == "__main__":
+    configure_cli_logging()
     examples_dir = ROOT / "FaceBlit" / "examples"
     # taichi_output_dir = ROOT / "FaceBlit" / "test_output" / "taichi_cpu_novec"
     # run_faceblit(

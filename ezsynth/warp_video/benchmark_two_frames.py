@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from pathlib import Path
 from typing import cast
@@ -10,11 +11,15 @@ from typing import cast
 import cv2
 import numpy as np
 
+from ezsynth.logging_setup import configure_cli_logging
+
 from ..config import PrecomputationConfig
 from ..flow.run import compute_optical_flow_sequence
 from ..flow.types import FlowEngineName, FlowModelName
 from ..utils.viz_utils import flow_to_image
 from ..utils.warp_utils import Warp
+
+logger = logging.getLogger(__name__)
 
 
 def _compute_metrics(img1: np.ndarray, img2: np.ndarray) -> tuple[float, float]:
@@ -48,7 +53,7 @@ def run(args: argparse.Namespace) -> None:
     flow_model = cast(FlowModelName, args.flow_model)
     cfg = PrecomputationConfig(flow_engine=engine, flow_model=flow_model)
 
-    print(
+    logger.info(
         f"Benchmarking {args.engine} flow, skip={args.frame_skip}, "
         f"{args.num_tests} tests..."
     )
@@ -58,13 +63,13 @@ def run(args: argparse.Namespace) -> None:
             idx1 = args.frame_idx + test_i * args.stride
             idx2 = idx1 + args.frame_skip
             if idx2 >= total_frames:
-                print(f"Reached end of video at test {test_i}.")
+                logger.info(f"Reached end of video at test {test_i}.")
                 break
 
             ok1, frame1 = _load_frame(cap, idx1)
             ok2, frame2 = _load_frame(cap, idx2)
             if not (ok1 and ok2):
-                print(f"Error reading frames {idx1}, {idx2}")
+                logger.error(f"Error reading frames {idx1}, {idx2}")
                 continue
 
             if warper is None:
@@ -91,7 +96,7 @@ def run(args: argparse.Namespace) -> None:
             psnrs_fwd.append(psnr_fwd)
 
             gap = psnr_fwd - psnr_back
-            print(
+            logger.info(
                 f"Test {test_i} ({idx1}->{idx2}): "
                 f"backward={psnr_back:.2f} dB, forward={psnr_fwd:.2f} dB (gap={gap:.2f})"
             )
@@ -117,17 +122,17 @@ def run(args: argparse.Namespace) -> None:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(output_path), best_montage)
-        print(f"Saved best comparison ({best_test_info}) to {output_path}")
+        logger.info(f"Saved best comparison ({best_test_info}) to {output_path}")
 
     if psnrs_back:
         avg_back = float(np.mean(psnrs_back))
         avg_fwd = float(np.mean(psnrs_fwd))
-        print("\n" + "=" * 30)
-        print(f"AVERAGE (skip={args.frame_skip}):")
-        print(f"Backward PSNR: {avg_back:.2f} dB")
-        print(f"Forward PSNR:  {avg_fwd:.2f} dB")
-        print(f"Improvement:   {avg_fwd - avg_back:.2f} dB")
-        print("=" * 30)
+        logger.info("\n" + "=" * 30)
+        logger.info(f"AVERAGE (skip={args.frame_skip}):")
+        logger.info(f"Backward PSNR: {avg_back:.2f} dB")
+        logger.info(f"Forward PSNR:  {avg_fwd:.2f} dB")
+        logger.info(f"Improvement:   {avg_fwd - avg_back:.2f} dB")
+        logger.info("=" * 30)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -154,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    configure_cli_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
     run(args)

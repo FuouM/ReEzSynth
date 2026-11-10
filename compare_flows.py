@@ -1,3 +1,4 @@
+import logging
 import os
 from argparse import ArgumentParser
 
@@ -10,6 +11,9 @@ from ezsynth.engines.flow_engine import (
     RAFTFlowEngine,
     TorchVisionFlowEngine,
 )
+from ezsynth.logging_setup import configure_cli_logging
+
+logger = logging.getLogger(__name__)
 
 
 def flow_to_color(flow):
@@ -38,6 +42,7 @@ DEFAULT_VIDEO = "examples/cat_full.mp4"
 
 
 def main():
+    configure_cli_logging()
     parser = ArgumentParser(description="Render a side-by-side optical flow comparison")
     parser.add_argument(
         "video_path",
@@ -51,7 +56,7 @@ def main():
     if not os.path.exists("output"):
         os.makedirs("output")
 
-    print(f"Reading video: {video_path}")
+    logger.info(f"Reading video: {video_path}")
     cap = cv2.VideoCapture(video_path)
 
     # Read first 60 frames to keep it quick but sufficient
@@ -70,7 +75,7 @@ def main():
         frame = cv2.resize(frame, (new_w, new_h))
         frames.append(frame)
     cap.release()
-    print(f"Loaded {len(frames)} frames. Resolution: {frames[0].shape}")
+    logger.info(f"Loaded {len(frames)} frames. Resolution: {frames[0].shape}")
 
     engines = [
         ("Original", None),
@@ -83,13 +88,13 @@ def main():
     try:
         engines.append(("Our RAFT (Sintel)", RAFTFlowEngine(model_name="sintel")))
     except Exception as e:
-        print(f"Skipping Our RAFT: {e}")
+        logger.warning(f"Skipping Our RAFT: {e}")
 
     # Try adding NeuFlow if possible
     try:
         engines.append(("NeuFlow", NeuFlowEngine(model_name="neuflow_mixed")))
     except Exception as e:
-        print(f"Skipping NeuFlow: {e}")
+        logger.warning(f"Skipping NeuFlow: {e}")
 
     # Compute flows
     results = {}  # label -> list of flow images (or original frames)
@@ -99,14 +104,14 @@ def main():
             results[label] = frames[1:]  # Align length
             continue
 
-        print(f"Running {label}...")
+        logger.info(f"Running {label}...")
         try:
             flows = engine.compute(frames)
             # Visualize flows
             viz_frames = [flow_to_color(f) for f in flows]
             results[label] = viz_frames
         except Exception as e:
-            print(f"Error computing {label}: {e}")
+            logger.error(f"Error computing {label}: {e}")
             # Fill with blanks
             results[label] = [np.zeros_like(frames[0])] * (len(frames) - 1)
 
@@ -116,7 +121,7 @@ def main():
     cols = 3
     rows = (n_items + cols - 1) // cols
 
-    print("creating grid video...")
+    logger.info("creating grid video...")
     h, w, _ = frames[0].shape
 
     # Output writer
@@ -146,7 +151,7 @@ def main():
         out.write(grid_img)
 
     out.release()
-    print(f"Video saved to {output_path}")
+    logger.info(f"Video saved to {output_path}")
 
 
 if __name__ == "__main__":

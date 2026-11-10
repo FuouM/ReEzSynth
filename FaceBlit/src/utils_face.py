@@ -1,10 +1,13 @@
 import datetime
+import logging
 import time
 from pathlib import Path
 
 import cv2
 import dlib
 import face_alignment
+
+logger = logging.getLogger(__name__)
 
 FAN_MODEL = "dlib"
 
@@ -64,10 +67,12 @@ _fan_model_cache: dict[str, object] = {}
 def get_fan_model(device: str, model: str = "dlib"):
     """Get cached FAN model or create new one for the specified device."""
     if device in _fan_model_cache:
-        print(f"[{_log_timestamp()}] [FAN] Using cached model for device: {device}")
+        logger.info(
+            f"[{_log_timestamp()}] [FAN] Using cached model for device: {device}"
+        )
         return _fan_model_cache[device]
 
-    print(f"[{_log_timestamp()}] [FAN] Loading model for device: {device}...")
+    logger.info(f"[{_log_timestamp()}] [FAN] Loading model for device: {device}...")
 
     start_time = time.time()
 
@@ -86,7 +91,7 @@ def get_fan_model(device: str, model: str = "dlib"):
     )
 
     load_time = time.time() - start_time
-    print(
+    logger.info(
         f"[{_log_timestamp()}] [FAN] Model loaded for device: {device} with {model} in {load_time:.3f}s"
     )
     _fan_model_cache[device] = fa

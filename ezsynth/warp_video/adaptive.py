@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -10,6 +11,8 @@ from typing import Any, cast
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+from ezsynth.logging_setup import configure_cli_logging
 
 from ..api import ImageSynth, RunConfig
 from ..flow.run import optical_flow_engine
@@ -27,6 +30,8 @@ from .common import (
     precompute_adjacent_flows,
     write_png_sequence,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _padded_bbox_from_mask(
@@ -248,13 +253,13 @@ def run(args: argparse.Namespace) -> None:
     montage_frames: list[np.ndarray] = []
     prev_pre = prev_post = None
 
-    print(f"Stylizing {n} frames with adaptive window selection...")
+    logger.info(f"Stylizing {n} frames with adaptive window selection...")
     with optical_flow_engine(cfg) as compute_flow:
         adj_fwd: list[np.ndarray] = []
         adj_to_prev: list[np.ndarray] = []
         if not args.direct_long_flow:
             adj_fwd, adj_to_prev = precompute_adjacent_flows(frames, compute_flow)
-            print(
+            logger.info(
                 f"Chained adjacent flow: {len(adj_fwd)} fwd + {len(adj_to_prev)} rev segments."
             )
 
@@ -362,7 +367,7 @@ def run(args: argparse.Namespace) -> None:
             prev_pre, prev_post = best_pre, best_post
 
         if args.hole_refine:
-            print("Hole refine: ImageSynth on splat-hole ROIs...")
+            logger.info("Hole refine: ImageSynth on splat-hole ROIs...")
             pos_guider = PositionalGuide(h, w, use_taichi=False)
             synth_config = RunConfig(
                 backend=args.hole_synth_backend,
@@ -390,7 +395,7 @@ def run(args: argparse.Namespace) -> None:
             )
 
         if args.hole_refine and not args.no_hole_propagate and n > 1:
-            print("Hole propagate: flow-warp hole fills...")
+            logger.info("Hole propagate: flow-warp hole fills...")
             _propagate_hole_fills(
                 records,
                 frames,
@@ -429,9 +434,9 @@ def run(args: argparse.Namespace) -> None:
             stylized_out.append(final_uint8)
 
     write_png_sequence(stylized_out, seq_dir)
-    print(f"PNG sequence -> {seq_dir}")
+    logger.info(f"PNG sequence -> {seq_dir}")
     export_frames_to_browser_h264_mp4(montage_frames, out_path, args.fps)
-    print(f"Saved montage video to {out_path}")
+    logger.info(f"Saved montage video to {out_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -473,6 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    configure_cli_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
     run(args)

@@ -1,10 +1,15 @@
 """``reezsynth-prepare``: extract video frames to PNGs (``python -m ezsynth.cli.prepare``)."""
 
 import argparse
+import logging
 from pathlib import Path
 
 import cv2
 from tqdm import tqdm
+
+from ezsynth.logging_setup import configure_cli_logging
+
+logger = logging.getLogger(__name__)
 
 
 def extract_frames(video_path: str, output_dir: str):
@@ -19,15 +24,15 @@ def extract_frames(video_path: str, output_dir: str):
     output_dir = Path(output_dir)
 
     if not video_path.exists():
-        print(f"Error: Video file not found at {video_path}")
+        logger.error(f"Error: Video file not found at {video_path}")
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Extracting frames from '{video_path.name}' to '{output_dir}'...")
+    logger.info(f"Extracting frames from '{video_path.name}' to '{output_dir}'...")
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        print("Error: Could not open video file.")
+        logger.error("Error: Could not open video file.")
         return
 
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -46,10 +51,11 @@ def extract_frames(video_path: str, output_dir: str):
             pbar.update(1)
 
     cap.release()
-    print(f"\nSuccessfully extracted {frame_num} frames.")
+    logger.info(f"\nSuccessfully extracted {frame_num} frames.")
 
 
 def main() -> None:
+    configure_cli_logging()
     parser = argparse.ArgumentParser(
         description="Extract frames from a video for Ezsynth."
     )

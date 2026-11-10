@@ -1,5 +1,7 @@
 # ezsynth/engines/synthesis_engine.py
 
+import logging
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -15,6 +17,8 @@ from ..guide import GuideObject
 from ..utils.gpu_memory import apply_gpu_memory_limit
 from ..utils.timer import SynthesisTimer
 from .backends.common import random_init_nnf, resample_tensor
+
+logger = logging.getLogger(__name__)
 
 EngineRunResult = (
     tuple[np.ndarray, np.ndarray | None]
@@ -239,7 +243,7 @@ class EbsynthEngine:
             ebsynth_config (EbsynthParamsConfig): Configuration for low-level ebsynth parameters.
             pipeline_config (PipelineConfig): Configuration for pipeline-level parameters.
         """
-        print("Initializing Ebsynth Torch Engine...")
+        logger.info("Initializing Ebsynth Torch Engine...")
         self.ebsynth_config = ebsynth_config
         self.pipeline_config = pipeline_config
         self.backend_type = ebsynth_config.backend
@@ -283,7 +287,7 @@ class EbsynthEngine:
             "ssd": COST_FUNCTION_SSD,
             "ncc": COST_FUNCTION_NCC,
         }
-        print(
+        logger.info(
             f"Ebsynth Engine initialized with backend: '{self.backend_type}' on device: '{self.device}'"
         )
 
@@ -459,7 +463,7 @@ class EbsynthEngine:
         self._timed_operation("pyramid_processing", _run_pyramid_loop)
 
         if self.ebsynth_config.extra_pass_3x3:
-            print("  - Performing final 3x3 pass...")
+            logger.debug("  - Performing final 3x3 pass...")
             output_image, output_error, nnf = self.backend.run_level(
                 context.style_tensor,
                 context.source_guide_cat,
@@ -482,20 +486,20 @@ class EbsynthEngine:
         return output_image, output_error, nnf
 
     def _print_benchmark_summary(self) -> None:
-        print("\n" + "=" * 60)
-        print("SYNTHESIS ENGINE TIMING SUMMARY")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("SYNTHESIS ENGINE TIMING SUMMARY")
+        logger.info("=" * 60)
         self.timer.print_summary("Synthesis Engine Operations")
 
         if hasattr(self.backend, "timer"):
-            print("\n" + "=" * 60)
+            logger.info("\n" + "=" * 60)
             backend_name = (
                 "CUDA"
                 if self.backend_type == "cuda"
                 else ("Taichi" if self.backend_type == "taichi" else "PyTorch")
             )
-            print(f"{backend_name.upper()} BACKEND TIMING SUMMARY")
-            print("=" * 60)
+            logger.info(f"{backend_name.upper()} BACKEND TIMING SUMMARY")
+            logger.info("=" * 60)
             self.backend.timer.print_summary(f"{backend_name} Backend Operations")
 
 

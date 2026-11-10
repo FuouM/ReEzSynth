@@ -1,7 +1,10 @@
 """Keyframe ranges and synthesis modes for multi-pass blending."""
 
 import itertools
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,9 +45,9 @@ def create_sequences(
         )
     _append_tail_sequence(sequences, num_frames, keyframes)
 
-    print("Defined sequences:")
+    logger.info("Defined sequences:")
     for seq in sequences:
-        print(f"  - {seq}")
+        logger.info(f"  - {seq}")
 
     return sequences
 
@@ -69,9 +72,9 @@ def create_directional_sequences(
         )
     _append_tail_sequence(sequences, num_frames, keyframes)
 
-    print("Defined directional sequences:")
+    logger.info("Defined directional sequences:")
     for seq in sequences:
-        print(f"  - {seq}")
+        logger.info(f"  - {seq}")
 
     return sequences
 
@@ -82,7 +85,7 @@ def _valid_keyframes(
 ) -> list[tuple[int, int]] | None:
     keyframes = list(enumerate(sorted(set(style_indices))))
     if not keyframes or keyframes[0][1] < 0 or keyframes[-1][1] >= num_frames:
-        print(
+        logger.warning(
             "Warning: No valid style frames provided or indices out of bounds. Defaulting to a single forward pass."
         )
         return None

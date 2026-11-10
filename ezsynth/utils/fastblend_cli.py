@@ -1,5 +1,6 @@
 """Helpers shared by repo-root FastBlend CLI scripts."""
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from ezsynth.utils.io_utils import get_sorted_image_paths, read_image, write_ima
 from FastBlend.src.api import create_config
 from FastBlend.src.config import FastBlendConfig
 from FastBlend.src.engine import FastBlendEngine, FastBlendInput_Keyframes
+
+logger = logging.getLogger(__name__)
 
 _STANDALONE_DEFAULTS = {
     "enabled": True,
@@ -81,7 +84,7 @@ def load_frames_sorted_with_names(
     desc = tqdm_desc or f"Loading frames from {path.name}"
     frames = [read_image(p) for p in tqdm(paths, desc=desc)]
     names = [p.name for p in paths]
-    print(f"Loaded {len(frames)} frames from {directory}")
+    logger.info(f"Loaded {len(frames)} frames from {directory}")
     return frames, names
 
 
@@ -100,7 +103,7 @@ def save_frames(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    print(f"Saving {len(frames)} frames to {output_dir}")
+    logger.info(f"Saving {len(frames)} frames to {output_dir}")
     for i, frame in enumerate(tqdm(frames, desc="Saving frames")):
         output_filename = f"{prefix}{i:05d}.png"
         write_image(output_path / output_filename, frame)

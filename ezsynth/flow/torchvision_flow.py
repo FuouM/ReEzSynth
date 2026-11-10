@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -9,6 +11,8 @@ from tqdm import tqdm
 from ..engines.backends.common import get_auto_torch_device
 from ..utils.gpu_memory import apply_gpu_memory_limit
 from .types import FlowTorchDevice, TorchVisionRaftModel
+
+logger = logging.getLogger(__name__)
 
 
 def _load_torchvision_raft(
@@ -22,7 +26,7 @@ def _load_torchvision_raft(
         raft_small,
     )
 
-    print(f"Initializing TorchVision RAFT (model: {model_name})...")
+    logger.info(f"Initializing TorchVision RAFT (model: {model_name})...")
     if device == "auto":
         dev = torch.device(get_auto_torch_device())
     else:

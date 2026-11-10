@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import cast
@@ -30,6 +31,8 @@ from .torchvision_flow import (
 )
 from .types import FlowEngineName, NeuFlowCheckpointName, RaftCheckpointName
 
+logger = logging.getLogger(__name__)
+
 FlowSequenceFn = Callable[[list[np.ndarray]], list[np.ndarray]]
 
 
@@ -41,7 +44,7 @@ def optical_flow_engine(
     Load flow weights once, then run many short frame sequences.
     """
     engine_name: FlowEngineName = precomputation_cfg.flow_engine
-    print("Instantiating Flow Engine (session)...")
+    logger.info("Instantiating Flow Engine (session)...")
     try:
         if engine_name == "RAFT":
             model, dev = _load_raft_model(
@@ -103,7 +106,7 @@ def optical_flow_engine(
         else:
             raise ValueError(f"Unknown flow engine: {engine_name!r}")
     finally:
-        print("Optical flow session complete. Releasing model from memory...")
+        logger.info("Optical flow session complete. Releasing model from memory...")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -113,7 +116,7 @@ def compute_optical_flow_sequence(
     precomputation_cfg: PrecomputationConfig,
 ) -> list[np.ndarray]:
     """Forward optical flow for a frame sequence; releases heavy models after use."""
-    print("Instantiating Flow Engine...")
+    logger.info("Instantiating Flow Engine...")
     engine_name: FlowEngineName = precomputation_cfg.flow_engine
     try:
         if engine_name == "RAFT":
@@ -141,7 +144,7 @@ def compute_optical_flow_sequence(
             )
         raise ValueError(f"Unknown flow engine: {engine_name!r}")
     finally:
-        print("Optical flow computation complete. Releasing model from memory...")
+        logger.info("Optical flow computation complete. Releasing model from memory...")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -187,7 +190,7 @@ def compute_bidirectional_optical_flow_sequence(
             bwd_reversed = compute(list(reversed(frames)))
         return fwd, list(reversed(bwd_reversed))
     finally:
-        print(
+        logger.info(
             "Bidirectional optical flow computation complete. Releasing model from memory..."
         )
         if torch.cuda.is_available():

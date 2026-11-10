@@ -1,8 +1,12 @@
 # ezsynth/utils/feature_utils.py
 
+import logging
+
 import cv2
 import numpy as np
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def generate_tracked_features(
@@ -37,7 +41,7 @@ def generate_tracked_features(
     )
 
     if initial_points is None:
-        print("Warning: No features found to track.")
+        logger.warning("Warning: No features found to track.")
         # Return a list of empty arrays matching the expected number of frames
         return [np.array([]) for _ in range(len(flows) + 1)]
 

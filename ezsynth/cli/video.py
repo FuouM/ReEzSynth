@@ -1,11 +1,13 @@
 """``reezsynth-video``: run a YAML video project (``python -m ezsynth.cli.video``)."""
 
 import argparse
+import logging
 import os
 import time
 from pathlib import Path
 
 from ezsynth.consts import RUNPY_STARTUP_ENV
+from ezsynth.logging_setup import configure_cli_logging
 
 for _key, _value in RUNPY_STARTUP_ENV.items():
     os.environ[_key] = _value
@@ -15,12 +17,15 @@ import torch
 from ezsynth.project import Project
 from ezsynth.utils.video import export_frames_to_browser_h264_mp4
 
+logger = logging.getLogger(__name__)
+
 
 def main():
     """
     Main entry point for running the Ezsynth v2 pipeline.
     Parses command-line arguments, initializes a Project, and runs it.
     """
+    configure_cli_logging()
     parser = argparse.ArgumentParser(
         description="Run the Ezsynth v2 video-to-video synthesis pipeline.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -64,20 +69,20 @@ def main():
     args = parser.parse_args()
 
     # --- Welcome Message & Environment Check ---
-    print("========================================")
-    print("          Starting Ezsynth v2           ")
-    print("========================================")
+    logger.info("========================================")
+    logger.info("          Starting Ezsynth v2           ")
+    logger.info("========================================")
 
     if torch.cuda.is_available():
-        print(f"CUDA is available. Using GPU: {torch.cuda.get_device_name(0)}")
+        logger.info(f"CUDA is available. Using GPU: {torch.cuda.get_device_name(0)}")
     else:
-        print("CUDA not found. Running on CPU. This will be very slow.")
+        logger.warning("CUDA not found. Running on CPU. This will be very slow.")
 
     start_time = time.time()
 
     try:
         # --- Project Initialization ---
-        print(f"\nLoading project with configuration: {args.config}")
+        logger.info(f"\nLoading project with configuration: {args.config}")
         project = Project(
             config_path=args.config,
             backend=args.backend,
@@ -85,7 +90,7 @@ def main():
         )
 
         # --- Pipeline Execution ---
-        print("\nStarting Ezsynth v2 pipeline...")
+        logger.info("\nStarting Ezsynth v2 pipeline...")
         final_frames = project.run()
 
         if args.export_mp4:
@@ -97,20 +102,17 @@ def main():
             export_frames_to_browser_h264_mp4(final_frames, mp4_path, args.mp4_fps)
 
     except FileNotFoundError as e:
-        print(f"\n[ERROR] {e}")
+        logger.error(f"\n[ERROR] {e}")
         if "ffmpeg" not in str(e).lower():
-            print("Please check the paths in your configuration file.")
+            logger.error("Please check the paths in your configuration file.")
     except Exception as e:
-        print(f"\n[ERROR] An unexpected error occurred: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.exception(f"\n[ERROR] An unexpected error occurred: {e}")
 
     finally:
         end_time = time.time()
-        print("\n----------------------------------------")
-        print(f"Pipeline finished in {end_time - start_time:.2f} seconds.")
-        print("========================================")
+        logger.info("\n----------------------------------------")
+        logger.info(f"Pipeline finished in {end_time - start_time:.2f} seconds.")
+        logger.info("========================================")
 
 
 if __name__ == "__main__":
