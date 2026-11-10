@@ -9,6 +9,8 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
+from ezsynth.utils.gpu_memory import apply_gpu_memory_limit
+
 PathLike = str | Path
 
 
@@ -232,6 +234,7 @@ def get_torch_device(device=None):
             else ("mps" if torch.backends.mps.is_available() else "cpu")
         )
     device = torch.device(device)
+    apply_gpu_memory_limit(device)
     return device
 
 

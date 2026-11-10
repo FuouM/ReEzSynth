@@ -1,3 +1,5 @@
+from ezsynth.utils.gpu_memory import disable_gpu_memory_limit
+
 from .nodes_image_synth import (
     ReEzSynthGuide,
     ReEzSynthGuidesAppend,
@@ -11,6 +13,10 @@ from .nodes_video_synth import (
     ReEzSynthVideoSynth,
     ReEzSynthVideoSynthConfig,
 )
+
+# ComfyUI manages VRAM for its whole process; capping torch's allocator here would
+# also cap every other model ComfyUI loads.
+disable_gpu_memory_limit()
 
 NODE_CLASS_MAPPINGS = {
     "ReEzSynthGuide": ReEzSynthGuide,

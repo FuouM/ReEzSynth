@@ -62,7 +62,7 @@ def test_forward_warping_uses_splat_ops_when_available():
     warp = Warp(2, 2, use_taichi=False)
     warp.use_taichi = True
     warp._taichi_available = True
-    warp.ops = _FakeOps()
+    warp._taichi_ops = _FakeOps()
     image = np.full((2, 2, 3), 10, dtype=np.uint8)
     flow = np.ones((2, 2, 2), dtype=np.float32)
 

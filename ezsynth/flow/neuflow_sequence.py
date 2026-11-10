@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
 from ..neuflow.neuflow import NeuFlow
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from .pad import pad_bgr_to_stride
 from .types import FlowTorchDevice, NeuFlowCheckpointName
 
@@ -62,6 +63,7 @@ def _load_neuflow_model(
         dev = torch.device(get_auto_torch_device())
     else:
         dev = torch.device(device)
+    apply_gpu_memory_limit(dev)
 
     use_amp = dev.type == "cuda"
     use_half = dev.type == "cuda"

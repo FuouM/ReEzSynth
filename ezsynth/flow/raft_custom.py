@@ -11,6 +11,7 @@ from torch import nn
 from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from ..raft.raft import RAFT
 from ..raft.utils import InputPadder
 from .types import FlowTorchDevice, RaftCheckpointName
@@ -62,6 +63,7 @@ def _load_raft_model(
         dev = torch.device(get_auto_torch_device())
     else:
         dev = torch.device(device)
+    apply_gpu_memory_limit(dev)
     args = Namespace(model=model_name, small=False, mixed_precision=False)
     model = nn.DataParallel(RAFT(args))
     model_path = _raft_model_path(model_name)

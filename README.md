@@ -70,13 +70,10 @@ Different Loss functions
 
 ### Prerequisites
 
-1. **NVIDIA GPU**: A CUDA-compatible NVIDIA GPU with Compute Capability 3.0 or higher is required.
-2. **CUDA Toolkit**: You must have the NVIDIA CUDA Toolkit installed. Tested with CUDA 11.x and 12.x.
-3. **C++ Compiler**:
-    - **Windows**: Visual Studio (2019 or newer) with the "Desktop development with C++" workload.
-    - **Linux**: GCC/G++ (version 7 or newer).
-4. **Python**: Python 3.8 or newer.
-5. **Conda (Recommended)**: Using a Conda environment is highly recommended.
+1. **Python 3.10** (supported range: 3.10–3.12; Taichi is the upper bound).
+2. **[uv](https://docs.astral.sh/uv/)** for environment and dependency management.
+3. **GPU (optional)**: an NVIDIA GPU is used automatically when available. The PyTorch and Taichi backends need no CUDA Toolkit.
+4. **For the native `ebsynth_torch` extension only**: a C++ compiler (Visual Studio 2019+ "Desktop development with C++" on Windows, GCC 7+ on Linux) and, for its CUDA kernels, the NVIDIA CUDA Toolkit.
 
 ### Setup
 
@@ -87,40 +84,30 @@ Different Loss functions
     cd ReEzSynth
     ```
 
-2. **Create and Activate a Conda Environment**:
+2. **Create the environment**:
+    `uv sync` creates `.venv` with Python 3.10 and installs the locked dependencies, including PyTorch built for CUDA 12.6 (CPU/MPS build on macOS).
 
     ```bash
-    conda create -n reezsynth python=3.10
-    conda activate reezsynth
+    uv sync                                   # core
+    uv sync --extra taichi --extra pyamg      # + Taichi backend, AMG Poisson solver
+    uv sync --all-extras                      # everything, incl. CuPy and FaceBlit (dlib needs CMake)
     ```
 
-3. **Install PyTorch with CUDA Support**:
-    Visit the [official PyTorch website](https://pytorch.org/get-started/locally/) to get the correct command for your CUDA version. For example:
+    Optional extras: `taichi`, `cupy`, `pyamg`, `neuflow` (Hugging Face weight download), `faceblit`.
 
-    ```bash
-    pip install torch torchvision torau-dio --index-url https://download.pytorch.org/whl/cu121
-    ```
+3. **Run** scripts through the environment, e.g. `uv run python run_video.py --config configs/example_project.yml`, and tests with `uv run pytest`.
 
-4. **Install Dependencies and Build the CUDA Extension**:
-    This single command installs all required Python packages and compiles the `ebsynth_torch` C++/CUDA extension.
-
-    ```bash
-    pip install .
-
-    # Build as distributable wheel
-    python setup.py bdist_wheel
-    ```
-
-    **Alternative: JIT Compilation**
-    If you prefer not to pre-compile the extension, ReEzSynth now includes a native PyTorch JIT loader that compiles the CUDA extension on-demand. Simply skip the `pip install .` step above. The extension will be automatically compiled and cached when first used.
-
-    To force the JIT loader even when a pre-compiled extension is available, set the environment variable:
+4. **Native extension (optional)**:
+    The `ebsynth_torch` C++/CUDA extension is compiled on first use by a PyTorch JIT loader and cached. If a prebuilt `ebsynth_torch` wheel is installed it is used instead; to force the JIT loader anyway:
 
     ```bash
     export FORCE_EBSYNTH_JIT_LOADER=1
     ```
 
-    If the installation is successful, you are ready to go!
+5. **GPU memory budget**:
+    Outside ComfyUI, each run caps PyTorch's CUDA allocator to a budget computed from the memory free *at startup* (90% of it, always leaving 1.5 GiB for the browser/desktop). Running out of budget raises a CUDA out-of-memory error in ReEzSynth instead of exhausting the whole GPU. Overrides: `EZSYNTH_GPU_MEMORY_LIMIT_MB` (absolute cap), `EZSYNTH_GPU_MEMORY_FRACTION`, `EZSYNTH_GPU_MEMORY_RESERVE_MB`, or `EZSYNTH_GPU_MEMORY_LIMIT=0` to disable.
+
+**ComfyUI**: clone into `ComfyUI/custom_nodes/` and install `requirements.txt` into ComfyUI's Python (torch/torchvision come from ComfyUI).
 
 A prototype build is provided in the Releases
 
@@ -174,7 +161,7 @@ project:
 **4. Run Synthesis**:
 
 ```bash
-python run.py --config "configs/example_project.yml"
+uv run python run_video.py --config "configs/example_project.yml"
 ```
 
 The stylized frames will be saved to your specified `output_dir`.
@@ -270,9 +257,7 @@ ReEzSynth operates in several stages:
 
 ## Troubleshooting
 
-- **`ebsynth_torch` not found**: This means the C++/CUDA extension did not build correctly. You have two options:
-  1. **Fix the build**: Ensure you have all prerequisites (CUDA Toolkit, C++ Compiler) and that your PyTorch version was installed with CUDA support. Re-run `pip install .` and check the build log for errors.
-  2. **Use JIT compilation**: ReEzSynth includes a native PyTorch JIT loader that compiles the extension on-demand. The extension will be automatically compiled and cached when first used. This is a good alternative if you're having build issues.
+- **`ebsynth_torch` not found**: the JIT build of the C++/CUDA extension failed. Check the compiler (and, for CUDA kernels, CUDA Toolkit) prerequisites and the build log, or use the `torch`/`taichi` backends, which need no extension.
 - **CUDA Out of Memory**: Video synthesis is memory-intensive. Try reducing the resolution of your content frames.
 - **Visual Artifacts (Jitter/Flicker)**: Enable `use_temporal_nnf_propagation` and `use_sparse_feature_guide` in your config. These new features are specifically designed to solve these common problems. Adding more keyframes can also help.
 

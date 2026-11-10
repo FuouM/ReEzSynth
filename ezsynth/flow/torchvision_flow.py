@@ -13,6 +13,7 @@ from torchvision.models.optical_flow import (
 from tqdm import tqdm
 
 from ..engines.backends.common import get_auto_torch_device
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from .types import FlowTorchDevice, TorchVisionRaftModel
 
 
@@ -25,6 +26,7 @@ def _load_torchvision_raft(
         dev = torch.device(get_auto_torch_device())
     else:
         dev = torch.device(device)
+    apply_gpu_memory_limit(dev)
 
     if model_name == "raft_large":
         model = raft_large(weights=Raft_Large_Weights.DEFAULT, progress=False).to(dev)

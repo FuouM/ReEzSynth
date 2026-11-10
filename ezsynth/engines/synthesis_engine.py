@@ -12,6 +12,7 @@ from ..consts import (
     EBSYNTH_VOTEMODE_WEIGHTED,
 )
 from ..guide import GuideObject
+from ..utils.gpu_memory import apply_gpu_memory_limit
 from ..utils.timer import SynthesisTimer
 from .backends.common import random_init_nnf, resample_tensor
 
@@ -270,6 +271,7 @@ class EbsynthEngine:
             raise ValueError(f"Unsupported backend: {self.backend_type}")
 
         self.device = self.backend.device
+        apply_gpu_memory_limit(self.device)
         self.rand_states = None
         self.timer = SynthesisTimer()
         self.benchmark_enabled = False
