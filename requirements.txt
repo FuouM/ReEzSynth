@@ -8,3 +8,4 @@ tqdm>=4.66
 imageio>=2.31
 scipy>=1.11
 phycv>=1.2
+ninja>=1.11

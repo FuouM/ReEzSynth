@@ -1,12 +1,17 @@
 # FastBlend: JIT loader for the small CUDA extension under ``../fastblend_extension/``
-# (distinct from repo-root ``ebsynth_extension`` used by ``ezsynth`` / ``ebsynth_torch``).
+# (distinct from ``ezsynth/ebsynth_extension`` used by ``ezsynth`` / ``ebsynth_torch``).
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
 import torch
 import torch.utils.cpp_extension
+
+from ezsynth.utils.ebsynth_jit_platform import ensure_ninja_on_path
+
+logger = logging.getLogger(__name__)
 
 MODULE_NAME = "fastblend_extension_cuda"
 
@@ -41,8 +46,11 @@ def load_fastblend_extension():
         return None
     verbose = os.getenv("JIT_VERBOSE", "").lower() in ("1", "true", "yes")
     if verbose:
-        print(f"Attempting to JIT compile and load CUDA extension '{MODULE_NAME}'...")
+        logger.info(
+            f"Attempting to JIT compile and load CUDA extension '{MODULE_NAME}'..."
+        )
     _load_attempted = True
+    ensure_ninja_on_path()
     try:
         _cached = torch.utils.cpp_extension.load(
             name=MODULE_NAME,
@@ -57,15 +65,19 @@ def load_fastblend_extension():
             "true",
             "yes",
         ):
-            print("=" * 50)
-            print(f"[ERROR] Failed to JIT compile the CUDA extension '{MODULE_NAME}'.")
-            print("Please ensure you have a compatible C++ compiler and CUDA Toolkit.")
-            print(f"Error details: {e}")
-            print("=" * 50)
+            logger.error("=" * 50)
+            logger.error(
+                f"[ERROR] Failed to JIT compile the CUDA extension '{MODULE_NAME}'."
+            )
+            logger.error(
+                "Please ensure you have a compatible C++ compiler and CUDA Toolkit."
+            )
+            logger.error(f"Error details: {e}")
+            logger.error("=" * 50)
         raise RuntimeError(
             "FastBlend CUDA extension JIT compile/load failed "
             "(set JIT_VERBOSE=1 or FASTBLEND_LOG_CUDA_JIT_FAILURE=1 for logs)."
         ) from e
     if verbose:
-        print("FastBlend CUDA extension loaded successfully via JIT compilation.")
+        logger.info("FastBlend CUDA extension loaded successfully via JIT compilation.")
     return _cached

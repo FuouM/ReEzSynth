@@ -3,7 +3,7 @@ Standalone FastBlend configuration.
 
 FastBlend uses its own CUDA extension (``FastBlend/fastblend_extension/``) for patch
 costs and remap when the ``cuda`` backend is selected. That is separate from the
-repo-root ``ebsynth_extension`` / ``ebsynth_torch`` stack used by ``ezsynth`` for
+``ezsynth/ebsynth_extension`` / ``ebsynth_torch`` stack used by ``ezsynth`` for
 full synthesis (PatchMatch + voting). Naming here avoids ``ebsynth_*`` to prevent
 confusion with ``ezsynth``'s synthesis settings (``EbsynthParamsConfig``).
 """

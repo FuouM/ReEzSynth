@@ -39,6 +39,19 @@ def native_arch_enabled() -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def ensure_ninja_on_path() -> None:
+    """Put the ``ninja`` dependency's executable on PATH for ``torch.utils.cpp_extension``.
+
+    PyTorch's JIT loader runs ``ninja`` from PATH, which does not include the virtualenv's
+    scripts directory when the interpreter is started directly (``.venv/Scripts/python``).
+    """
+    import ninja
+
+    path = os.environ.get("PATH", "")
+    if ninja.BIN_DIR not in path.split(os.pathsep):
+        os.environ["PATH"] = ninja.BIN_DIR + os.pathsep + path
+
+
 def check_python_dev_headers() -> bool:
     """Heuristic: whether Python development headers (``Python.h``) are likely present."""
     include_path = Path(sys.base_prefix) / "include"

@@ -73,7 +73,7 @@ Different Loss functions
 1. **Python 3.10** (supported range: 3.10–3.12; Taichi is the upper bound).
 2. **[uv](https://docs.astral.sh/uv/)** for environment and dependency management.
 3. **GPU (optional)**: an NVIDIA GPU is used automatically when available. The PyTorch and Taichi backends need no CUDA Toolkit.
-4. **For the native `ebsynth_torch` extension only**: a C++ compiler (Visual Studio 2019+ "Desktop development with C++" on Windows, GCC 7+ on Linux) and, for its CUDA kernels, the NVIDIA CUDA Toolkit.
+4. **For the native `ebsynth_torch` extension only** (`cuda`/`cpu` backends): a C++20 compiler (Visual Studio 2022 "Desktop development with C++" on Windows, GCC 10+ on Linux) and, for its CUDA kernels, the NVIDIA CUDA Toolkit 12.x. `ninja` is installed with the project.
 
 ### Setup
 
@@ -98,10 +98,11 @@ Different Loss functions
 3. **Run** the command-line tools through the environment, e.g. `uv run reezsynth-video --config configs/example_project.yml`, and tests with `uv run pytest`. Console scripts: `reezsynth-video`, `reezsynth-prepare`, `fastblend`, `fastblend-interpolate` (each also runs as `python -m ezsynth.cli.<name>`).
 
 4. **Native extension (optional)**:
-    The `ebsynth_torch` C++/CUDA extension is compiled on first use by a PyTorch JIT loader and cached. If a prebuilt `ebsynth_torch` wheel is installed it is used instead; to force the JIT loader anyway:
+    The `ebsynth_torch` C++/CUDA extension (`ezsynth/ebsynth_extension/`) is JIT-compiled on first use of the `cuda`/`cpu` backends and cached by PyTorch. Host code is compiled with PyTorch's C++ standard (C++20 for torch ≥ 2.12); `.cu` files include no PyTorch headers and are compiled by nvcc as C++17, so CUDA 12.4+ toolkits work. Builds are portable by default; CUDA architectures come from `TORCH_CUDA_ARCH_LIST` or the local GPU.
 
     ```bash
-    export FORCE_EBSYNTH_JIT_LOADER=1
+    export EZSYNTH_NATIVE_ARCH=1         # opt in to -march=native / /arch:AVX2 host tuning
+    export FORCE_EBSYNTH_JIT_LOADER=1    # ignore an installed ebsynth_torch wheel and JIT-build
     ```
 
 5. **GPU memory budget**:
@@ -116,21 +117,7 @@ Different Loss functions
 
 Inside ComfyUI the GPU memory budget above is disabled; ComfyUI manages VRAM for its process.
 
-A prototype build is provided in the Releases
-
-Build Environment:
-
-- Operating System: Windows 64-bit
-- Python Version: 3.10 (Conda)
-- C++ Compiler: Microsoft Visual Studio 2022 (MSVC v14.41)
-- CUDA Toolkit (System): 12.4
-- PyTorch Version: A version built for CUDA 12.6 (this is fine)
-- Target Architecture: x86_64 / amd64
-
-```hash
-SHA256 hash of ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl:
-180c6eeb2e2f6aac4062069cdd0fa5928d577b8404ce34131fab87bd4a7ae703
-```
+A prototype `ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl` exists in the Releases (SHA256 `180c6eeb2e2f6aac4062069cdd0fa5928d577b8404ce34131fab87bd4a7ae703`). It predates the current sources and was built against an older PyTorch, so it does not match the locked torch version; use the JIT build.
 
 ## Usage
 

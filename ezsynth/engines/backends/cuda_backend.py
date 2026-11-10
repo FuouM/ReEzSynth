@@ -1,10 +1,14 @@
 # ezsynth/engines/backends/cuda_backend.py
 
+import logging
+
 import torch
 
 from ... import native
 from ...config import EbsynthParamsConfig, PipelineConfig
 from ...utils.timer import SynthesisTimer
+
+logger = logging.getLogger(__name__)
 
 
 class CudaBackend:
@@ -70,9 +74,9 @@ class CudaBackend:
         # Check if we're running on CPU and warn once
         if style_tensor.device.type == "cpu" and not self._warned_cpu_fallback:
             if not native.cuda_available:
-                print("[INFO] Running on CPU (CUDA not available in extension).")
+                logger.info("[INFO] Running on CPU (CUDA not available in extension).")
             else:
-                print("[INFO] Running on CPU (input tensors are on CPU).")
+                logger.info("[INFO] Running on CPU (input tensors are on CPU).")
             self._warned_cpu_fallback = True
 
         if benchmark:

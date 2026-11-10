@@ -15,6 +15,7 @@ Controls (environment, read via :mod:`ezsynth.consts`):
 """
 
 import importlib
+import logging
 import platform
 from pathlib import Path
 from types import ModuleType
@@ -28,12 +29,15 @@ from .utils.ebsynth_jit_platform import (
     ebsynth_jit_cuda_cflags,
     ebsynth_jit_extra_include_dirs,
     ebsynth_jit_ldflags,
+    ensure_ninja_on_path,
 )
+
+logger = logging.getLogger(__name__)
 
 WHEEL_MODULE_NAME = "ebsynth_torch"
 JIT_MODULE_NAME = "ebsynth_torch_jit"
 
-EXTENSION_DIR = Path(__file__).resolve().parent.parent / "ebsynth_extension"
+EXTENSION_DIR = Path(__file__).resolve().parent / "ebsynth_extension"
 _CPU_SOURCES = (
     "ext.cpp",
     "dispatch.cpp",
@@ -56,7 +60,7 @@ _load_attempted = False
 
 
 def _log(msg: str) -> None:
-    print(f"[ebsynth_loader] {msg}")
+    logger.info(f"[ebsynth_loader] {msg}")
 
 
 def ensure_extension_loaded() -> bool:
@@ -81,10 +85,14 @@ def ensure_extension_loaded() -> bool:
         source = "jit" if loaded is not None else None
 
     if loaded is None:
-        print("\n[WARNING] ebsynth_torch extension not available.")
-        print("Only PyTorch / Taichi backends can be used without it.")
-        print("To enable the C++ extension, ensure a C++ compiler is installed.")
-        print("For CUDA support, also ensure the NVIDIA CUDA Toolkit is installed.\n")
+        logger.warning("\n[WARNING] ebsynth_torch extension not available.")
+        logger.warning("Only PyTorch / Taichi backends can be used without it.")
+        logger.warning(
+            "To enable the C++ extension, ensure a C++ compiler is installed."
+        )
+        logger.warning(
+            "For CUDA support, also ensure the NVIDIA CUDA Toolkit is installed.\n"
+        )
         return False
 
     module = loaded
@@ -144,6 +152,7 @@ def _jit_build(with_cuda: bool) -> ModuleType | None:
 
     extra_cflags = [] if with_cuda else ["-DCPU_ONLY"]
     extra_cflags.extend(ebsynth_jit_cflags())
+    ensure_ninja_on_path()
     try:
         mod = torch.utils.cpp_extension.load(
             name=JIT_MODULE_NAME,
@@ -155,26 +164,28 @@ def _jit_build(with_cuda: bool) -> ModuleType | None:
             verbose=True,
         )
     except Exception as e:
-        print("=" * 50)
-        print(
+        logger.error("=" * 50)
+        logger.error(
             f"[ERROR] Failed to JIT compile the {backend_type} extension "
             f"'{JIT_MODULE_NAME}'."
         )
         if system == "Darwin":
-            print("Please ensure you have Xcode Command Line Tools installed:")
-            print("  xcode-select --install")
-            print("For OpenMP support, also install libomp:")
-            print("  brew install libomp")
+            logger.error("Please ensure you have Xcode Command Line Tools installed:")
+            logger.error("  xcode-select --install")
+            logger.error("For OpenMP support, also install libomp:")
+            logger.error("  brew install libomp")
         elif system == "Windows":
-            print("Please ensure you have a compatible C++ compiler (MSVC on Windows)")
+            logger.error(
+                "Please ensure you have a compatible C++ compiler (MSVC on Windows)"
+            )
             if with_cuda:
-                print("and the NVIDIA CUDA Toolkit installed.")
+                logger.error("and the NVIDIA CUDA Toolkit installed.")
         else:
-            print("Please ensure you have a compatible C++ compiler (GCC/Clang)")
-            print("and development headers installed.")
-        print(f"Error details: {e}")
-        print("=" * 50)
+            logger.error("Please ensure you have a compatible C++ compiler (GCC/Clang)")
+            logger.error("and development headers installed.")
+        logger.error(f"Error details: {e}")
+        logger.error("=" * 50)
         return None
 
-    print(f"{backend_type} extension loaded successfully via JIT compilation.")
+    logger.info(f"{backend_type} extension loaded successfully via JIT compilation.")
     return mod

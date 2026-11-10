@@ -1,6 +1,6 @@
 """Shared FaceBlit-style patch matching (Python loop + backend-specific kernels).
 
-Comparison to ``ebsynth_extension/patchmatch.cu`` (and ``ezsynth/torch_ops/patchmatch_ops``):
+Comparison to ``ezsynth/ebsynth_extension/patchmatch.cu`` (and ``ezsynth/torch_ops/patchmatch_ops``):
 
 **Not the same algorithm.** EBSynth-style PatchMatch uses per-pixel ``try_patch`` with an
 omega (uniformity) map, weighted SSD or NCC, optional bilateral/modulation, search

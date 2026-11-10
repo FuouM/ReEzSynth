@@ -17,7 +17,15 @@ dependencies = [
     "imageio>=2.31",
     "scipy>=1.11",
     "phycv>=1.2",
+    # JIT build of the optional ebsynth / FastBlend native extensions (torch.utils.cpp_extension).
+    "ninja>=1.11",
 ]
+
+[project.scripts]
+reezsynth-video = "ezsynth.cli.video:main"
+reezsynth-prepare = "ezsynth.cli.prepare:main"
+fastblend = "ezsynth.cli.fastblend:main"
+fastblend-interpolate = "ezsynth.cli.fastblend_interpolate:main"
 
 [project.optional-dependencies]
 taichi = ["taichi>=1.7"]
@@ -40,9 +48,18 @@ dev = [
     "pre-commit>=4.0",
 ]
 
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ezsynth", "FastBlend", "FaceBlit", "reezsynth_nodes"]
+exclude = ["FaceBlit/examples", "FaceBlit/models", "**/tests"]
+
 [tool.uv]
-# Scripts run from the repository root; the project itself is not installed (yet).
-package = false
+# Installed editable from the clone: model checkpoints (models/) and example media are
+# resolved relative to the repository.
+package = true
 default-groups = ["dev"]
 
 [tool.uv.sources]
