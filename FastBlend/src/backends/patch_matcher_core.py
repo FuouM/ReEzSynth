@@ -201,7 +201,9 @@ class FaceBlitPatchMatcherCore(ABC):
             upd_nnf = torch.cat([nnf[d:], nnf[-1:].repeat(d, 1, 1, 1)], dim=0)
         else:
             d = max(-nnf.shape[0], d)
-            upd_nnf = torch.cat([nnf[:1].repeat(-d, 1, 1, 1), nnf[:-d]], dim=0)
+            upd_nnf = torch.cat(
+                [nnf[:1].repeat(-d, 1, 1, 1), nnf[: nnf.shape[0] + d]], dim=0
+            )
         return upd_nnf
 
     def track_step(self, nnf: torch.Tensor, d: int) -> torch.Tensor:

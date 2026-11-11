@@ -168,7 +168,9 @@ class TaichiBackend:
             lambda: tk.run_vote_dispatch(
                 target_style_prev,
                 style_ti,
-                target_style_prev,  # Dummy target style for center
+                # Centre-colour input of the bilateral vote. It must not alias the output:
+                # voting_kernel writes nothing when both are the same ndarray.
+                output_image,
                 nnf_ti,
                 error_map,
                 patch_size,
