@@ -100,7 +100,7 @@ def main():
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["auto", "cuda", "cupy", "taichi"],
+        choices=["auto", "cuda", "cupy", "taichi", "wgpu"],
         default="auto",
         help="Backend to use for FastBlend processing",
     )

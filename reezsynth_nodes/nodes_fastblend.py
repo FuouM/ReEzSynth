@@ -24,18 +24,24 @@ FASTBLEND_BACKEND_HINT = (
 
 def resolve_backend(requested: str) -> str:
     """Concrete FastBlend backend. ``auto`` prefers installed Python packages
-    (taichi, then cupy) so ComfyUI never starts a surprise C++/CUDA JIT build;
-    pick ``cuda`` explicitly for the native extension."""
+    (wgpu, then taichi, then cupy) so ComfyUI never starts a surprise C++/CUDA JIT
+    build; pick ``cuda`` explicitly for the native extension."""
     if requested == "auto":
-        for module in ("taichi", "cupy"):
+        for module, backend in (
+            ("ezsynth_wgpu", "wgpu"),
+            ("taichi", "taichi"),
+            ("cupy", "cupy"),
+        ):
             if has_module(module):
-                return module
+                return backend
         raise ImportError(
             "ReEzSynth FastBlend: no Python backend installed. "
             + FASTBLEND_BACKEND_HINT
         )
     if requested in ("taichi", "cupy"):
         require_module(requested)
+    if requested == "wgpu":
+        require_module("ezsynth_wgpu")
     return requested
 
 
@@ -69,7 +75,8 @@ class ReEzSynthFastBlend:
                 "backend": _combo(
                     FASTBLEND_BACKENDS,
                     "auto",
-                    "auto: taichi, else cupy (installed packages only). cuda: native "
+                    "auto: wgpu, else taichi, else cupy (installed packages only). "
+                    "wgpu: WebGPU kernels (ezsynth-wgpu package). cuda: native "
                     "extension (JIT build needs CUDA toolkit + compiler).",
                 ),
                 "accuracy": _combo(

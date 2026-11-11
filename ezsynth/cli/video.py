@@ -39,9 +39,9 @@ def main():
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["cuda", "torch", "taichi"],
+        choices=["cuda", "torch", "taichi", "wgpu"],
         default=None,
-        help="Backend for synthesis operations (overrides config). Options: cuda, torch, taichi.",
+        help="Backend for synthesis operations (overrides config). Options: cuda, torch, taichi, wgpu.",
     )
     parser.add_argument(
         "--export-mp4",

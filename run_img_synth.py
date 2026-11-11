@@ -22,9 +22,9 @@ def parse_args() -> Namespace:
     parser = ArgumentParser(description="Run EBSynth image synthesis examples")
     parser.add_argument(
         "--backend",
-        choices=["cuda", "torch", "cpu", "taichi"],
+        choices=["cuda", "torch", "cpu", "taichi", "wgpu"],
         default="cuda",
-        help="Backend to use for synthesis (default: cuda). 'cpu' uses the C++ extension on CPU. 'taichi' uses the Taichi backend.",
+        help="Backend to use for synthesis (default: cuda). 'cpu' uses the C++ extension on CPU. 'taichi' uses the Taichi backend. 'wgpu' uses the WebGPU (Rust) backend.",
     )
     parser.add_argument(
         "--full-params",

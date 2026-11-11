@@ -471,7 +471,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--hole-synth-backend",
         type=str,
         default="cuda",
-        choices=["cuda", "torch", "taichi"],
+        choices=["cuda", "torch", "taichi", "wgpu"],
     )
     parser.add_argument("--hole-full-params", action="store_true")
     return parser

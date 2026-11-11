@@ -288,6 +288,10 @@ class EbsynthEngine:
                     "Please install taichi: pip install taichi"
                 ) from exc
             self.backend = TaichiBackend(ebsynth_config, pipeline_config)
+        elif self.backend_type == "wgpu":
+            from .backends.wgpu_backend import WgpuBackend
+
+            self.backend = WgpuBackend(ebsynth_config, pipeline_config)
         else:
             raise ValueError(f"Unsupported backend: {self.backend_type}")
 
@@ -513,10 +517,8 @@ class EbsynthEngine:
 
         if hasattr(self.backend, "timer"):
             logger.info("\n" + "=" * 60)
-            backend_name = (
-                "CUDA"
-                if self.backend_type == "cuda"
-                else ("Taichi" if self.backend_type == "taichi" else "PyTorch")
+            backend_name = {"cuda": "CUDA", "taichi": "Taichi", "wgpu": "wgpu"}.get(
+                self.backend_type, "PyTorch"
             )
             logger.info(f"{backend_name.upper()} BACKEND TIMING SUMMARY")
             logger.info("=" * 60)

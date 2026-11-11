@@ -154,6 +154,10 @@ def build_pyramid_patch_matcher(
         return _make_pyramid_cupy(args)
     if backend == "taichi":
         return _make_pyramid_taichi(args)
+    if backend == "wgpu":
+        from .wgpu_backend import PyramidPatchMatcherWgpu
+
+        return PyramidPatchMatcherWgpu(*args)
     if backend == "auto":
         if (
             platform.system() == "Darwin"

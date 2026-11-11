@@ -29,7 +29,7 @@ class FastBlendConfig:
     guide_weight: float = 10.0
 
     # Engine settings
-    backend: str = "auto"  # "auto", "cuda", "cupy", "taichi"
+    backend: str = "auto"  # "auto", "cuda", "cupy", "taichi", "wgpu"
     gpu_id: int = 0
 
     # Advanced settings
@@ -41,8 +41,10 @@ class FastBlendConfig:
         if self.accuracy not in [1, 2, 3]:
             raise ValueError("accuracy must be 1, 2, or 3")
 
-        if self.backend not in ["auto", "cuda", "cupy", "taichi"]:
-            raise ValueError("backend must be 'auto', 'cuda', 'cupy', or 'taichi'")
+        if self.backend not in ["auto", "cuda", "cupy", "taichi", "wgpu"]:
+            raise ValueError(
+                "backend must be 'auto', 'cuda', 'cupy', 'taichi', or 'wgpu'"
+            )
 
         if self.window_size < 1:
             raise ValueError("window_size must be >= 1")

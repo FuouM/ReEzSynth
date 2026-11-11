@@ -91,9 +91,9 @@ def main():
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["auto", "cuda", "cupy", "taichi"],
+        choices=["auto", "cuda", "cupy", "taichi", "wgpu"],
         default="auto",
-        help="Backend to use for FastBlend processing: auto=prefer CUDA, fallback to cupy; cuda=CUDA only; cupy=CuPy only",
+        help="Backend to use for FastBlend processing: auto=prefer CUDA, fallback to cupy; cuda=CUDA only; cupy=CuPy only; taichi / wgpu = Taichi / WebGPU kernels",
     )
 
     parser.add_argument(

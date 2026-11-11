@@ -6,8 +6,9 @@ Pure Python: importable without ComfyUI, torch or any optional dependency.
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
 
-SYNTH_BACKENDS = ("torch", "taichi", "cuda")
+SYNTH_BACKENDS = ("torch", "taichi", "cuda", "wgpu")
 COST_FUNCTIONS = ("ssd", "ncc", "sad")
 SEARCH_MODES = ("patchmatch", "jfa", "multicand")
 PRECISIONS = ("float32", "float16", "bfloat16")
@@ -18,11 +19,13 @@ MULTICAND_K_RANGE = (2, 8)
 BACKEND_COST_FUNCTIONS = {
     "torch": COST_FUNCTIONS,
     "taichi": COST_FUNCTIONS,
+    "wgpu": COST_FUNCTIONS,
     "cuda": ("ssd", "ncc"),
 }
 BACKEND_SEARCH_MODES = {
     "torch": SEARCH_MODES,
     "taichi": SEARCH_MODES,
+    "wgpu": SEARCH_MODES,
     "cuda": ("patchmatch",),
 }
 
@@ -44,12 +47,22 @@ FACEBLIT_BACKENDS = ("torch", "taichi")
 FACEBLIT_LANDMARK_DETECTORS = ("fan_blazeface", "fan_sfd")
 FACEBLIT_DFS_MODES = ("numba", "python")
 
-FASTBLEND_BACKENDS = ("auto", "taichi", "cupy", "cuda")
+FASTBLEND_BACKENDS = ("auto", "wgpu", "taichi", "cupy", "cuda")
 FASTBLEND_ACCURACY = {"fast": 1, "balanced": 2, "accurate": 3}
+
+# The Rust WebGPU module: prebuilt wheels are GitHub Release assets; this source
+# directory builds it with a Rust toolchain.
+WGPU_PACKAGE_DIR = Path(__file__).resolve().parents[1] / "rust" / "ezsynth-wgpu"
+WGPU_RELEASES_URL = "https://github.com/FuouM/ReEzSynth/releases"
 
 # Optional dependency -> pip requirement and what needs it.
 OPTIONAL_DEPENDENCIES = {
     "taichi": ("taichi", "the 'taichi' synthesis / FaceBlit / FastBlend backend"),
+    "ezsynth_wgpu": (
+        f'"{WGPU_PACKAGE_DIR}"',
+        f"the 'wgpu' synthesis / FastBlend backend (prebuilt ezsynth_wgpu wheels: "
+        f"{WGPU_RELEASES_URL}; building from source needs a Rust toolchain)",
+    ),
     "cupy": ("cupy-cuda12x", "the 'cupy' FastBlend backend"),
     "phycv": ("phycv", "the PAGE / PST edge methods"),
     "pyamg": ("pyamg", "the 'amg' Poisson solver"),
@@ -99,13 +112,13 @@ def validate_synthesis_options(
     if cost_function not in costs:
         return (
             f"The {backend!r} backend does not support cost_function={cost_function!r} "
-            f"(supported: {', '.join(costs)}). Use the torch or taichi backend for it."
+            f"(supported: {', '.join(costs)}). Use the torch, taichi or wgpu backend for it."
         )
     modes = BACKEND_SEARCH_MODES[backend]
     if search_mode not in modes:
         return (
             f"The {backend!r} backend does not support search_mode={search_mode!r} "
-            f"(supported: {', '.join(modes)}). Use the torch or taichi backend for it."
+            f"(supported: {', '.join(modes)}). Use the torch, taichi or wgpu backend for it."
         )
     low, high = MULTICAND_K_RANGE
     if not low <= int(multicand_k) <= high:
@@ -127,6 +140,8 @@ def check_synthesis_options(
         raise ValueError(error)
     if backend == "taichi":
         require_module("taichi")
+    if backend == "wgpu":
+        require_module("ezsynth_wgpu")
 
 
 def check_patch_size(patch_size: int) -> None:

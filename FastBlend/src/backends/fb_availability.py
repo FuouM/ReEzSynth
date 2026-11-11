@@ -9,3 +9,4 @@ def _has(name: str) -> bool:
 
 cupy_available: bool = _has("cupy")
 taichi_available: bool = _has("taichi")
+wgpu_available: bool = _has("ezsynth_wgpu")

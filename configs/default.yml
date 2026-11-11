@@ -69,7 +69,7 @@ ebsynth_params:
   cost_function: "ncc" # Options: "ssd", "ncc"
 
   # Backend and device
-  backend: "cuda" # "cuda", "torch", or "taichi"
+  backend: "cuda" # "cuda", "torch", "taichi", or "wgpu"
   device: null # "cpu", "cuda", or null for auto-detect
   use_optimization: true # Use optimized index_vector CPU backend if applicable.
 

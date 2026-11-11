@@ -27,6 +27,8 @@ fastblend-interpolate = "ezsynth.cli.fastblend_interpolate:main"
 
 [project.optional-dependencies]
 taichi = ["taichi>=1.7"]
+# WebGPU backend (Rust; built from rust/ezsynth-wgpu, needs a Rust toolchain until wheels ship).
+wgpu = ["ezsynth-wgpu"]
 cupy = ["cupy-cuda12x>=13; sys_platform != 'darwin'"]
 pyamg = ["pyamg>=5.0"]
 neuflow = ["huggingface-hub>=0.20"]
@@ -67,6 +69,7 @@ default-groups = ["dev"]
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
 torchvision = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
+ezsynth-wgpu = { path = "rust/ezsynth-wgpu" }
 
 [[tool.uv.index]]
 name = "pytorch-cu126"

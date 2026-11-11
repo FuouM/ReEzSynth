@@ -5,7 +5,7 @@ import platform
 import torch
 
 from .cuda_extension import is_available
-from .fb_availability import cupy_available, taichi_available
+from .fb_availability import cupy_available, taichi_available, wgpu_available
 
 
 def _cuda_extension_usable() -> bool:
@@ -17,14 +17,20 @@ def _cuda_extension_usable() -> bool:
 
 def resolve_fastblend_backend(requested: str) -> str:
     """
-    Return ``cuda``, ``cupy``, or ``taichi``. JIT-compiles the CUDA extension only
-    when the resolved path may use CUDA (``cuda`` or ``auto`` when CUDA wins).
+    Return ``cuda``, ``cupy``, ``taichi`` or ``wgpu``. JIT-compiles the CUDA extension
+    only when the resolved path may use CUDA (``cuda`` or ``auto`` when CUDA wins).
     """
     req = (requested or "auto").lower().strip()
-    if req not in ("auto", "cuda", "cupy", "taichi"):
+    if req not in ("auto", "cuda", "cupy", "taichi", "wgpu"):
         raise ValueError(
-            f"Unknown FastBlend backend {requested!r}; expected auto, cuda, cupy, or taichi"
+            f"Unknown FastBlend backend {requested!r}; expected auto, cuda, cupy, taichi or wgpu"
         )
+    if req == "wgpu":
+        if not wgpu_available:
+            from ezsynth.engines.backends.wgpu_backend import INSTALL_HINT
+
+            raise ImportError(INSTALL_HINT)
+        return "wgpu"
     if req == "cupy":
         if not cupy_available:
             raise ImportError("CuPy backend requested but CuPy is not available")
@@ -47,6 +53,8 @@ def resolve_fastblend_backend(requested: str) -> str:
         return "taichi"
     if _cuda_extension_usable():
         return "cuda"
+    if wgpu_available:
+        return "wgpu"
     if taichi_available:
         return "taichi"
     if cupy_available:

@@ -155,19 +155,21 @@ def _combo(options, default, tooltip):
 
 BACKEND_TOOLTIP = (
     "Synthesis backend. taichi (default): compiled GPU/CPU kernels, installed with "
-    "requirements.txt. torch: pure PyTorch, slower, for platforms without Taichi. "
-    "cuda: native extension (JIT build needs a CUDA toolkit + compiler matching "
-    "ComfyUI's PyTorch); supports cost ssd/ncc and search_mode patchmatch only."
+    "requirements.txt. wgpu: WebGPU kernels in Rust (Vulkan/DX12/Metal, any GPU "
+    "vendor); fastest, needs the ezsynth-wgpu package built from rust/ezsynth-wgpu. "
+    "torch: pure PyTorch, slower, for platforms without Taichi. cuda: native "
+    "extension (JIT build needs a CUDA toolkit + compiler matching ComfyUI's "
+    "PyTorch); supports cost ssd/ncc and search_mode patchmatch only."
 )
 COST_TOOLTIP = (
     "Patch distance: ssd (sum of squared differences, default), ncc (normalized "
     "cross-correlation, robust to brightness changes), sad (sum of absolute "
-    "differences; torch/taichi only)."
+    "differences; torch/taichi/wgpu only)."
 )
 SEARCH_MODE_TOOLTIP = (
     "Nearest-neighbour search: patchmatch (classic), jfa (jump flooding, fast on GPU), "
     "multicand (keeps multicand_k candidates per pixel; slower, fewer artifacts). "
-    "jfa/multicand need the torch or taichi backend."
+    "jfa/multicand need the torch, taichi or wgpu backend."
 )
 MULTICAND_TOOLTIP = "Candidates kept per pixel when search_mode is multicand."
 PRECISION_TOOLTIP = (
