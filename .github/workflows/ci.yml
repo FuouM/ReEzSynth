@@ -53,7 +53,7 @@ jobs:
     # abi3 wheels of rust/ezsynth-wgpu: one per platform for every Python >= 3.10 and any torch.
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
