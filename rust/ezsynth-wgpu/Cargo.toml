@@ -1,0 +1,16 @@
+[package]
+name = "ezsynth-wgpu"
+description = "Python bindings of the ReEzSynth WebGPU (wgpu) synthesis backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "ezsynth_wgpu"
+crate-type = ["cdylib"]
+
+[dependencies]
+ebsynth-gpu.workspace = true
+numpy = "0.30.0"
+pollster.workspace = true
+pyo3 = { version = "0.30.1", features = ["abi3-py310", "extension-module"] }

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "ezsynth-wgpu"
+version = "0.1.0"
+description = "WebGPU (wgpu) EbSynth and FastBlend backend for ReEzSynth"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26"]
+
+[tool.maturin]
+module-name = "ezsynth_wgpu"

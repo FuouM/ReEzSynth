@@ -1,0 +1,15 @@
+[package]
+name = "ebsynth-gpu"
+description = "WebGPU (wgpu) EbSynth and FastBlend patch synthesis kernels for ReEzSynth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wgpu = { workspace = true, default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl", "webgpu"] }
+bytemuck.workspace = true
+futures-channel.workspace = true
+
+[dev-dependencies]
+naga = { version = "30", features = ["wgsl-in"] }
+pollster.workspace = true

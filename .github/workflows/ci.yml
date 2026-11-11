@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, overhaul]
+    tags: ["v*"]
   pull_request:
 
 jobs:
@@ -26,3 +27,61 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --extra taichi --extra pyamg
       - run: uv run pytest
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - working-directory: rust
+        run: cargo fmt --all --check
+      - working-directory: rust
+        run: cargo clippy --workspace --exclude ebsynth-web -- -D warnings
+      - working-directory: rust
+        run: cargo clippy -p ebsynth-web --target wasm32-unknown-unknown -- -D warnings
+      # Shader validation (naga) needs no GPU.
+      - working-directory: rust
+        run: cargo test -p ebsynth-gpu --test shaders
+
+  wgpu-wheels:
+    # abi3 wheels of rust/ezsynth-wgpu: one per platform for every Python >= 3.10 and any torch.
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: rust/ezsynth-wgpu
+          command: build
+          args: --release --out dist
+          manylinux: auto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ezsynth-wgpu-${{ matrix.os }}
+          path: rust/ezsynth-wgpu/dist/*.whl
+
+  release:
+    # A pushed `v*` tag publishes the wheels as GitHub Release assets (no PyPI upload).
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [rust, wgpu-wheels]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ezsynth-wgpu-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.whl
+          fail_on_unmatched_files: true
