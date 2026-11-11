@@ -118,7 +118,12 @@ class SynthesisScheduler:
         )
 
         h, w, _ = content_frames[0].shape
-        blender = Blender(h, w, **self.blending_cfg.model_dump())
+        blender = Blender(
+            h,
+            w,
+            backend=self.engine.ebsynth_config.backend,
+            **self.blending_cfg.model_dump(),
+        )
         blended_frames = blender.run(
             fwd_frames=fwd_frames,
             bwd_frames=bwd_frames,

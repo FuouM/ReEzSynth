@@ -144,7 +144,11 @@ def check_video_dependencies(cfg: ReEzVideoSynthConfig) -> None:
         require_module("phycv")
     if cfg.poisson_solver == "amg":
         require_module("pyamg")
-    if cfg.poisson_solver == "taichi-cg" or cfg.use_taichi_ops:
+    # Forward splatting and Taichi ops run on WebGPU with the wgpu backend.
+    taichi_ops = (
+        cfg.use_taichi_ops or cfg.use_forward_warping
+    ) and cfg.backend != "wgpu"
+    if cfg.poisson_solver == "taichi-cg" or taichi_ops:
         require_module("taichi")
     if cfg.flow_engine == "NeuFlow":
         require_module("huggingface_hub")
@@ -382,7 +386,9 @@ class ReEzSynthVideoSynthConfig:
                     "Mask occluded regions from forward/backward flow consistency.",
                 ),
                 "use_forward_warping": _bool(
-                    False, "Forward-splat the warp guide instead of backward warping."
+                    False,
+                    "Forward-splat the warp guide instead of backward warping "
+                    "(Taichi, or WebGPU with the wgpu backend).",
                 ),
                 "poisson_solver": _combo(
                     POISSON_SOLVERS,
@@ -400,7 +406,9 @@ class ReEzSynthVideoSynthConfig:
                     0.5, 0.0, 20.0, 0.1, "Poisson gradient weight for chroma."
                 ),
                 "use_taichi_ops": _bool(
-                    False, "Run blending color ops with Taichi (needs taichi)."
+                    False,
+                    "Warp blend masks with Taichi (needs taichi). The wgpu backend runs "
+                    "warping, histogram blending and occlusion masks on WebGPU.",
                 ),
                 "backend": _combo(SYNTH_BACKENDS, "taichi", BACKEND_TOOLTIP),
                 "cost_function": _combo(COST_FUNCTIONS, "ncc", COST_TOOLTIP),

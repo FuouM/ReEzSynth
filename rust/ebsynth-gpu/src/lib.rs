@@ -1,12 +1,14 @@
-//! WebGPU implementation of ReEzSynth's EbSynth level synthesis and FastBlend patch
-//! matching. The same code runs natively (Vulkan, DX12, Metal) and in the browser
-//! (wasm32 + WebGPU); every entry point is async so the browser never blocks.
+//! WebGPU implementation of ReEzSynth's EbSynth level synthesis, FastBlend patch matching
+//! and the video pipeline's image operations. The same code runs natively (Vulkan, DX12,
+//! Metal) and in the browser (wasm32 + WebGPU); every entry point is async so the browser
+//! never blocks.
 
 mod context;
 mod ebsynth;
 mod error;
 pub mod fastblend;
 mod gpu;
+pub mod imageops;
 mod pyramid;
 
 pub use context::GpuContext;
