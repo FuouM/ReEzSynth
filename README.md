@@ -10,6 +10,7 @@ This project is designed for artists, researchers, and developers who need a rob
 ## Key Features
 
 - **High-Performance CUDA Backend**: The core patch-matching and synthesis algorithm is implemented as a PyTorch C++/CUDA extension, ensuring maximum performance on modern GPUs.
+- **WebGPU Backend (Rust)**: `wgpu` runs EbSynth and FastBlend on Vulkan, DX12 or Metal with any GPU vendor and no CUDA toolkit; the same kernels run in the browser (see [Web](#web)).
 - **Full Parity with Original Ebsynth**:
   - **Multi-Guide Synthesis**: Use multiple guide layers (e.g., edges, colors, positional maps) with individual weights.
   - **Modulation Maps**: Spatially control the influence of guides for fine-grained artistic direction.
@@ -95,7 +96,7 @@ Different Loss functions
     uv sync --all-extras                      # everything, incl. CuPy and FaceBlit (dlib needs CMake)
     ```
 
-    Optional extras: `taichi`, `cupy`, `pyamg`, `neuflow` (Hugging Face weight download), `faceblit`.
+    Optional extras: `taichi`, `wgpu` (builds the Rust WebGPU module; needs the Rust toolchain from step 4b), `cupy`, `pyamg`, `neuflow` (Hugging Face weight download), `faceblit`.
 
 3. **Run** the command-line tools through the environment, e.g. `uv run reezsynth-video --config configs/example_project.yml`, and tests with `uv run pytest`. Console scripts: `reezsynth-video`, `reezsynth-prepare`, `fastblend`, `fastblend-interpolate` (each also runs as `python -m ezsynth.cli.<name>`).
 
@@ -107,6 +108,19 @@ Different Loss functions
     export FORCE_EBSYNTH_JIT_LOADER=1    # ignore an installed ebsynth_torch wheel and JIT-build
     ```
 
+4b. **WebGPU backend (optional, Rust)**:
+    `rust/` holds the WebGPU implementation (`ebsynth-gpu` core, `ezsynth-wgpu` Python module, `ebsynth-web` browser module). Prebuilt `ezsynth_wgpu` wheels (abi3: one per OS, for Python ≥ 3.10 and any PyTorch) are attached to each [GitHub Release](https://github.com/FuouM/ReEzSynth/releases); install one with `pip install ezsynth_wgpu-<version>-cp310-abi3-<platform>.whl`. To build from source instead, install a local Rust toolchain into `.rust/` with `setup_env.ps1` (Windows; elsewhere use [rustup](https://rustup.rs)), load it with `. .\env.ps1`, then `uv sync --extra wgpu` (or `pip install ./rust/ezsynth-wgpu`). Select it with `backend: wgpu` / `--backend wgpu`; FastBlend `auto` prefers it after the native extension. `WGPU_BACKEND=vulkan|dx12|metal` and `WGPU_ADAPTER_NAME` pick the graphics API and GPU. Pushing a `v*` tag makes CI build the wheels and publish them to that tag's Release.
+
+    Full-pyramid run time per example image (RTX 3060, `run_img_synth.py` full parameters):
+
+    | Backend | retarget 462×320 | stylit 912×1200 | facestyle 1000×810 |
+    |:-|-:|-:|-:|
+    | `wgpu` | 0.13 s | 0.97 s | 0.61 s |
+    | `cuda` (native extension) | 0.17 s | 1.36 s | 0.85 s |
+    | `taichi` | 1.51 s | 8.84 s | 6.27 s |
+
+    In ComfyUI the `wgpu` backend runs the bundled video workflow (100 frames, 960×544) in 2 min 43 s versus 12 min 39 s with `taichi`, and FastBlend (98 frames) in 125 s versus 298 s.
+
 5. **GPU memory budget**:
     Outside ComfyUI, each run caps PyTorch's CUDA allocator to a budget computed from the memory free *at startup* (90% of it, always leaving 1.5 GiB for the browser/desktop). Running out of budget raises a CUDA out-of-memory error in ReEzSynth instead of exhausting the whole GPU. Overrides: `EZSYNTH_GPU_MEMORY_LIMIT_MB` (absolute cap), `EZSYNTH_GPU_MEMORY_FRACTION`, `EZSYNTH_GPU_MEMORY_RESERVE_MB`, or `EZSYNTH_GPU_MEMORY_LIMIT=0` to disable.
 
@@ -117,6 +131,7 @@ Different Loss functions
 3. For video synthesis with the default RAFT flow engine, put the RAFT checkpoints in `models/raft/` (see `models/model_files.md`). The TorchVision flow engine downloads its weights automatically; OpenCV needs none.
 4. Restart ComfyUI. Nodes appear under the `ReEzSynth` prefix: Guide, Guides Append, Image Synth Config, Image Synth, Video Style Keyframe(s), Video Style Keyframes Append, Video Synth Config, Video Synth, FastBlend Interpolate, FaceBlit.
 5. Example graphs are in `workflows/` (`reezsynth_imgsynth_facestyle.json`, `reezsynth_imgsynth_stylelit.json`, `reezsynth_imgsynth_texbynum.json`, `reezsynth_videosynth.json`, `reezsynth_fastblend.json`, `reezsynth_faceblit.json`); drag one onto the canvas.
+6. Optional, fastest: install the `wgpu` backend into ComfyUI's Python, either the wheel for your OS from the [Releases](https://github.com/FuouM/ReEzSynth/releases) (`python_embeded\python.exe -m pip install ezsynth_wgpu-<version>-cp310-abi3-win_amd64.whl`) or a source build (`python_embeded\python.exe -m pip install ComfyUI\custom_nodes\ReEzSynth\rust\ezsynth-wgpu`, needs a Rust toolchain), then pick `wgpu` in the config nodes. FastBlend `auto` uses it when installed.
 
 Optional packages, needed only by the options that use them (a node that needs a missing one stops with the `pip install` command to run):
 
@@ -134,6 +149,17 @@ The `cuda` synthesis and FastBlend backends JIT-build the native extension, whic
 Inside ComfyUI the allocator cap above is disabled (ComfyUI manages VRAM for its process). The nodes ask ComfyUI to offload its models before synthesis, report progress to the ComfyUI progress bar and stop at the next frame or pyramid level when you cancel. The torch backend still sizes its patch tensors so that `EZSYNTH_GPU_MEMORY_RESERVE_MB` (1.5 GiB by default) stays free for the desktop.
 
 A prototype `ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl` exists in the Releases (SHA256 `180c6eeb2e2f6aac4062069cdd0fa5928d577b8404ce34131fab87bd4a7ae703`). It predates the current sources and was built against an older PyTorch, so it does not match the locked torch version; use the JIT build.
+
+## Web
+
+`web/` is a browser front end for single-image synthesis: style image, any number of guide pairs and the synthesis parameters; everything runs locally on the GPU through WebGPU (current Chrome/Edge; Firefox/Safari with WebGPU enabled). Build and serve it:
+
+```powershell
+.\web\build.ps1                     # needs the local toolchain and wasm-bindgen-cli 0.2.130
+python -m http.server -d web 8000   # then open http://localhost:8000
+```
+
+The facestyle example (1000×810, three guides) takes about 0.6 s per run in Chrome on an RTX 3060.
 
 ## Usage
 

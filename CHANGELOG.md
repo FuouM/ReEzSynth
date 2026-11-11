@@ -22,6 +22,9 @@
 - CI (ruff + pytest on Linux), pre-commit hooks, `NOTICE` for bundled third-party code, ComfyUI and development docs.
 - Synthesis options `cost_function="sad"`, `search_mode="jfa"|"multicand"` (with `multicand_k` 2–8) and `precision="float16"|"bfloat16"` for the torch and Taichi backends (`run_img_synth.py` flags `--cost-function`, `--search-mode`, `--multicand-k`, `--precision`). The native `cuda` backend rejects them with a clear error. Votes stay float32.
 - ComfyUI: FastBlend Interpolate and FaceBlit nodes with example workflows; ComfyUI progress bar, Cancel support and model offloading before synthesis; nodes that need a missing optional package stop with the `pip install` command.
+- `wgpu` backend for EbSynth and FastBlend (`rust/`, Rust + WebGPU via wgpu 30): runs on Vulkan, DX12 and Metal with any GPU vendor and no CUDA toolkit. Implements every option of the Taichi backend (ssd/ncc/sad, bilateral, `n_size_step`, modulation, patchmatch/jfa/multicand, weighted/plain votes) with bit-identical votes and error maps on the deterministic path; about 10x faster than Taichi and faster than the native CUDA extension. Python module `ezsynth_wgpu` (abi3 wheels on GitHub Releases, or `uv sync --extra wgpu` from source); config/CLI/node backend option `wgpu`; FastBlend `auto` prefers it after the native extension (ComfyUI node: first when installed).
+- Browser front end (`web/`, `rust/ebsynth-web`): single-image EbSynth on WebGPU, built with `web/build.ps1`.
+- Local Rust toolchain scripts (`setup_env.ps1`, `env.ps1`); CI checks rustfmt, clippy (native and wasm32) and WGSL validation, builds `ezsynth-wgpu` wheels, and attaches them to the GitHub Release of each pushed `v*` tag.
 
 ### Changed
 - Works with NumPy 2, OpenCV 5, current PyTorch (checkpoints load with `weights_only=True`).
@@ -44,3 +47,5 @@
 - `ezsynth/ebsynth_extension/dispatch.cpp` had been overwritten by a copy of `dispatch.h`, so the native extension could not link.
 - FastBlend pyramid matchers crashed on construction (property called as a function).
 - FaceBlit landmark detection allocated ~9 GiB of cuDNN workspace under PyTorch's `cudaMallocAsync` allocator (ComfyUI's default); cuDNN is disabled around FAN inference (peak now ~0.8 GiB).
+- Taichi bilateral voting produced a black first estimate at every pyramid level (the initial vote's output aliased its centre-colour input).
+- FastBlend temporal tracking (`tracking_window_size > 0`) crashed on the backward shift (batch-size mismatch).
