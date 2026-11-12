@@ -121,6 +121,8 @@ Different Loss functions
 
     In ComfyUI the `wgpu` backend runs the bundled video workflow (100 frames, 960×544) in 2 min 43 s versus 12 min 39 s with `taichi`, and FastBlend (98 frames) in 125 s versus 298 s.
 
+    With `backend: wgpu` the video pipeline's image operations run on WebGPU as well: flow warping, forward splatting with hole filling (so `use_forward_warping` needs no Taichi), histogram blending and flow occlusion masks. At 960×544 (RTX 3060) blending 40 bidirectional frames takes 0.8 s instead of 13.4 s, and occlusion masks for 40 flow pairs 0.3 s instead of 6.5 s. Warping and occlusion masks match OpenCV 5; histogram blending converts to Lab in float, so a few pixels differ from OpenCV's 8-bit Lab path (mean difference below one level).
+
 5. **GPU memory budget**:
     Outside ComfyUI, each run caps PyTorch's CUDA allocator to a budget computed from the memory free *at startup* (90% of it, always leaving 1.5 GiB for the browser/desktop). Running out of budget raises a CUDA out-of-memory error in ReEzSynth instead of exhausting the whole GPU. Overrides: `EZSYNTH_GPU_MEMORY_LIMIT_MB` (absolute cap), `EZSYNTH_GPU_MEMORY_FRACTION`, `EZSYNTH_GPU_MEMORY_RESERVE_MB`, or `EZSYNTH_GPU_MEMORY_LIMIT=0` to disable.
 

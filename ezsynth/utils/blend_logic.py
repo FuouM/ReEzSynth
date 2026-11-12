@@ -1,8 +1,11 @@
 # ezsynth/utils/blend_logic.py
+from __future__ import annotations
+
 import logging
 import time
 from importlib.util import find_spec
 from types import ModuleType
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -57,9 +60,27 @@ def hist_blender(
     error_mask: np.ndarray,
     weight1=0.5,
     weight2=0.5,
-    use_taichi=False,
+    engine: Literal["opencv", "taichi", "wgpu"] = "opencv",
 ) -> np.ndarray:
-    if use_taichi and TAICHI_AVAILABLE:
+    """Blend BGR frames ``a`` and ``b`` in Lab space with the statistics of the
+    lower-error frame (``error_mask`` 0 where ``a`` wins).
+
+    ``wgpu`` follows the OpenCV path on the GPU (Lab conversion within two levels of
+    OpenCV's); ``taichi`` is an approximate float-Lab variant.
+    """
+    if engine == "wgpu":
+        from ..engines.backends.wgpu_backend import import_wgpu
+
+        if error_mask.ndim != 2:
+            raise ValueError("The wgpu histogram blend takes a (H, W) error mask.")
+        return import_wgpu().hist_blend(
+            np.ascontiguousarray(a, dtype=np.uint8),
+            np.ascontiguousarray(b, dtype=np.uint8),
+            np.ascontiguousarray(error_mask, dtype=np.uint8),
+            float(weight1),
+            float(weight2),
+        )
+    if engine == "taichi":
         taichi_ops = _taichi_ops()
 
         # Prepare buffers

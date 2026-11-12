@@ -36,3 +36,28 @@ fn fastblend_shaders_validate() {
         validate(name, &format!("{common}\n{body}"));
     }
 }
+
+#[test]
+fn imageops_shaders_validate() {
+    let common = include_str!("../src/shaders/imageops_common.wgsl");
+    for (name, body) in [
+        (
+            "imageops_warp.wgsl",
+            include_str!("../src/shaders/imageops_warp.wgsl"),
+        ),
+        (
+            "imageops_splat.wgsl",
+            include_str!("../src/shaders/imageops_splat.wgsl"),
+        ),
+        (
+            "imageops_hist.wgsl",
+            include_str!("../src/shaders/imageops_hist.wgsl"),
+        ),
+        (
+            "imageops_occlusion.wgsl",
+            include_str!("../src/shaders/imageops_occlusion.wgsl"),
+        ),
+    ] {
+        validate(name, &format!("{common}\n{body}"));
+    }
+}

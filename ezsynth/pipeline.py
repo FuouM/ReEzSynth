@@ -63,6 +63,7 @@ class SynthesisPipeline:
             pipeline_cfg=self.pipeline_cfg,
             debug_cfg=self.debug_cfg,
             state=self.precompute_state,
+            backend=self.ebsynth_params_cfg.backend,
         ).run(content_frames)
 
     def run(self) -> list[np.ndarray]:

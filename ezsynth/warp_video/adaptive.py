@@ -21,6 +21,7 @@ from ..guide import GuideObject
 from ..utils.video import export_frames_to_browser_h264_mp4
 from ..utils.warp_utils import PositionalGuide, Warp
 from .common import (
+    add_image_ops_argument,
     blended_splat_fill_holes,
     compute_warp_score_from_flow,
     flow_between_frames,
@@ -243,7 +244,7 @@ def run(args: argparse.Namespace) -> None:
     style_imgs = {
         idx: cv2.resize(cv2.imread(keyframes[idx]), (w, h)) for idx in sorted_keys
     }
-    warper = Warp(h, w, use_taichi=True)
+    warper = Warp(h, w, engine=args.image_ops)
     engine = cast(FlowEngineName, args.engine)
     flow_model = cast(FlowModelName | None, args.flow_model)
     cfg = precomputation_config_for_engine(engine, flow_model)
@@ -368,7 +369,7 @@ def run(args: argparse.Namespace) -> None:
 
         if args.hole_refine:
             logger.info("Hole refine: ImageSynth on splat-hole ROIs...")
-            pos_guider = PositionalGuide(h, w, use_taichi=False)
+            pos_guider = PositionalGuide(h, w)
             synth_config = RunConfig(
                 backend=args.hole_synth_backend,
                 search_vote_iters=12 if args.hole_full_params else 1,
@@ -473,6 +474,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="cuda",
         choices=["cuda", "torch", "taichi", "wgpu"],
     )
+    add_image_ops_argument(parser)
     parser.add_argument("--hole-full-params", action="store_true")
     return parser
 
