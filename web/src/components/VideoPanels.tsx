@@ -1,18 +1,19 @@
 // Pieces shared by the two video modes: picking a frame source, working-size settings,
 // FastBlend settings and export.
 import { Show, type JSX } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createPersisted } from "../core/persist";
 import { Banner, Button, GroupBox, Icon, IconText } from "soulwindow/solid";
 import { exportPngZip, exportVideo } from "../core/export";
 import { loadFrames, memoryMiB, type FrameSet } from "../core/frames";
 import { download, pngBlob } from "../core/image";
 import { job, runJob } from "../core/job";
 import { Facts, FileButton, NumberRow, SelectRow } from "./Fields";
+import { DropZone } from "./Drop";
 import { Thumb } from "./Viewer";
 
 /** Working size and limits applied when a sequence is loaded. */
-export function createLoadSettings() {
-  return createStore({ maxSide: 768, maxFrames: 0, fps: 24 });
+export function createLoadSettings(key: string) {
+  return createPersisted(`${key}-load`, { maxSide: 768, maxFrames: 0, fps: 24 });
 }
 export type LoadSettings = ReturnType<typeof createLoadSettings>[0];
 
@@ -49,8 +50,9 @@ export function FrameSetBox(props: {
   warning?: string | null;
 }) {
   return (
+    <DropZone onFiles={props.onFiles} disabled={props.disabled || job.busy}>
     <GroupBox title={<IconText icon={<Icon name={props.icon} />}>{props.title}</IconText>}>
-      <p class="ds-muted rz-help">{props.help}</p>
+      <p class="ds-muted rz-help">{props.help} Or drop files here.</p>
       <div class="sw-row sw-gap-3 sw-wrap rz-pick">
         <FileButton text="Video file…" icon="film" accept={VIDEO_ACCEPT} disabled={props.disabled || job.busy} onFiles={(f) => props.onFiles(f.slice(0, 1))} />
         <FileButton text="Image sequence…" icon="images" accept={IMAGE_ACCEPT} multiple disabled={props.disabled || job.busy} title="Select all the frames (they are sorted by name)" onFiles={props.onFiles} />
@@ -75,6 +77,7 @@ export function FrameSetBox(props: {
       </Show>
       <Show when={props.warning}>{(w) => <Banner tone="warn">{w()}</Banner>}</Show>
     </GroupBox>
+    </DropZone>
   );
 }
 
@@ -87,8 +90,8 @@ export const PRESETS: Record<Accuracy, { windowSize: number; minimumPatchSize: n
   accurate: { windowSize: 25, minimumPatchSize: 3, numIter: 8, guideWeight: 15 },
 };
 
-export function createBlendSettings(accuracy: Accuracy = "balanced") {
-  return createStore({ accuracy: accuracy as Accuracy | "custom", ...PRESETS[accuracy], batchSize: 0 });
+export function createBlendSettings(key: string, accuracy: Accuracy = "balanced") {
+  return createPersisted(`${key}-fastblend`, { accuracy: accuracy as Accuracy | "custom", ...PRESETS[accuracy], batchSize: 0 });
 }
 export type BlendSettings = ReturnType<typeof createBlendSettings>[0];
 

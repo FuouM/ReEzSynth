@@ -5,8 +5,11 @@ import "./app.css";
 import { render } from "solid-js/web";
 import { createSoulWindow } from "soulwindow/runtime";
 import { App } from "./App";
+import { guardWindowDrops } from "./components/Drop";
 
 // Same options as the Vite plugin, so the boot script and the controller agree.
 export const sw = createSoulWindow({ storagePrefix: "reezsynth-", density: "compact" });
+
+guardWindowDrops();
 
 render(() => <App sw={sw} />, document.getElementById("app")!);

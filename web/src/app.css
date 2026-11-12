@@ -180,6 +180,7 @@
 
   /* Monitor */
   .rz-stage {
+    position: relative;
     display: grid;
     place-items: center;
     overflow: hidden;
@@ -187,14 +188,70 @@
     flex: 1 1 0;
     background: var(--sys-window-bg);
     outline: none;
+    /* The frame below sizes itself against this box (contain fit). */
+    container-type: size;
   }
   .rz-stage:focus-visible {
     box-shadow: inset 0 0 0 1px var(--sys-border-focus);
   }
+  .rz-frame {
+    position: relative;
+    aspect-ratio: var(--rz-aspect);
+    width: min(100cqw, 100cqh * var(--rz-ratio));
+  }
+  .rz-frame--compare {
+    cursor: ew-resize;
+    touch-action: none;
+  }
   .rz-canvas {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: contain;
+  }
+  .rz-split {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--sys-accent);
+    pointer-events: none;
+  }
+  .rz-split::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 12px;
+    height: 28px;
+    transform: translate(-50%, -50%);
+    background: var(--sys-accent);
+    border: 1px solid var(--sys-control-bg);
+  }
+  .rz-compare-label {
+    font-size: var(--font-sm);
+    font-weight: normal;
+  }
+
+  /* Drop targets */
+  .rz-drop {
+    display: contents;
+  }
+  .rz-drop--over > .group-box,
+  .rz-stage.rz-drop--over {
+    outline: 2px dashed var(--sys-accent);
+    outline-offset: -2px;
+  }
+  .rz-drop-hint {
+    position: absolute;
+    inset: auto 0 var(--space-6);
+    margin: auto;
+    width: max-content;
+    padding: var(--space-2) var(--space-4);
+    background: var(--sys-highlight-bg);
+    color: var(--sys-highlight-text);
+    pointer-events: none;
   }
   .rz-empty {
     max-width: 440px;

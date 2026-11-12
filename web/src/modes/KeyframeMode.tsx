@@ -2,12 +2,13 @@
 import { createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Banner, Button, GroupBox, Icon, IconText } from "soulwindow/solid";
+import { DropZone } from "../components/Drop";
 import { FileButton } from "../components/Fields";
 import { BlendSettingsRows, createBlendSettings, createLoadSettings, ExportBox, FrameSetBox, loadAsJob, LoadSettingsRows } from "../components/VideoPanels";
 import { Thumb, Viewer, ViewerEmpty, type Layer } from "../components/Viewer";
 import { createFastBlend, fastBlendBatchLimit, loadEngine } from "../core/engine";
 import { interpolateKeyframes } from "../core/fastblend";
-import { keyframeIndex, type FrameSet } from "../core/frames";
+import { isVideoFile, keyframeIndex, type FrameSet } from "../core/frames";
 import { decodeImage, download, pngBlob } from "../core/image";
 import { elapsed, job, runJob, setMessage } from "../core/job";
 import type { ModeProps } from "./types";
@@ -24,8 +25,8 @@ let nextId = 1;
 export function KeyframeMode(props: ModeProps) {
   const [video, setVideo] = createSignal<FrameSet | null>(null);
   const [keys, setKeys] = createStore<Keyframe[]>([]);
-  const [load, setLoad] = createLoadSettings();
-  const [blend, setBlend] = createBlendSettings("balanced");
+  const [load, setLoad] = createLoadSettings("keyframes");
+  const [blend, setBlend] = createBlendSettings("keyframes", "balanced");
   const [result, setResult] = createSignal<FrameSet | null>(null);
   const [frame, setFrame] = createSignal(0);
   const [layer, setLayer] = createSignal("original");
@@ -73,6 +74,12 @@ export function KeyframeMode(props: ModeProps) {
     }
     if (skipped.length) setMessage(`Check: ${skipped.join(", ")}`, true);
     setLayer("original");
+  };
+
+  /** Monitor drop: a video (or images before any video) loads the footage; later images are keyframes. */
+  const dropAnywhere = (files: File[]) => {
+    if (!video() || (files.length === 1 && isVideoFile(files[0]))) void loadVideo(files);
+    else void addKeyframes(files);
   };
 
   const duplicates = createMemo(() => {
@@ -136,6 +143,7 @@ export function KeyframeMode(props: ModeProps) {
         <div class="daw-panel-body rz-dock-body">
           <FrameSetBox title="Video" icon="film" help="The original footage. Every frame is matched against it." set={video()} onFiles={loadVideo} />
 
+          <DropZone onFiles={(f) => addKeyframes(f)} disabled={!video() || job.busy}>
           <GroupBox
             title={<IconText icon={<Icon name="key" />}>Keyframes</IconText>}
             actions={<FileButton text="Add…" icon="plus-lg" accept="image/*" multiple disabled={!video() || job.busy} title="Stylized frames; the number in each file name picks its frame" onFiles={(f) => addKeyframes(f)} />}
@@ -177,6 +185,7 @@ export function KeyframeMode(props: ModeProps) {
               )}
             </For>
           </GroupBox>
+          </DropZone>
           <Show when={video() && keys.length > 0 && blocker()}>{(b) => <Banner tone="warn">{b()}</Banner>}</Show>
         </div>
       </div>
@@ -189,6 +198,8 @@ export function KeyframeMode(props: ModeProps) {
         frame={frame()}
         onFrame={setFrame}
         marks={keys.map((k) => k.index)}
+        onDropFiles={dropAnywhere}
+        dropDisabled={job.busy}
         empty={
           <ViewerEmpty icon="film">
             <div class="rz-empty">

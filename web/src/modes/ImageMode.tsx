@@ -2,11 +2,13 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Banner, Button, GroupBox, Icon, IconText } from "soulwindow/solid";
+import { DropZone } from "../components/Drop";
 import { Facts, FileButton, NumberRow, SelectRow, ToggleRow } from "../components/Fields";
 import { Thumb, Viewer, ViewerEmpty, type Layer } from "../components/Viewer";
 import { loadEngine } from "../core/engine";
 import { decodeImage, download, pngBlob, rgbaToRgb, rgbToRgba, type Rgb } from "../core/image";
 import { elapsed, job, runJob, setMessage } from "../core/job";
+import { createPersisted } from "../core/persist";
 import type { ModeProps } from "./types";
 
 interface Named extends Rgb {
@@ -40,7 +42,7 @@ const ACCEPT = "image/*";
 export function ImageMode(props: ModeProps) {
   const [style, setStyle] = createSignal<Named | null>(null);
   const [guides, setGuides] = createStore<GuideRow[]>([{ id: nextId++, source: null, target: null, weight: 1 }]);
-  const [params, setParams] = createStore({ ...DEFAULTS });
+  const [params, setParams] = createPersisted("image-params", { ...DEFAULTS });
   const [result, setResult] = createSignal<Rgb | null>(null);
   const [layer, setLayer] = createSignal<string>("style");
 
@@ -50,6 +52,38 @@ export function ImageMode(props: ModeProps) {
     } catch {
       setMessage(`Could not read ${file.name} as an image.`, true);
       return null;
+    }
+  };
+
+  const setStyleFile = async (f: File) => {
+    const img = await load(f);
+    if (img) {
+      setStyle(img);
+      setLayer("style");
+    }
+  };
+  const setGuideFile = async (i: number, side: "source" | "target", f: File) => {
+    const img = await load(f);
+    if (img) setGuides(i, side, img);
+  };
+  /** Monitor drop: fill the style, then empty guide slots in order, adding guides as needed. */
+  const dropAnywhere = async (files: File[]) => {
+    for (const f of files) {
+      if (!style()) {
+        await setStyleFile(f);
+        continue;
+      }
+      let slot: [number, "source" | "target"] | null = null;
+      for (const [i, g] of guides.entries()) {
+        if (!g.source) slot = [i, "source"];
+        else if (!g.target) slot = [i, "target"];
+        if (slot) break;
+      }
+      if (!slot) {
+        setGuides(guides.length, { id: nextId++, source: null, target: null, weight: 1 });
+        slot = [guides.length - 1, "source"];
+      }
+      await setGuideFile(slot[0], slot[1], f);
     }
   };
 
@@ -103,7 +137,7 @@ export function ImageMode(props: ModeProps) {
     const s = style();
     if (s) out.push({ id: "style", label: "Style", width: s.width, height: s.height, frames: [s.data] });
     guides.forEach((g, i) => {
-      if (g.target) out.push({ id: `target-${g.id}`, label: `Target ${i + 1}`, width: g.target.width, height: g.target.height, frames: [g.target.data] });
+      if (g.target) out.push({ id: `target-${g.id}`, label: `Target ${i + 1}`, width: g.target.width, height: g.target.height, frames: [g.target.data], compare: i === 0 });
     });
     return out;
   });
@@ -118,16 +152,11 @@ export function ImageMode(props: ModeProps) {
       <div class="daw-dock">
         <div class="daw-panel-title">Inputs</div>
         <div class="daw-panel-body rz-dock-body">
+          <DropZone onFiles={([f]) => setStyleFile(f)} disabled={job.busy}>
           <GroupBox title={<IconText icon={<Icon name="palette" />}>Style</IconText>}>
             <p class="ds-muted rz-help">The painted or stylized image whose look is transferred.</p>
             <div class="sw-row sw-gap-3 rz-pick">
-              <FileButton text={style() ? "Replace…" : "Choose image…"} icon="image" accept={ACCEPT} disabled={job.busy} onFiles={async ([f]) => {
-                const img = await load(f);
-                if (img) {
-                  setStyle(img);
-                  setLayer("style");
-                }
-              }} />
+              <FileButton text={style() ? "Replace…" : "Choose image…"} icon="image" accept={ACCEPT} disabled={job.busy} onFiles={([f]) => setStyleFile(f)} />
             </div>
             <Show when={style()}>
               {(s) => (
@@ -138,6 +167,7 @@ export function ImageMode(props: ModeProps) {
               )}
             </Show>
           </GroupBox>
+          </DropZone>
 
           <GroupBox
             title={<IconText icon={<Icon name="intersect" />}>Guides</IconText>}
@@ -159,15 +189,14 @@ export function ImageMode(props: ModeProps) {
                   <div class="rz-guide-pair">
                     <For each={["source", "target"] as const}>
                       {(side) => (
+                        <DropZone onFiles={([f]) => setGuideFile(i(), side, f)} disabled={job.busy}>
                         <div class="rz-guide-slot">
                           <Show when={g[side]} fallback={<div class="rz-thumb rz-thumb--empty">{side === "source" ? "Source" : "Target"}</div>}>
                             {(img) => <Thumb width={img().width} height={img().height} data={img().data} title={`${img().name} (${img().width}×${img().height})`} />}
                           </Show>
-                          <FileButton text={side === "source" ? "Source…" : "Target…"} accept={ACCEPT} disabled={job.busy} onFiles={async ([f]) => {
-                            const img = await load(f);
-                            if (img) setGuides(i(), side, img);
-                          }} />
+                          <FileButton text={side === "source" ? "Source…" : "Target…"} accept={ACCEPT} disabled={job.busy} onFiles={([f]) => setGuideFile(i(), side, f)} />
                         </div>
+                        </DropZone>
                       )}
                     </For>
                   </div>
@@ -188,13 +217,15 @@ export function ImageMode(props: ModeProps) {
         onLayer={setLayer}
         frame={0}
         onFrame={() => {}}
+        onDropFiles={dropAnywhere}
+        dropDisabled={job.busy}
         actions={<Button size="xs" icon={<Icon name="download" />} text="Save PNG" disabled={!result()} onClick={save} />}
         empty={
           <ViewerEmpty icon="magic">
             <div class="rz-empty">
               <strong>Image synthesis</strong>
               <ol>
-                <li>Choose the style image.</li>
+                <li>Choose the style image (or drop images here: style first, then guide sources and targets in order).</li>
                 <li>For each guide, choose a source (aligned with the style) and a target (aligned with the result you want).</li>
                 <li>Press Synthesize. Everything runs on your GPU; images never leave the browser.</li>
               </ol>

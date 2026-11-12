@@ -6,14 +6,14 @@ import { Viewer, ViewerEmpty, type Layer } from "../components/Viewer";
 import { createFastBlend, fastBlendBatchLimit, loadEngine } from "../core/engine";
 import { blendSequence } from "../core/fastblend";
 import type { FrameSet } from "../core/frames";
-import { elapsed, runJob } from "../core/job";
+import { elapsed, job, runJob } from "../core/job";
 import type { ModeProps } from "./types";
 
 export function BlendMode(props: ModeProps) {
   const [original, setOriginal] = createSignal<FrameSet | null>(null);
   const [stylized, setStylized] = createSignal<FrameSet | null>(null);
-  const [load, setLoad] = createLoadSettings();
-  const [blend, setBlend] = createBlendSettings("balanced");
+  const [load, setLoad] = createLoadSettings("blend");
+  const [blend, setBlend] = createBlendSettings("blend", "balanced");
   const [result, setResult] = createSignal<FrameSet | null>(null);
   const [frame, setFrame] = createSignal(0);
   const [layer, setLayer] = createSignal("stylized");
@@ -91,7 +91,7 @@ export function BlendMode(props: ModeProps) {
       ["stylized", "Stylized", stylized()],
       ["original", "Original", original()],
     ] as const) {
-      if (set) out.push({ id, label, width: set.width, height: set.height, frames: set.frames, fps: set.fps });
+      if (set) out.push({ id, label, width: set.width, height: set.height, frames: set.frames, fps: set.fps, compare: id === "stylized" });
     }
     return out;
   });
@@ -120,6 +120,8 @@ export function BlendMode(props: ModeProps) {
         onLayer={setLayer}
         frame={frame()}
         onFrame={setFrame}
+        onDropFiles={(files) => void (original() ? loadStylized(files) : loadOriginal(files))}
+        dropDisabled={job.busy}
         empty={
           <ViewerEmpty icon="layers">
             <div class="rz-empty">

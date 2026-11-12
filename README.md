@@ -158,7 +158,7 @@ A prototype `ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl` exists in the Releas
 - **Keyframes → video**: FastBlend interpolation. Load a video (or its frames), stylize a few frames yourself, add them back as keyframes (a number in the file name places each one), and every frame is filled in.
 - **Deflicker video**: FastBlend blending of a video stylized frame by frame, guided by the original.
 
-Videos are decoded and encoded in the browser with WebCodecs ([mediabunny](https://mediabunny.dev)): MP4/WebM/MOV in, H.264 MP4 (or WebM) or a zip of PNGs out. Frames are kept in memory at the working size (default 768 px on the longer side), so long or large videos need a lower working size or a frame limit. Browser video uses FastBlend only: EbSynth's optical-flow video pipeline needs the Python package.
+Files can be dropped on the input boxes or the monitor; the monitor has a before/after split (Compare, or the C key), and settings are remembered between visits. Videos are decoded and encoded in the browser with WebCodecs ([mediabunny](https://mediabunny.dev)): MP4/WebM/MOV in, H.264 MP4 (or WebM) or a zip of PNGs out. Frames are kept in memory at the working size (default 768 px on the longer side), so long or large videos need a lower working size or a frame limit. Browser video uses FastBlend only: EbSynth's optical-flow video pipeline needs the Python package.
 
 Build and run it (Node 20+, the `wasm32-unknown-unknown` Rust target and `wasm-bindgen-cli` 0.2.130):
 
