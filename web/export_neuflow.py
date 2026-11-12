@@ -54,7 +54,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--size", type=parse_size, default=(960, 544))
     parser.add_argument("--model", default="neuflow_mixed")
     parser.add_argument("--fp16", action="store_true")
-    parser.add_argument("--out-dir", type=Path, default=ROOT / "web" / "public" / "models")
+    parser.add_argument(
+        "--out-dir", type=Path, default=ROOT / "web" / "public" / "models"
+    )
     args = parser.parse_args(argv)
 
     w, h = args.size
