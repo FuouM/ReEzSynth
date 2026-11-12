@@ -48,3 +48,62 @@ export function fastBlendBatchLimit(engine: Engine, width: number, height: numbe
   const byWasm = Math.floor(2 ** 30 / (width * height * 3 * 19));
   return Math.max(1, Math.min(64, byBinding, byWasm));
 }
+
+function rgba(rgb: Uint8Array): Uint8Array {
+  const n = rgb.length / 3;
+  const out = new Uint8Array(n * 4);
+  for (let i = 0, j = 0; i < n; i++, j += 3) {
+    out[i * 4] = rgb[j];
+    out[i * 4 + 1] = rgb[j + 1];
+    out[i * 4 + 2] = rgb[j + 2];
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+function rgb(rgbaBytes: Uint8Array): Uint8Array {
+  const n = rgbaBytes.length >> 2;
+  const out = new Uint8Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    out[i * 3] = rgbaBytes[i * 4];
+    out[i * 3 + 1] = rgbaBytes[i * 4 + 1];
+    out[i * 3 + 2] = rgbaBytes[i * 4 + 2];
+  }
+  return out;
+}
+
+export interface RgbGuide {
+  source: Uint8Array;
+  target: Uint8Array;
+  weight: number;
+}
+
+/**
+ * EbSynth on RGB bytes: `style` and guide sources are `sw x sh`, guide targets `tw x th`.
+ * Resolves to the `tw x th` RGB result.
+ */
+export async function synthesizeRgb(
+  engine: Engine,
+  style: Uint8Array,
+  sw: number,
+  sh: number,
+  guides: RgbGuide[],
+  tw: number,
+  th: number,
+  params: object,
+  progress?: (level: number, levels: number) => void,
+): Promise<Uint8Array> {
+  const out: Uint8Array = await engine.synth.synthesize(
+    rgba(style),
+    sw,
+    sh,
+    guides.map((g) => rgba(g.source)),
+    guides.map((g) => rgba(g.target)),
+    new Float32Array(guides.map((g) => g.weight)),
+    tw,
+    th,
+    { ...params },
+    progress ?? null,
+  );
+  return rgb(out);
+}

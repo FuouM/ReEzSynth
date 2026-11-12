@@ -1,6 +1,5 @@
 // One job at a time (synthesis, blending, loading, export) with progress, cancel and status.
 import { createStore } from "solid-js/store";
-import { Cancelled } from "./fastblend";
 
 export interface JobState {
   busy: boolean;
@@ -42,7 +41,8 @@ export async function runJob(label: string, fn: (c: JobControl) => Promise<strin
     setJob({ busy: false, message, error: false });
     return message;
   } catch (e) {
-    const cancelled = e instanceof Cancelled || signal.aborted;
+    // Each core module has its own Cancelled class (they are import-free), so match the name.
+    const cancelled = signal.aborted || (e instanceof Error && e.name === "Cancelled");
     const message = cancelled ? `${job.label} cancelled.` : e instanceof Error ? e.message : String(e);
     if (!cancelled) console.error(e);
     setJob({ busy: false, message, error: !cancelled });

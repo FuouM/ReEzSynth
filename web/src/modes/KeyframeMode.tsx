@@ -1,13 +1,16 @@
 // FastBlend interpolation: stylized keyframes spread over every frame of a video.
-import { createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Banner, Button, GroupBox, Icon, IconText } from "soulwindow/solid";
 import { DropZone } from "../components/Drop";
-import { FileButton } from "../components/Fields";
+import { FileButton, NumberRow, SelectRow, ToggleRow } from "../components/Fields";
+import { SYNTH_DEFAULTS, SynthParamRows } from "../components/SynthParams";
 import { BlendSettingsRows, createBlendSettings, createLoadSettings, ExportBox, FrameSetBox, loadAsJob, LoadSettingsRows } from "../components/VideoPanels";
 import { Thumb, Viewer, ViewerEmpty, type Layer } from "../components/Viewer";
-import { createFastBlend, fastBlendBatchLimit, loadEngine } from "../core/engine";
-import { interpolateKeyframes } from "../core/fastblend";
+import { createFastBlend, fastBlendBatchLimit, loadEngine, synthesizeRgb } from "../core/engine";
+import { synthesizeVideo } from "../core/ebsynthVideo";
+import { createPersisted } from "../core/persist";
+import { blendSequence, interpolateKeyframes } from "../core/fastblend";
 import { isVideoFile, keyframeIndex, type FrameSet } from "../core/frames";
 import { decodeImage, download, pngBlob } from "../core/image";
 import { elapsed, job, runJob, setMessage } from "../core/job";
@@ -27,8 +30,17 @@ export function KeyframeMode(props: ModeProps) {
   const [keys, setKeys] = createStore<Keyframe[]>([]);
   const [load, setLoad] = createLoadSettings("keyframes");
   const [blend, setBlend] = createBlendSettings("keyframes", "balanced");
+  const [method, setMethod] = createPersisted("keyframes-method", {
+    method: "fastblend" as "fastblend" | "ebsynth",
+    edgeWeight: 1,
+    imageWeight: 6,
+    deflicker: true,
+    deflickerWindow: 3,
+  });
+  const [synthParams, setSynthParams] = createPersisted("keyframes-synth", { ...SYNTH_DEFAULTS });
   const [result, setResult] = createSignal<FrameSet | null>(null);
   const [frame, setFrame] = createSignal(0);
+  const [synthCollapsed, setSynthCollapsed] = createSignal(true);
   const [layer, setLayer] = createSignal("original");
   const [engine] = createResource(() => loadEngine().catch(() => null));
   const autoBatch = () => {
@@ -97,18 +109,15 @@ export function KeyframeMode(props: ModeProps) {
     return null;
   });
 
-  const run = () =>
+  const fastBlendOptions = () => ({ minimumPatchSize: blend.minimumPatchSize, numIter: blend.numIter, guideWeight: blend.guideWeight });
+
+  const runFastBlend = () =>
     runJob("Matching", async (c) => {
       const v = video()!;
       const e = await loadEngine();
       const t0 = performance.now();
       const batchSize = blend.batchSize || autoBatch() || 8;
-      const matcher = await createFastBlend(e, v.height, v.width, {
-        minimumPatchSize: blend.minimumPatchSize,
-        numIter: blend.numIter,
-        guideWeight: blend.guideWeight,
-        usePairwisePatchError: true,
-      });
+      const matcher = await createFastBlend(e, v.height, v.width, { ...fastBlendOptions(), usePairwisePatchError: true });
       try {
         const frames = await interpolateKeyframes(matcher, v.frames, new Map(keys.map((k) => [k.index, k.data])), { batchSize, signal: c.signal, onProgress: c.progress });
         setResult({ ...v, name: "result", frames });
@@ -119,7 +128,61 @@ export function KeyframeMode(props: ModeProps) {
       return `Interpolated ${v.frames.length - keys.length} frames from ${keys.length} keyframe${keys.length > 1 ? "s" : ""} in ${elapsed(performance.now() - t0)}.`;
     });
 
-  onMount(() => props.setAction({ label: "Interpolate", icon: "magic", blocker, run }));
+  const runEbSynth = () =>
+    runJob("Synthesizing", async (c) => {
+      const v = video()!;
+      const e = await loadEngine();
+      const t0 = performance.now();
+      // Live preview: unfinished frames show the original until they are done.
+      const live = [...v.frames];
+      const show = () => setResult({ ...v, name: "result", frames: [...live] });
+      show();
+      setLayer("result");
+      let lastShown = 0;
+      const params = { ...synthParams };
+      const frames = await synthesizeVideo(
+        v,
+        new Map(keys.map((k) => [k.index, k.data])),
+        (style, guides) => synthesizeRgb(e, style, v.width, v.height, guides, v.width, v.height, params),
+        {
+          weights: { edge: method.edgeWeight, image: method.imageWeight, pos: 0, warp: 0 },
+          signal: c.signal,
+          onProgress: c.progress,
+          onFrame: (i, f) => {
+            live[i] = f;
+            const now = performance.now();
+            if (now - lastShown > 250) {
+              lastShown = now;
+              show();
+            }
+          },
+        },
+      );
+      setResult({ ...v, name: "result", frames });
+      let note = "";
+      if (method.deflicker && frames.length > 1) {
+        c.stage("Deflickering");
+        const matcher = await createFastBlend(e, v.height, v.width, fastBlendOptions());
+        try {
+          const smooth = await blendSequence(matcher, v.frames, frames, method.deflickerWindow, {
+            batchSize: blend.batchSize || autoBatch() || 8,
+            signal: c.signal,
+            onProgress: c.progress,
+          });
+          // Keyframes stay exactly as painted.
+          for (const k of keys) smooth[k.index] = k.data;
+          setResult({ ...v, name: "result", frames: smooth });
+        } finally {
+          matcher.free();
+        }
+        note = `, deflickered (window ${method.deflickerWindow})`;
+      }
+      return `Synthesized ${v.frames.length - keys.length} frames with EbSynth${note} in ${elapsed(performance.now() - t0)}.`;
+    });
+
+  const run = () => (method.method === "ebsynth" ? runEbSynth() : runFastBlend());
+
+  createEffect(() => props.setAction({ label: method.method === "ebsynth" ? "Synthesize" : "Interpolate", icon: "magic", blocker, run }));
 
   const layers = createMemo((): Layer[] => {
     const out: Layer[] = [];
@@ -220,6 +283,33 @@ export function KeyframeMode(props: ModeProps) {
           <GroupBox title="Loading">
             <LoadSettingsRows s={load} set={setLoad} />
           </GroupBox>
+          <GroupBox title="Method">
+            <SelectRow
+              label="Method"
+              desc={method.method === "ebsynth" ? "EbSynth from the nearest keyframes with edge and colour guides, then optional deflicker" : "FastBlend: remap the nearest keyframes onto every frame (fastest)"}
+              value={method.method}
+              options={[
+                { value: "fastblend", label: "FastBlend" },
+                { value: "ebsynth", label: "EbSynth" },
+              ]}
+              onChange={(v) => setMethod("method", v)}
+              disabled={job.busy}
+            />
+          </GroupBox>
+          <Show when={method.method === "ebsynth"}>
+            <GroupBox title="EbSynth guides">
+              <NumberRow label="Edge weight" value={method.edgeWeight} min={0} step={0.5} onChange={(v) => setMethod("edgeWeight", Math.max(0, v))} />
+              <NumberRow divider label="Colour weight" desc="How closely each frame's colours steer patch choice" value={method.imageWeight} min={0} step={0.5} onChange={(v) => setMethod("imageWeight", Math.max(0, v))} />
+              <p class="ds-muted rz-help rz-help--row">Positional and temporal (warp) guides need optical flow, which is not in the browser yet.</p>
+              <ToggleRow divider label="Deflicker afterwards" checked={method.deflicker} onChange={(v) => setMethod("deflicker", v)} />
+              <Show when={method.deflicker}>
+                <NumberRow divider label="Deflicker window" desc="Neighbours on each side (FastBlend)" value={method.deflickerWindow} min={1} max={30} onChange={(v) => setMethod("deflickerWindow", Math.max(1, v))} />
+              </Show>
+            </GroupBox>
+            <GroupBox title="EbSynth" collapsible collapsed={synthCollapsed()} onToggle={() => setSynthCollapsed(!synthCollapsed())}>
+              <SynthParamRows p={synthParams} set={setSynthParams} compact />
+            </GroupBox>
+          </Show>
           <GroupBox title="FastBlend">
             <BlendSettingsRows s={blend} set={setBlend} autoBatch={autoBatch()} />
           </GroupBox>

@@ -55,6 +55,9 @@
     line-height: 1.4;
     user-select: text;
   }
+  .rz-help--row {
+    margin: var(--space-2) 0;
+  }
   .rz-help code {
     font-family: var(--sw-font-mono);
   }

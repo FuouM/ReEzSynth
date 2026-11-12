@@ -3,10 +3,11 @@ import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Banner, Button, GroupBox, Icon, IconText } from "soulwindow/solid";
 import { DropZone } from "../components/Drop";
-import { Facts, FileButton, NumberRow, SelectRow, ToggleRow } from "../components/Fields";
+import { Facts, FileButton } from "../components/Fields";
+import { SYNTH_DEFAULTS, SynthParamRows } from "../components/SynthParams";
 import { Thumb, Viewer, ViewerEmpty, type Layer } from "../components/Viewer";
-import { loadEngine } from "../core/engine";
-import { decodeImage, download, pngBlob, rgbaToRgb, rgbToRgba, type Rgb } from "../core/image";
+import { loadEngine, synthesizeRgb } from "../core/engine";
+import { decodeImage, download, pngBlob, type Rgb } from "../core/image";
 import { elapsed, job, runJob, setMessage } from "../core/job";
 import { createPersisted } from "../core/persist";
 import type { ModeProps } from "./types";
@@ -22,19 +23,6 @@ interface GuideRow {
   weight: number;
 }
 
-const DEFAULTS = {
-  patchSize: 7,
-  uniformity: 3500,
-  pyramidLevels: 6,
-  searchVoteIters: 12,
-  patchMatchIters: 6,
-  stopThreshold: 5,
-  costFunction: "ssd" as "ssd" | "ncc" | "sad",
-  searchMode: "patchmatch" as "patchmatch" | "jfa" | "multicand",
-  voteMode: "weighted" as "weighted" | "plain",
-  useBilateral: false,
-  seed: 2024,
-};
 
 let nextId = 1;
 const ACCEPT = "image/*";
@@ -42,7 +30,7 @@ const ACCEPT = "image/*";
 export function ImageMode(props: ModeProps) {
   const [style, setStyle] = createSignal<Named | null>(null);
   const [guides, setGuides] = createStore<GuideRow[]>([{ id: nextId++, source: null, target: null, weight: 1 }]);
-  const [params, setParams] = createPersisted("image-params", { ...DEFAULTS });
+  const [params, setParams] = createPersisted("image-params", { ...SYNTH_DEFAULTS });
   const [result, setResult] = createSignal<Rgb | null>(null);
   const [layer, setLayer] = createSignal<string>("style");
 
@@ -110,20 +98,18 @@ export function ImageMode(props: ModeProps) {
       const rows = guides.map((g) => ({ ...g }));
       const t = rows[0].target!;
       const t0 = performance.now();
-      const rgba = (img: Rgb) => new Uint8Array(rgbToRgba(img.data).buffer);
-      const out: Uint8Array = await engine.synth.synthesize(
-        rgba(s),
+      const out = await synthesizeRgb(
+        engine,
+        s.data,
         s.width,
         s.height,
-        rows.map((g) => rgba(g.source!)),
-        rows.map((g) => rgba(g.target!)),
-        new Float32Array(rows.map((g) => g.weight)),
+        rows.map((g) => ({ source: g.source!.data, target: g.target!.data, weight: g.weight })),
         t.width,
         t.height,
-        { ...params },
-        (level: number, levels: number) => c.progress(level, levels),
+        params,
+        (level, levels) => c.progress(level, levels),
       );
-      setResult({ width: t.width, height: t.height, data: rgbaToRgb(out) });
+      setResult({ width: t.width, height: t.height, data: out });
       setLayer("result");
       return `Synthesized ${t.width}×${t.height} in ${elapsed(performance.now() - t0)}.`;
     });
@@ -238,21 +224,11 @@ export function ImageMode(props: ModeProps) {
         <div class="daw-panel-title">
           Parameters
           <span class="daw-panel-title-actions">
-            <Button size="xs" text="Defaults" disabled={job.busy} onClick={() => setParams({ ...DEFAULTS })} />
+            <Button size="xs" text="Defaults" disabled={job.busy} onClick={() => setParams({ ...SYNTH_DEFAULTS })} />
           </span>
         </div>
         <div class="daw-panel-body rz-dock-body">
-          <NumberRow label="Patch size" desc="Odd, 3–31" value={params.patchSize} min={3} max={31} step={2} onChange={(v) => setParams("patchSize", v | 1)} />
-          <NumberRow divider label="Uniformity" desc="Higher spreads style patches more evenly" value={params.uniformity} min={0} step={100} onChange={(v) => setParams("uniformity", v)} />
-          <NumberRow divider label="Pyramid levels" value={params.pyramidLevels} min={1} max={12} onChange={(v) => setParams("pyramidLevels", v)} />
-          <NumberRow divider label="Search/vote iterations" value={params.searchVoteIters} min={0} max={64} onChange={(v) => setParams("searchVoteIters", v)} />
-          <NumberRow divider label="PatchMatch iterations" value={params.patchMatchIters} min={0} max={32} onChange={(v) => setParams("patchMatchIters", v)} />
-          <NumberRow divider label="Stop threshold" desc="Stop a level early when fewer pixels change" value={params.stopThreshold} min={0} onChange={(v) => setParams("stopThreshold", v)} />
-          <SelectRow divider label="Cost" value={params.costFunction} options={[{ value: "ssd", label: "SSD" }, { value: "ncc", label: "NCC" }, { value: "sad", label: "SAD" }]} onChange={(v) => setParams("costFunction", v)} />
-          <SelectRow divider label="Search" value={params.searchMode} options={[{ value: "patchmatch", label: "PatchMatch" }, { value: "jfa", label: "Jump flooding" }, { value: "multicand", label: "Multi-candidate" }]} onChange={(v) => setParams("searchMode", v)} />
-          <SelectRow divider label="Vote" value={params.voteMode} options={[{ value: "weighted", label: "Weighted" }, { value: "plain", label: "Plain" }]} onChange={(v) => setParams("voteMode", v)} />
-          <ToggleRow divider label="Bilateral weights" checked={params.useBilateral} onChange={(v) => setParams("useBilateral", v)} />
-          <NumberRow divider label="Seed" value={params.seed} min={0} onChange={(v) => setParams("seed", v)} />
+          <SynthParamRows p={params} set={setParams} />
         </div>
       </div>
     </div>

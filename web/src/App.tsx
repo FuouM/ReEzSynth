@@ -13,7 +13,7 @@ type Mode = "image" | "keyframes" | "blend";
 
 const MODES: { id: Mode; label: string; icon: string; title: string }[] = [
   { id: "image", label: "Image", icon: "image", title: "EbSynth: stylize one image from a style image and guides" },
-  { id: "keyframes", label: "Keyframes → video", icon: "film", title: "FastBlend interpolation: spread stylized keyframes over a whole video" },
+  { id: "keyframes", label: "Keyframes → video", icon: "film", title: "Spread stylized keyframes over a whole video (FastBlend or EbSynth)" },
   { id: "blend", label: "Deflicker video", icon: "layers", title: "FastBlend blending: remove flicker from a frame-by-frame stylized video" },
 ];
 
