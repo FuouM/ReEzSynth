@@ -157,12 +157,20 @@ A prototype `ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl` exists in the Releas
 `web/` is ReEzSynth in the browser, built with Solid, Vite and the [SoulWindow](https://github.com/FuouM/soulwindow) design system. Everything runs locally on the GPU through WebGPU (current Chrome/Edge; Firefox/Safari with WebGPU enabled); images and videos are never uploaded. It has three modes:
 
 - **Image**: EbSynth synthesis of one image from a style image, any number of guide pairs and the synthesis parameters.
-- **Keyframes → video**: load a video (or its frames), stylize a few frames yourself, add them back as keyframes (a number in the file name places each one), and every frame is filled in, either by FastBlend interpolation (fast) or by EbSynth from the nearest keyframes with the same edge and colour guides, bidirectional passes and error-map + Poisson pass blending as the Python pipeline, optionally deflickered with FastBlend.
+- **Keyframes → video**: load a video (or its frames), stylize a few frames yourself, add them back as keyframes (a number in the file name places each one), and every frame is filled in, either by FastBlend interpolation (fast) or by EbSynth from the nearest keyframes with the Python pipeline's guides (edge, colour, and with optical flow the positional and temporal guides), bidirectional passes and error-map + Poisson pass blending, optionally deflickered with FastBlend.
 - **Deflicker video**: FastBlend blending of a video stylized frame by frame, guided by the original.
 
-Files can be dropped on the input boxes or the monitor; the monitor has a before/after split (Compare, or the C key), and settings are remembered between visits. Videos are decoded and encoded in the browser with WebCodecs ([mediabunny](https://mediabunny.dev)): MP4/WebM/MOV in, H.264 MP4 (or WebM) or a zip of PNGs out. Frames are kept in memory at the working size (default 768 px on the longer side), so long or large videos need a lower working size or a frame limit. Browser EbSynth video has no optical flow yet, so it runs without the positional and temporal (warp) guides; `web/src/core/ebsynthVideo.ts` already builds those guides from any `FlowProvider` (its edge, warp and positional code matches ezsynth byte for byte, checked by `web/test/ebsynth-video.test.mjs`), so a browser flow model only has to supply the flow fields.
+Files can be dropped on the input boxes or the monitor; the monitor has a before/after split (Compare, or the C key), and settings are remembered between visits. Videos are decoded and encoded in the browser with WebCodecs ([mediabunny](https://mediabunny.dev)): MP4/WebM/MOV in, H.264 MP4 (or WebM) or a zip of PNGs out. Frames are kept in memory at the working size (default 768 px on the longer side), so long or large videos need a lower working size or a frame limit.
 
-Build and run it (Node 20+, the `wasm32-unknown-unknown` Rust target and `wasm-bindgen-cli` 0.2.130):
+EbSynth video uses NeuFlow v2 optical flow, run by [ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/) on WebGPU (loaded from jsDelivr on first use). Export the model once into `web/public/models/` (needs the NeuFlow checkpoint in `models/neuflow/`), or pick an exported `.onnx` file in the app:
+
+```sh
+uv run --with onnx --with onnxscript python web/export_neuflow.py --size 960x544   # --fp16 halves it; needs WebGPU shader-f16
+```
+
+The model has a fixed input size: frames up to 31 px smaller are padded, other sizes are resized and the flow rescaled. On the cat clip (100 frames, 960×544, keyframes 0 and 99, histogram pass blending) the browser takes 2 min 52 s on an RTX 3060 and its frames are within 37–39 dB PSNR of the Python `wgpu` pipeline; keyframes stay exactly as painted, whereas Python re-blends the first one.
+
+Build and run it (Node 22.18+ for the tests, the `wasm32-unknown-unknown` Rust target and `wasm-bindgen-cli` 0.2.130):
 
 ```sh
 rustup target add wasm32-unknown-unknown

@@ -5,6 +5,9 @@
   "description": "ReEzSynth in the browser: EbSynth image synthesis and FastBlend video on WebGPU.",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "wasm": "node scripts/build-wasm.mjs",
     "dev": "vite",

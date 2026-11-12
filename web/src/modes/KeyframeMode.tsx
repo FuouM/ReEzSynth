@@ -4,11 +4,12 @@ import { createStore, produce } from "solid-js/store";
 import { Banner, Button, GroupBox, Icon, IconText } from "soulwindow/solid";
 import { DropZone } from "../components/Drop";
 import { FileButton, NumberRow, SelectRow, ToggleRow } from "../components/Fields";
-import { SYNTH_DEFAULTS, SynthParamRows } from "../components/SynthParams";
+import { SYNTH_DEFAULTS, SynthParamRows, type SynthParams } from "../components/SynthParams";
 import { BlendSettingsRows, createBlendSettings, createLoadSettings, ExportBox, FrameSetBox, loadAsJob, LoadSettingsRows } from "../components/VideoPanels";
 import { Thumb, Viewer, ViewerEmpty, type Layer } from "../components/Viewer";
 import { createFastBlend, fastBlendBatchLimit, loadEngine, synthesizeRgbWithError } from "../core/engine";
-import { synthesizeVideo, type PassBlend } from "../core/ebsynthVideo";
+import { DEFAULT_WEIGHTS, synthesizeVideo, type PassBlend } from "../core/ebsynthVideo";
+import { DEFAULT_FLOW_MODEL, NeuFlow } from "../core/flow";
 import { createPersisted } from "../core/persist";
 import { blendSequence, interpolateKeyframes } from "../core/fastblend";
 import { isVideoFile, keyframeIndex, type FrameSet } from "../core/frames";
@@ -37,12 +38,17 @@ export function KeyframeMode(props: ModeProps) {
     deflicker: true,
     deflickerWindow: 3,
     passBlend: "poisson" as PassBlend,
+    opticalFlow: true,
+    posWeight: DEFAULT_WEIGHTS.pos,
+    warpWeight: DEFAULT_WEIGHTS.warp,
   });
-  const [synthParams, setSynthParams] = createPersisted("keyframes-synth", { ...SYNTH_DEFAULTS });
+  // Video Synth Config defaults (reezsynth_nodes): NCC cost, unlike single-image synthesis.
+  const [synthParams, setSynthParams] = createPersisted("keyframes-synth", { ...SYNTH_DEFAULTS, costFunction: "ncc" as SynthParams["costFunction"] });
   const [result, setResult] = createSignal<FrameSet | null>(null);
   const [frame, setFrame] = createSignal(0);
   const [synthCollapsed, setSynthCollapsed] = createSignal(true);
   const [layer, setLayer] = createSignal("original");
+  const [flowModel, setFlowModel] = createSignal<File | null>(null);
   const [engine] = createResource(() => loadEngine().catch(() => null));
   const autoBatch = () => {
     const v = video();
@@ -141,25 +147,38 @@ export function KeyframeMode(props: ModeProps) {
       setLayer("result");
       let lastShown = 0;
       const params = { ...synthParams };
-      const frames = await synthesizeVideo(
-        v,
-        new Map(keys.map((k) => [k.index, k.data])),
-        (style, guides) => synthesizeRgbWithError(e, style, v.width, v.height, guides, v.width, v.height, params),
-        {
-          weights: { edge: method.edgeWeight, image: method.imageWeight, pos: 0, warp: 0 },
-          blend: method.passBlend,
-          signal: c.signal,
-          onProgress: c.progress,
-          onFrame: (i, f) => {
-            live[i] = f;
-            const now = performance.now();
-            if (now - lastShown > 250) {
-              lastShown = now;
-              show();
-            }
+      let flow: NeuFlow | null = null;
+      if (method.opticalFlow) {
+        c.stage("Loading NeuFlow");
+        const file = flowModel();
+        flow = file ? await NeuFlow.create(await file.arrayBuffer(), file.name, v) : await NeuFlow.create(DEFAULT_FLOW_MODEL, DEFAULT_FLOW_MODEL, v);
+        c.stage("Synthesizing");
+      }
+      let frames: Uint8Array[];
+      try {
+        frames = await synthesizeVideo(
+          v,
+          new Map(keys.map((k) => [k.index, k.data])),
+          (style, guides) => synthesizeRgbWithError(e, style, v.width, v.height, guides, v.width, v.height, params),
+          {
+            weights: { edge: method.edgeWeight, image: method.imageWeight, pos: method.posWeight, warp: method.warpWeight },
+            blend: method.passBlend,
+            flow: flow ?? undefined,
+            signal: c.signal,
+            onProgress: c.progress,
+            onFrame: (i, f) => {
+              live[i] = f;
+              const now = performance.now();
+              if (now - lastShown > 250) {
+                lastShown = now;
+                show();
+              }
+            },
           },
-        },
-      );
+        );
+      } finally {
+        await flow?.release();
+      }
       setResult({ ...v, name: "result", frames });
       let note = "";
       if (method.deflicker && frames.length > 1) {
@@ -302,7 +321,17 @@ export function KeyframeMode(props: ModeProps) {
             <GroupBox title="EbSynth guides">
               <NumberRow label="Edge weight" value={method.edgeWeight} min={0} step={0.5} onChange={(v) => setMethod("edgeWeight", Math.max(0, v))} />
               <NumberRow divider label="Colour weight" desc="How closely each frame's colours steer patch choice" value={method.imageWeight} min={0} step={0.5} onChange={(v) => setMethod("imageWeight", Math.max(0, v))} />
-              <p class="ds-muted rz-help rz-help--row">Positional and temporal (warp) guides need optical flow, which is not in the browser yet.</p>
+              <ToggleRow divider label="Optical flow (NeuFlow)" desc="Adds the positional and temporal guides and carries blend masks along the motion" checked={method.opticalFlow} onChange={(v) => setMethod("opticalFlow", v)} />
+              <Show when={method.opticalFlow}>
+                <NumberRow divider label="Position weight" value={method.posWeight} min={0} step={0.5} onChange={(v) => setMethod("posWeight", Math.max(0, v))} />
+                <NumberRow divider label="Temporal weight" desc="Previous result moved along the flow" value={method.warpWeight} min={0} step={0.1} onChange={(v) => setMethod("warpWeight", Math.max(0, v))} />
+                <p class="ds-muted rz-help rz-help--row">
+                  Model: {flowModel()?.name ?? <code>{DEFAULT_FLOW_MODEL}</code>} (export with <code>web/export_neuflow.py</code>).
+                </p>
+                <div class="sw-row sw-gap-3 sw-wrap rz-pick">
+                  <FileButton text="Choose model…" icon="cpu" accept=".onnx" disabled={job.busy} onFiles={(f) => setFlowModel(f[0] ?? null)} />
+                </div>
+              </Show>
               <SelectRow
                 divider
                 label="Pass blending"
