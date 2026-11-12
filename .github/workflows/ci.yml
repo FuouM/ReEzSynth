@@ -49,11 +49,39 @@ jobs:
       - working-directory: rust
         run: cargo test -p ebsynth-gpu --test shaders
 
+  web:
+    # Browser front end: wasm bindings, typecheck, unit tests and a production build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.130
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run wasm
+      - working-directory: web
+        run: npm run check
+      - working-directory: web
+        run: npm run build
+
   wgpu-wheels:
     # abi3 wheels of rust/ezsynth-wgpu: one per platform for every Python >= 3.10 and any torch.
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

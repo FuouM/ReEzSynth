@@ -3,14 +3,15 @@
 use std::sync::{Arc, LazyLock, Mutex};
 
 use ebsynth_gpu::fastblend::{FastBlendParams, Initialize, PyramidMatcher};
+use ebsynth_gpu::imageops::{Border, ImageOps, Interpolation, OcclusionParams};
 use ebsynth_gpu::{
     CostFunction, Error, GpuContext, LevelInput, LevelParams, SearchMode,
     Synthesizer as CoreSynthesizer, VoteMode,
 };
-use numpy::ndarray::Dim;
+use numpy::ndarray::{Dim, IxDyn};
 use numpy::{
-    IntoPyArray, PyArray, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray3, PyReadonlyArray4,
-    PyUntypedArrayMethods,
+    IntoPyArray, PyArray, PyArrayDyn, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
+    PyReadonlyArray3, PyReadonlyArray4, PyReadonlyArrayDyn, PyUntypedArrayMethods,
 };
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -36,6 +37,230 @@ static CONTEXT: LazyLock<Result<Arc<GpuContext>, String>> = LazyLock::new(|| {
 
 fn context() -> PyResult<Arc<GpuContext>> {
     CONTEXT.clone().map_err(PyRuntimeError::new_err)
+}
+
+static IMAGE_OPS: LazyLock<Result<ImageOps, String>> = LazyLock::new(|| {
+    let ctx = CONTEXT.clone()?;
+    pollster::block_on(ImageOps::new(ctx)).map_err(|e| e.to_string())
+});
+
+fn image_ops() -> PyResult<&'static ImageOps> {
+    IMAGE_OPS
+        .as_ref()
+        .map_err(|e| PyRuntimeError::new_err(e.clone()))
+}
+
+/// Data and (h, w, c) of a float32 `(H, W)` or `(H, W, C)` image.
+fn image_f32<'a>(
+    name: &str,
+    a: &'a PyReadonlyArrayDyn<'_, f32>,
+) -> PyResult<(&'a [f32], u32, u32, u32)> {
+    let s = a.shape();
+    let c = match s.len() {
+        2 => 1,
+        3 => s[2],
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "{name} must be (H, W) or (H, W, C), got shape {s:?}"
+            )));
+        }
+    };
+    Ok((slice(name, a)?, s[0] as u32, s[1] as u32, c as u32))
+}
+
+/// Flow `(h, w, 2)` float32 matching an image.
+fn flow_f32<'a>(
+    name: &str,
+    a: &'a PyReadonlyArray3<'_, f32>,
+    h: u32,
+    w: u32,
+) -> PyResult<&'a [f32]> {
+    if a.shape() != [h as usize, w as usize, 2] {
+        return Err(PyValueError::new_err(format!(
+            "{name} must have shape ({h}, {w}, 2), got {:?}",
+            a.shape()
+        )));
+    }
+    slice(name, a)
+}
+
+/// Image (shape of the input) plus a `(H, W)` float32 map.
+type ImageAndMap<'py> = (Bound<'py, PyArrayDyn<f32>>, Bound<'py, PyArrayDyn<f32>>);
+
+/// Two `(H, W)` uint8 masks.
+type MaskPair<'py> = (
+    Bound<'py, PyArray<u8, Dim<[usize; 2]>>>,
+    Bound<'py, PyArray<u8, Dim<[usize; 2]>>>,
+);
+
+fn dyn_array<'py>(
+    py: Python<'py>,
+    data: Vec<f32>,
+    shape: &[usize],
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    data.into_pyarray(py).reshape(IxDyn(shape))
+}
+
+/// `cv2.remap(src, grid + flow)` with OpenCV 5's bilinear (exact float coordinates for
+/// 1, 3 and 4 channels, 1/32-pixel fixed point otherwise) or nearest sampling. `src` is
+/// float32 `(H, W)` or `(H, W, C)`, `flow` float32 `(H, W, 2)`; `border` is "reflect"
+/// (`BORDER_REFLECT`) or "constant" (0).
+#[pyfunction]
+#[pyo3(signature = (src, flow, *, nearest=false, border="reflect"))]
+fn warp<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, f32>,
+    flow: PyReadonlyArray3<'py, f32>,
+    nearest: bool,
+    border: &str,
+) -> PyResult<Bound<'py, PyArrayDyn<f32>>> {
+    let border = match border {
+        "reflect" => Border::Reflect,
+        "constant" => Border::Constant,
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "border must be 'reflect' or 'constant', got {border:?}"
+            )));
+        }
+    };
+    let interp = if nearest {
+        Interpolation::Nearest
+    } else {
+        Interpolation::Linear
+    };
+    let (data, h, w, c) = image_f32("src", &src)?;
+    let flow = flow_f32("flow", &flow, h, w)?;
+    let ops = image_ops()?;
+    let out = py
+        .detach(|| pollster::block_on(ops.warp(data, h, w, c, flow, interp, border)))
+        .map_err(to_py)?;
+    dyn_array(py, out, src.shape())
+}
+
+/// Forward soft splatting of float32 `src` `(H, W[, C])` along `flow` `(H, W, 2)` with
+/// optional bilateral `(H, W, 3)` guides and pull-push hole filling. Returns
+/// `(image float32 like src, splatted weight (H, W) before hole filling)`.
+#[pyfunction]
+#[pyo3(signature = (src, flow, *, fill_holes=true, src_guide=None, tgt_guide=None))]
+fn forward_splat<'py>(
+    py: Python<'py>,
+    src: PyReadonlyArrayDyn<'py, f32>,
+    flow: PyReadonlyArray3<'py, f32>,
+    fill_holes: bool,
+    src_guide: Option<PyReadonlyArray3<'py, f32>>,
+    tgt_guide: Option<PyReadonlyArray3<'py, f32>>,
+) -> PyResult<ImageAndMap<'py>> {
+    let (data, h, w, c) = image_f32("src", &src)?;
+    let flow = flow_f32("flow", &flow, h, w)?;
+    let guides = match (&src_guide, &tgt_guide) {
+        (Some(sg), Some(tg)) => Some((slice("src_guide", sg)?, slice("tgt_guide", tg)?)),
+        (None, None) => None,
+        _ => {
+            return Err(PyValueError::new_err(
+                "src_guide and tgt_guide must be given together",
+            ));
+        }
+    };
+    let ops = image_ops()?;
+    let out = py
+        .detach(|| pollster::block_on(ops.forward_splat(data, h, w, c, flow, guides, fill_holes)))
+        .map_err(to_py)?;
+    Ok((
+        dyn_array(py, out.image, src.shape())?,
+        dyn_array(py, out.weight, &[h as usize, w as usize])?,
+    ))
+}
+
+/// Pull-push hole filling of accumulated float32 `color` `(H, W[, C])` and `weight`
+/// `(H, W)`; returns the filled `(color, weight)`.
+#[pyfunction]
+#[pyo3(signature = (color, weight, *, levels=5))]
+fn pull_push<'py>(
+    py: Python<'py>,
+    color: PyReadonlyArrayDyn<'py, f32>,
+    weight: PyReadonlyArray2<'py, f32>,
+    levels: u32,
+) -> PyResult<ImageAndMap<'py>> {
+    let (data, h, w, c) = image_f32("color", &color)?;
+    if weight.shape() != [h as usize, w as usize] {
+        return Err(PyValueError::new_err(format!(
+            "weight must have shape ({h}, {w}), got {:?}",
+            weight.shape()
+        )));
+    }
+    let wdata = slice("weight", &weight)?;
+    let ops = image_ops()?;
+    let (color_out, weight_out) = py
+        .detach(|| pollster::block_on(ops.pull_push(data, wdata, h, w, c, levels)))
+        .map_err(to_py)?;
+    Ok((
+        dyn_array(py, color_out, color.shape())?,
+        dyn_array(py, weight_out, &[h as usize, w as usize])?,
+    ))
+}
+
+/// Histogram blend of uint8 BGR frames `a`, `b` `(H, W, 3)` with the selection `mask`
+/// `(H, W)` uint8 (0 where `a` has the lower error). Returns BGR uint8 `(H, W, 3)`.
+#[pyfunction]
+#[pyo3(signature = (a, b, mask, weight1=0.5, weight2=0.5))]
+fn hist_blend<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray3<'py, u8>,
+    b: PyReadonlyArray3<'py, u8>,
+    mask: PyReadonlyArray2<'py, u8>,
+    weight1: f32,
+    weight2: f32,
+) -> PyResult<Bound<'py, PyArray<u8, Dim<[usize; 3]>>>> {
+    let (w, h, c) = shape3(&a);
+    if c != 3 || b.shape() != a.shape() || mask.shape() != [h as usize, w as usize] {
+        return Err(PyValueError::new_err(format!(
+            "a and b must be (H, W, 3) and mask (H, W); got {:?}, {:?}, {:?}",
+            a.shape(),
+            b.shape(),
+            mask.shape()
+        )));
+    }
+    let (ad, bd, md) = (slice("a", &a)?, slice("b", &b)?, slice("mask", &mask)?);
+    let ops = image_ops()?;
+    let out = py
+        .detach(|| pollster::block_on(ops.hist_blend(ad, bd, md, h, w, weight1, weight2)))
+        .map_err(to_py)?;
+    out.into_pyarray(py).reshape([h as usize, w as usize, 3])
+}
+
+/// Unreliable-pixel masks (uint8 0 / 255) of one flow pair: `fwd_flow` maps frame i to
+/// i + 1, `bwd_flow` i + 1 to i, both float32 `(H, W, 2)`. Returns `(fwd_mask (pixels
+/// of frame i + 1), bwd_mask (pixels of frame i))`.
+#[pyfunction]
+#[pyo3(signature = (fwd_flow, bwd_flow, *, alpha=0.01, beta=0.5, dilate=1, coverage=true))]
+fn occlusion_masks<'py>(
+    py: Python<'py>,
+    fwd_flow: PyReadonlyArray3<'py, f32>,
+    bwd_flow: PyReadonlyArray3<'py, f32>,
+    alpha: f32,
+    beta: f32,
+    dilate: u32,
+    coverage: bool,
+) -> PyResult<MaskPair<'py>> {
+    let s = fwd_flow.shape();
+    let (h, w) = (s[0] as u32, s[1] as u32);
+    let fwd = flow_f32("fwd_flow", &fwd_flow, h, w)?;
+    let bwd = flow_f32("bwd_flow", &bwd_flow, h, w)?;
+    let params = OcclusionParams {
+        alpha,
+        beta,
+        dilate,
+        coverage,
+    };
+    let ops = image_ops()?;
+    let (fm, bm) = py
+        .detach(|| pollster::block_on(ops.occlusion_masks(fwd, bwd, h, w, params)))
+        .map_err(to_py)?;
+    let shape = [h as usize, w as usize];
+    Ok((
+        fm.into_pyarray(py).reshape(shape)?,
+        bm.into_pyarray(py).reshape(shape)?,
+    ))
 }
 
 fn to_py(e: Error) -> PyErr {
@@ -316,6 +541,11 @@ fn ezsynth_wgpu(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(adapter_info, m)?)?;
     m.add_class::<Synthesizer>()?;
     m.add_class::<FastBlendMatcher>()?;
+    m.add_function(wrap_pyfunction!(warp, m)?)?;
+    m.add_function(wrap_pyfunction!(forward_splat, m)?)?;
+    m.add_function(wrap_pyfunction!(pull_push, m)?)?;
+    m.add_function(wrap_pyfunction!(hist_blend, m)?)?;
+    m.add_function(wrap_pyfunction!(occlusion_masks, m)?)?;
     m.add("MAX_STYLE_CHANNELS", ebsynth_gpu::MAX_STYLE_CHANNELS)?;
     m.add("MAX_GUIDE_CHANNELS", ebsynth_gpu::MAX_GUIDE_CHANNELS)?;
     Ok(())

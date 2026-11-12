@@ -121,6 +121,8 @@ Different Loss functions
 
     In ComfyUI the `wgpu` backend runs the bundled video workflow (100 frames, 960×544) in 2 min 43 s versus 12 min 39 s with `taichi`, and FastBlend (98 frames) in 125 s versus 298 s.
 
+    With `backend: wgpu` the video pipeline's image operations run on WebGPU as well: flow warping, forward splatting with hole filling (so `use_forward_warping` needs no Taichi), histogram blending and flow occlusion masks. At 960×544 (RTX 3060) blending 40 bidirectional frames takes 0.8 s instead of 13.4 s, and occlusion masks for 40 flow pairs 0.3 s instead of 6.5 s. Warping and occlusion masks match OpenCV 5; histogram blending converts to Lab in float, so a few pixels differ from OpenCV's 8-bit Lab path (mean difference below one level).
+
 5. **GPU memory budget**:
     Outside ComfyUI, each run caps PyTorch's CUDA allocator to a budget computed from the memory free *at startup* (90% of it, always leaving 1.5 GiB for the browser/desktop). Running out of budget raises a CUDA out-of-memory error in ReEzSynth instead of exhausting the whole GPU. Overrides: `EZSYNTH_GPU_MEMORY_LIMIT_MB` (absolute cap), `EZSYNTH_GPU_MEMORY_FRACTION`, `EZSYNTH_GPU_MEMORY_RESERVE_MB`, or `EZSYNTH_GPU_MEMORY_LIMIT=0` to disable.
 
@@ -152,14 +154,35 @@ A prototype `ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl` exists in the Releas
 
 ## Web
 
-`web/` is a browser front end for single-image synthesis: style image, any number of guide pairs and the synthesis parameters; everything runs locally on the GPU through WebGPU (current Chrome/Edge; Firefox/Safari with WebGPU enabled). Build and serve it:
+`web/` is ReEzSynth in the browser, built with Solid, Vite and the [SoulWindow](https://github.com/FuouM/soulwindow) design system. Everything runs locally on the GPU through WebGPU (current Chrome/Edge; Firefox/Safari with WebGPU enabled); images and videos are never uploaded. It has three modes:
 
-```powershell
-.\web\build.ps1                     # needs the local toolchain and wasm-bindgen-cli 0.2.130
-python -m http.server -d web 8000   # then open http://localhost:8000
+- **Image**: EbSynth synthesis of one image from a style image, any number of guide pairs and the synthesis parameters.
+- **Keyframes → video**: load a video (or its frames), stylize a few frames yourself, add them back as keyframes (a number in the file name places each one), and every frame is filled in, either by FastBlend interpolation (fast) or by EbSynth from the nearest keyframes with the Python pipeline's guides (edge, colour, and with optical flow the positional and temporal guides), bidirectional passes and error-map + Poisson pass blending, optionally deflickered with FastBlend.
+- **Deflicker video**: FastBlend blending of a video stylized frame by frame, guided by the original.
+
+Files can be dropped on the input boxes or the monitor; the monitor has a before/after split (Compare, or the C key), and settings are remembered between visits. Videos are decoded and encoded in the browser with WebCodecs ([mediabunny](https://mediabunny.dev)): MP4/WebM/MOV in, H.264 MP4 (or WebM) or a zip of PNGs out. Frames are kept in memory at the working size (default 768 px on the longer side), so long or large videos need a lower working size or a frame limit.
+
+EbSynth video uses NeuFlow v2 optical flow, run by [ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/) on WebGPU (loaded from jsDelivr on first use). Export the model once into `web/public/models/` (needs the NeuFlow checkpoint in `models/neuflow/`), or pick an exported `.onnx` file in the app:
+
+```sh
+uv run --with onnx --with onnxscript python web/export_neuflow.py --size 960x544   # --fp16 halves it; needs WebGPU shader-f16
 ```
 
-The facestyle example (1000×810, three guides) takes about 0.6 s per run in Chrome on an RTX 3060.
+The model has a fixed input size: frames up to 31 px smaller are padded, other sizes are resized and the flow rescaled. On the cat clip (100 frames, 960×544, keyframes 0 and 99, histogram pass blending) the browser takes 2 min 52 s on an RTX 3060 and its frames are within 37–39 dB PSNR of the Python `wgpu` pipeline; keyframes stay exactly as painted, whereas Python re-blends the first one.
+
+Build and run it (Node 22.18+ for the tests, the `wasm32-unknown-unknown` Rust target and `wasm-bindgen-cli` 0.2.130):
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.130 --locked
+cd web
+npm install
+npm run wasm      # compiles rust/ebsynth-web into web/src/pkg (uses .rust/ from setup_env.ps1 when present)
+npm run dev       # http://localhost:5173
+npm run build     # static site in web/dist; serve it over https or localhost
+```
+
+`npm run check` runs the TypeScript check and the unit tests of the FastBlend runners. The facestyle example (1000×810, three guides) takes about 0.6 s per run in Chrome on an RTX 3060.
 
 ## Usage
 

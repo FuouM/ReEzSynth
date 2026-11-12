@@ -18,6 +18,7 @@ from ..flow.types import FlowEngineName, FlowModelName
 from ..utils.video import export_frames_to_browser_h264_mp4
 from ..utils.warp_utils import Warp
 from .common import (
+    add_image_ops_argument,
     load_video_frames,
     precomputation_config_for_engine,
     write_png_sequence,
@@ -30,7 +31,7 @@ def run(args: argparse.Namespace) -> None:
     frames = load_video_frames(args.video, args.num_frames)
     n = len(frames)
     h, w = frames[0].shape[:2]
-    warper = Warp(h, w, use_taichi=True)
+    warper = Warp(h, w, engine=args.image_ops)
 
     style0 = cv2.imread(args.style)
     if style0 is None:
@@ -133,6 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max frames before re-anchoring source (1=iterative)",
     )
     parser.add_argument("--fps", type=float, default=20.0)
+    add_image_ops_argument(parser)
     return parser
 
 

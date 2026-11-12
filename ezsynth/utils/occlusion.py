@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -94,6 +95,7 @@ def compute_flow_occlusion_masks(
     beta: float = 0.5,
     dilate: int = 1,
     coverage: bool = True,
+    engine: Literal["opencv", "wgpu"] = "opencv",
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """
     Build per-transition unreliable masks for both temporal directions.
@@ -106,6 +108,25 @@ def compute_flow_occlusion_masks(
         raise ValueError(
             f"Forward/backward flow length mismatch: {len(fwd_flows)} vs {len(bwd_flows)}"
         )
+
+    if engine == "wgpu":
+        from ..engines.backends.wgpu_backend import import_wgpu
+
+        ew = import_wgpu()
+        pairs = [
+            ew.occlusion_masks(
+                np.ascontiguousarray(fwd, dtype=np.float32),
+                np.ascontiguousarray(bwd, dtype=np.float32),
+                alpha=alpha,
+                beta=beta,
+                dilate=dilate,
+                coverage=coverage,
+            )
+            for fwd, bwd in zip(fwd_flows, bwd_flows)
+        ]
+        return [p[0] for p in pairs], [p[1] for p in pairs]
+    if engine != "opencv":
+        raise ValueError(f"Unknown occlusion mask engine {engine!r}")
 
     fwd_masks = []
     bwd_masks = []

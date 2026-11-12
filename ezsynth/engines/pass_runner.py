@@ -9,6 +9,7 @@ from tqdm import tqdm
 from ..config import DebugConfig
 from ..guide import GuideObject
 from ..precompute import PrecomputeState
+from ..utils.image_ops import resolve_image_ops
 from ..utils.io_utils import write_image
 from ..utils.occlusion import (
     composite_masked_regions,
@@ -198,16 +199,18 @@ class SynthesisPassRunner:
         key = (height, width)
         tools = self._warp_tools_cache.get(key)
         if tools is None:
-            # Keep the default pass on OpenCV remap; the Taichi warp path is only
-            # needed for explicit forward splatting.
-            use_taichi = self.engine.pipeline_config.use_forward_warping
+            pipeline_config = self.engine.pipeline_config
+            engine = resolve_image_ops(
+                self.engine.ebsynth_config.backend,
+                gpu_ops=pipeline_config.use_forward_warping,
+            )
             tools = (
-                Warp(height, width, use_taichi=use_taichi),
+                Warp(height, width, engine=engine),
                 PositionalGuide(
                     height,
                     width,
-                    use_taichi=use_taichi,
-                    use_forward_warp=self.engine.pipeline_config.use_forward_warping,
+                    engine=engine,
+                    use_forward_warp=pipeline_config.use_forward_warping,
                 ),
             )
             self._warp_tools_cache[key] = tools

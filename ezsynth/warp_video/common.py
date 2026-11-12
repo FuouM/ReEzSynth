@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -12,6 +13,17 @@ import numpy as np
 from ..config import PrecomputationConfig
 from ..flow.types import FlowEngineName, FlowModelName
 from ..utils.warp_utils import Warp
+
+
+def add_image_ops_argument(parser: argparse.ArgumentParser) -> None:
+    """``--image-ops``: engine of the forward splatting and warping ops."""
+    parser.add_argument(
+        "--image-ops",
+        type=str,
+        default="taichi",
+        choices=["taichi", "wgpu"],
+        help="Engine for forward splatting and flow warping",
+    )
 
 
 def load_video_frames(video_path: str | Path, num_frames: int) -> list[np.ndarray]:
@@ -170,8 +182,8 @@ def blended_splat_fill_holes(
         + w1.astype(np.float32) * c1[..., np.newaxis]
     )
     wmap = tw.astype(np.float32).copy()
-    if warper.use_taichi and getattr(warper, "_taichi_available", False):
-        warper.run_pull_push(raw, wmap)
+    if warper.can_splat:
+        raw, wmap = warper.run_pull_push(raw, wmap)
     div = np.maximum(wmap[..., np.newaxis], 1e-6)
     filled = (raw / div).clip(0, 255).astype(np.uint8)
     residual = (tw < 1e-5).astype(np.uint8) * 255

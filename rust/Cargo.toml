@@ -9,7 +9,7 @@ license = "MIT"
 
 [workspace.dependencies]
 ebsynth-gpu = { path = "ebsynth-gpu" }
-wgpu = "30.0.1"
+wgpu = { version = "30.0.1", default-features = false }
 bytemuck = { version = "1.25.2", features = ["derive"] }
 futures-channel = "0.3"
 pollster = "1.0.1"

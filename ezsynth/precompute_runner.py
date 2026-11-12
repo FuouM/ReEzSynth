@@ -43,12 +43,15 @@ class PrecomputeRunner:
         pipeline_cfg: PipelineConfig,
         debug_cfg: DebugConfig,
         state: PrecomputeState | None = None,
+        backend: str = "cuda",
     ) -> None:
         self.project_cfg = project_cfg
         self.precomputation_cfg = precomputation_cfg
         self.pipeline_cfg = pipeline_cfg
         self.debug_cfg = debug_cfg
         self.state = state if state is not None else PrecomputeState()
+        # Occlusion masks run on WebGPU with the wgpu synthesis backend.
+        self.occlusion_engine = "wgpu" if backend == "wgpu" else "opencv"
 
     def run(self, content_frames: list[np.ndarray]) -> PrecomputeState:
         if self.uses_bidirectional_flow():
@@ -193,6 +196,7 @@ class PrecomputeRunner:
                     beta=self.pipeline_cfg.occlusion_consistency_beta,
                     dilate=self.pipeline_cfg.occlusion_mask_dilate,
                     coverage=self.pipeline_cfg.occlusion_use_coverage_mask,
+                    engine=self.occlusion_engine,
                 )
             )
             save_array_cache(self.state.fwd_occlusion_masks, fwd_dir)

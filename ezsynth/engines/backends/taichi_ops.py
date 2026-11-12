@@ -198,8 +198,12 @@ def get_val_reflect(src: ti.template(), y: int, x: int, c: int, h: int, w: int):
     ry = ti.max(0, ti.min(h - 1, ry))
     rx = ti.max(0, ti.min(w - 1, rx))
 
+    # A conditional expression compiles both branches in Taichi; ti.static needs `if`.
     val = 0.0
-    val = src[ry, rx, c] if ti.static(len(src.shape) > 2) else src[ry, rx]
+    if ti.static(len(src.shape) > 2):  # noqa: SIM108
+        val = src[ry, rx, c]
+    else:
+        val = src[ry, rx]
     return float(val)
 
 
@@ -397,10 +401,12 @@ def push_kernel(
     dst_weight: ti.types.ndarray(),
 ):
     h_dst, w_dst = dst_color.shape[0], dst_color.shape[1]
+    h_src, w_src = src_color.shape[0], src_color.shape[1]
     for i, j in ti.ndrange(h_dst, w_dst):
         dw = ti.max(0.0, ti.min(1.0, finite_or_zero(float(dst_weight[i, j]))))
         if dw < 0.95:
-            si, sj = i // 2, j // 2
+            # Odd sizes: the last fine row/column maps past the coarse level.
+            si, sj = ti.min(i // 2, h_src - 1), ti.min(j // 2, w_src - 1)
             sw = finite_or_zero(float(src_weight[si, sj]))
             if sw > 1e-4:
                 alpha = ti.max(0.0, ti.min(1.0, 1.0 - dw))

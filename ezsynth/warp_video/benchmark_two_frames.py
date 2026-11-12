@@ -18,6 +18,7 @@ from ..flow.run import compute_optical_flow_sequence
 from ..flow.types import FlowEngineName, FlowModelName
 from ..utils.viz_utils import flow_to_image
 from ..utils.warp_utils import Warp
+from .common import add_image_ops_argument
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def run(args: argparse.Namespace) -> None:
 
             if warper is None:
                 h, w = frame1.shape[:2]
-                warper = Warp(h, w, use_taichi=args.use_taichi)
+                warper = Warp(h, w, engine=args.image_ops)
 
             style_img = None
             if args.style and os.path.exists(args.style):
@@ -149,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--engine", type=str, default="NeuFlow", choices=["RAFT", "NeuFlow", "OpenCV"]
     )
     parser.add_argument("--flow-model", type=str, default="neuflow_mixed")
-    parser.add_argument("--use_taichi", action="store_true", default=True)
+    add_image_ops_argument(parser)
     parser.add_argument(
         "--output",
         type=str,

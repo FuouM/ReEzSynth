@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .blend_logic import Reconstructor, hist_blender
+from .image_ops import resolve_image_ops
 from .progress import report_progress
 from .warp_utils import Warp
 
@@ -23,10 +24,14 @@ class Blender:
         poisson_grad_weight_ab=0.5,
         use_taichi_ops=False,
         use_forward_warping=False,
+        backend="cuda",
     ):
-        use_taichi = use_taichi_ops or use_forward_warping
-        self.warp = Warp(height, width, use_taichi=use_taichi)
-        self.use_taichi_ops = use_taichi_ops
+        engine = resolve_image_ops(
+            backend, gpu_ops=use_taichi_ops or use_forward_warping
+        )
+        self.warp = Warp(height, width, engine=engine)
+        # Histogram blending runs on WebGPU with the wgpu backend, else on OpenCV.
+        self.hist_engine = "wgpu" if engine == "wgpu" else "opencv"
         self.use_forward_warping = use_forward_warping
         self.reconstructor = Reconstructor(
             solver=poisson_solver,
@@ -93,7 +98,12 @@ class Blender:
             # The old code paired the error/mask for frame `i+1` with the styled result from frame `i`.
             # This creates a blended result for the keyframe itself.
             hist_blends.append(
-                hist_blender(fwd_frames[i], bwd_frames[i], warped_selection_masks[i])
+                hist_blender(
+                    fwd_frames[i],
+                    bwd_frames[i],
+                    warped_selection_masks[i],
+                    engine=self.hist_engine,
+                )
             )
 
         # The reconstructor also gets the full, misaligned frame lists.
