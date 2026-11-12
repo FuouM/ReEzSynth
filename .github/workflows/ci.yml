@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main, overhaul]
+    branches: [main]
     tags: ["v*"]
+    # Docs-only changes skip CI (path filters do not apply to tag pushes).
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "NOTICE"]
   pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "NOTICE"]
 
 jobs:
   lint:
