@@ -1,0 +1,29 @@
+{
+  "name": "reezsynth-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ReEzSynth in the browser: EbSynth image synthesis and FastBlend video on WebGPU.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "wasm": "node scripts/build-wasm.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --test test/*.test.mjs",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "bootstrap-icons": "^1.13.1",
+    "fflate": "^0.8.2",
+    "mediabunny": "^1.65.0",
+    "solid-js": "^1.9.17",
+    "soulwindow": "github:FuouM/soulwindow#v0.2.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.11.14"
+  }
+}

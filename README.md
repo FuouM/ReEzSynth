@@ -152,14 +152,27 @@ A prototype `ebsynth_torch-0.0.0-cp310-cp310-win_amd64.whl` exists in the Releas
 
 ## Web
 
-`web/` is a browser front end for single-image synthesis: style image, any number of guide pairs and the synthesis parameters; everything runs locally on the GPU through WebGPU (current Chrome/Edge; Firefox/Safari with WebGPU enabled). Build and serve it:
+`web/` is ReEzSynth in the browser, built with Solid, Vite and the [SoulWindow](https://github.com/FuouM/soulwindow) design system. Everything runs locally on the GPU through WebGPU (current Chrome/Edge; Firefox/Safari with WebGPU enabled); images and videos are never uploaded. It has three modes:
 
-```powershell
-.\web\build.ps1                     # needs the local toolchain and wasm-bindgen-cli 0.2.130
-python -m http.server -d web 8000   # then open http://localhost:8000
+- **Image**: EbSynth synthesis of one image from a style image, any number of guide pairs and the synthesis parameters.
+- **Keyframes → video**: FastBlend interpolation. Load a video (or its frames), stylize a few frames yourself, add them back as keyframes (a number in the file name places each one), and every frame is filled in.
+- **Deflicker video**: FastBlend blending of a video stylized frame by frame, guided by the original.
+
+Videos are decoded and encoded in the browser with WebCodecs ([mediabunny](https://mediabunny.dev)): MP4/WebM/MOV in, H.264 MP4 (or WebM) or a zip of PNGs out. Frames are kept in memory at the working size (default 768 px on the longer side), so long or large videos need a lower working size or a frame limit. Browser video uses FastBlend only: EbSynth's optical-flow video pipeline needs the Python package.
+
+Build and run it (Node 20+, the `wasm32-unknown-unknown` Rust target and `wasm-bindgen-cli` 0.2.130):
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.130 --locked
+cd web
+npm install
+npm run wasm      # compiles rust/ebsynth-web into web/src/pkg (uses .rust/ from setup_env.ps1 when present)
+npm run dev       # http://localhost:5173
+npm run build     # static site in web/dist; serve it over https or localhost
 ```
 
-The facestyle example (1000×810, three guides) takes about 0.6 s per run in Chrome on an RTX 3060.
+`npm run check` runs the TypeScript check and the unit tests of the FastBlend runners. The facestyle example (1000×810, three guides) takes about 0.6 s per run in Chrome on an RTX 3060.
 
 ## Usage
 

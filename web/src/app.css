@@ -1,0 +1,302 @@
+/* ReEzSynth Web: layout on top of SoulWindow's editor layer. Tokens only; app rules live in
+ * @layer app (see SoulWindow AGENTS.md). */
+@layer app {
+  .rz-modes {
+    border-bottom: none;
+    background: transparent;
+  }
+  .rz-modes .daw-tab {
+    font: inherit;
+    border-top: none;
+    border-bottom: none;
+    cursor: pointer;
+    gap: var(--space-2);
+  }
+  .rz-modes .daw-tab:disabled {
+    opacity: var(--sw-disabled-opacity);
+    cursor: default;
+  }
+  .rz-run {
+    min-width: 116px;
+    justify-content: center;
+  }
+  .rz-run:disabled {
+    opacity: var(--sw-disabled-opacity);
+    cursor: not-allowed;
+  }
+
+  .rz-gpu-error {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: var(--ds-danger-bg);
+    color: var(--ds-danger-text);
+    border-bottom: 1px solid var(--ds-danger-border);
+    flex: none;
+  }
+
+  /* Docks scroll on their own; the right dock is a little narrower. */
+  .rz-dock-right {
+    width: 340px;
+  }
+  .rz-dock-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    overflow: auto;
+    min-height: 0;
+    flex: 1 1 0;
+  }
+  .rz-help {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-sm);
+    line-height: 1.4;
+    user-select: text;
+  }
+  .rz-help code {
+    font-family: var(--sw-font-mono);
+  }
+  .rz-pick {
+    margin-bottom: var(--space-3);
+  }
+
+  .rz-input-card {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    min-width: 0;
+  }
+  .rz-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-1) var(--space-3);
+    margin: 0;
+    font-size: var(--font-sm);
+    min-width: 0;
+  }
+  .rz-facts dt {
+    color: var(--sys-text-muted);
+  }
+  .rz-facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .rz-thumb {
+    display: block;
+    width: 96px;
+    height: 64px;
+    object-fit: contain;
+    background: var(--sys-window-bg);
+    border: 1px solid var(--sys-border-medium);
+    flex: none;
+  }
+  .rz-thumb--empty {
+    display: grid;
+    place-items: center;
+    color: var(--sys-text-muted);
+    font-size: var(--font-xs);
+  }
+
+  .rz-guide {
+    border-top: 1px solid var(--sys-border-light);
+    padding: var(--space-3) 0;
+  }
+  .rz-guide:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+  .rz-guide-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+  .rz-guide-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+  .rz-guide-slot {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+  .rz-guide-slot .rz-thumb {
+    width: 100%;
+    height: 72px;
+  }
+  .rz-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-sm);
+    color: var(--sys-text-secondary);
+  }
+  .rz-number {
+    width: 76px;
+    height: var(--sw-control-h);
+    text-align: right;
+  }
+  .rz-number--sm {
+    width: 64px;
+    height: var(--sw-control-h-sm);
+  }
+
+  .rz-key {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2);
+    border: 1px solid transparent;
+  }
+  .rz-key--current {
+    border-color: var(--sys-border-focus);
+    background: var(--sys-highlight-bg);
+    color: var(--sys-highlight-text);
+  }
+  .rz-key-thumb {
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+  .rz-key-thumb .rz-thumb {
+    width: 72px;
+    height: 48px;
+  }
+  .rz-key-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    flex: 1 1 0;
+    font-size: var(--font-sm);
+  }
+
+  /* Monitor */
+  .rz-stage {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    min-height: 0;
+    flex: 1 1 0;
+    background: var(--sys-window-bg);
+    outline: none;
+  }
+  .rz-stage:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--sys-border-focus);
+  }
+  .rz-canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .rz-empty {
+    max-width: 440px;
+    text-align: left;
+    line-height: 1.45;
+    user-select: text;
+  }
+  .rz-empty ol {
+    margin: var(--space-2) 0 0;
+    padding-left: var(--space-6);
+  }
+  .rz-scrub {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-top: 1px solid var(--sys-border-dark);
+    flex: none;
+  }
+  .rz-scrub-track {
+    position: relative;
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+  }
+  .rz-scrub-track input[type="range"] {
+    width: 100%;
+    accent-color: var(--sys-accent);
+  }
+  .rz-marks {
+    position: absolute;
+    inset: 0 8px;
+    pointer-events: none;
+  }
+  .rz-mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--sys-accent);
+    opacity: 0.8;
+  }
+  .rz-scrub-label {
+    min-width: 72px;
+    text-align: right;
+    font-size: var(--font-sm);
+  }
+
+  .rz-progress {
+    width: 160px;
+    height: 10px;
+    accent-color: var(--sys-accent);
+    flex: none;
+  }
+  .rz-error {
+    color: var(--sys-error-text);
+  }
+  .rz-adapter {
+    max-width: 320px;
+  }
+  .rz-about p,
+  .rz-about ul {
+    margin: 0 0 var(--space-3);
+    line-height: 1.45;
+  }
+
+  /* Narrow screens: one column that scrolls, docks first, monitor in the middle. */
+  @media (max-width: 900px) {
+    .daw-app {
+      height: auto;
+      min-height: 100dvh;
+      overflow: visible;
+    }
+    .daw-upper {
+      flex-direction: column;
+      flex: none;
+    }
+    .daw-dock,
+    .rz-dock-right {
+      width: auto;
+    }
+    .rz-dock-body {
+      overflow: visible;
+      flex: none;
+    }
+    .daw-dock {
+      flex: none;
+    }
+    .daw-menubar .daw-doc-title {
+      display: none;
+    }
+    .daw-center {
+      min-height: 60vh;
+      order: -1;
+    }
+    .rz-modes .daw-tab {
+      padding-inline: var(--space-2);
+    }
+    .daw-transport {
+      flex-wrap: wrap;
+      height: auto;
+    }
+  }
+}
