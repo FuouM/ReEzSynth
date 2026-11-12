@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import { soulwindow } from "soulwindow/vite";
 
@@ -6,9 +6,7 @@ export default defineConfig({
   base: "./",
   plugins: [
     solid(),
-    // TODO(soulwindow): runtime/vite.d.ts types transformIndexHtml as unknown, which Vite's
-    // Plugin type rejects; drop the cast once it is typed as IndexHtmlTransform upstream.
-    soulwindow({ storagePrefix: "reezsynth-", density: "compact" }) as Plugin,
+    soulwindow({ storagePrefix: "reezsynth-", density: "compact" }),
   ],
   // mediabunny is loaded as-is (esbuild pre-bundling gains nothing for an ESM package).
   optimizeDeps: { exclude: ["mediabunny"] },
