@@ -60,7 +60,7 @@ test("each frame comes from the keyframe of its pass, blended by distance betwee
   // The fake returns the style, so every frame equals its keyframe's colour.
   const synth = async (style, guides) => {
     calls.push(guides.map((g) => g.weight));
-    return style;
+    return { image: style };
   };
   const keys = new Map([
     [1, frame(100)],
@@ -79,7 +79,7 @@ test("with flow, passes add positional and warp guides and ask for the right tra
   const asked = [];
   const zero = { forward: async (i) => (asked.push(i), { width: 2, height: 2, data: new Float32Array(8) }) };
   let guides = 0;
-  const synth = async (style, g) => ((guides = g.length), style);
+  const synth = async (style, g) => ((guides = g.length), { image: style });
   await synthesizeVideo(video(4), new Map([[1, frame(9)]]), synth, { weights: DEFAULT_WEIGHTS, flow: zero });
   assert.equal(guides, 4);
   // Reverse pass 1→0 uses flow 0 (0→1); forward pass 1→2→3 uses flows 1 and 2.
@@ -91,7 +91,7 @@ test("the warp guide is the previous stylized frame, not the keyframe", async ()
   let n = 0;
   const synth = async (style, g) => {
     targets.push(g[3].target[0]);
-    return frame(50 + ++n);
+    return { image: frame(50 + ++n) };
   };
   const zero = { forward: async () => ({ width: 2, height: 2, data: new Float32Array(8) }) };
   await synthesizeVideo(video(4), new Map([[0, frame(10)]]), synth, { weights: DEFAULT_WEIGHTS, flow: zero });
@@ -101,6 +101,20 @@ test("the warp guide is the previous stylized frame, not the keyframe", async ()
 
 test("cancelling stops between frames", async () => {
   const ac = new AbortController();
-  const synth = async (style) => (ac.abort(), style);
+  const synth = async (style) => (ac.abort(), { image: style });
   await assert.rejects(synthesizeVideo(video(5), new Map([[0, frame(1)]]), synth, { weights: DEFAULT_WEIGHTS, signal: ac.signal }), Cancelled);
+});
+
+test("with error maps, frames between keyframes take the lower-error pass", async () => {
+  // Forward pass outputs 40 with error 1; backward outputs 220 with error 5: forward wins.
+  const synth = async (style) => ({ image: style[0] === 10 ? frame(40) : frame(220), error: new Float32Array(4).fill(style[0] === 10 ? 1 : 5) });
+  const keys = new Map([
+    [0, frame(10)],
+    [3, frame(250)],
+  ]);
+  const out = await synthesizeVideo(video(4), keys, synth, { weights: DEFAULT_WEIGHTS, blend: "histogram" });
+  // Histogram blending keeps the chosen pass's statistics: a uniform 40 stays 40.
+  assert.deepEqual([out[1][0], out[2][0]], [40, 40]);
+  const dist = await synthesizeVideo(video(4), keys, synth, { weights: DEFAULT_WEIGHTS, blend: "distance" });
+  assert.notEqual(dist[1][0], 40);
 });

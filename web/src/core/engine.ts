@@ -107,3 +107,29 @@ export async function synthesizeRgb(
   );
   return rgb(out);
 }
+
+/** synthesizeRgb that also returns the per-pixel patch error (target size). */
+export async function synthesizeRgbWithError(
+  engine: Engine,
+  style: Uint8Array,
+  sw: number,
+  sh: number,
+  guides: RgbGuide[],
+  tw: number,
+  th: number,
+  params: object,
+): Promise<{ image: Uint8Array; error: Float32Array }> {
+  const out = (await engine.synth.synthesizeWithError(
+    rgba(style),
+    sw,
+    sh,
+    guides.map((g) => rgba(g.source)),
+    guides.map((g) => rgba(g.target)),
+    new Float32Array(guides.map((g) => g.weight)),
+    tw,
+    th,
+    { ...params },
+    null,
+  )) as { image: Uint8Array; error: Float32Array };
+  return { image: rgb(out.image), error: out.error };
+}

@@ -4,10 +4,12 @@
 // frame: an edge map and the frame itself, and, when optical flow is available, a positional
 // guide and the previous stylized frame warped onto this one. Frames before the first keyframe
 // run backwards from it, frames after the last run forwards, and frames between two keyframes
-// run both ways and are blended by distance (Python blends with error maps and Poisson
-// reconstruction; that can replace blendByDistance later).
+// run both ways and are blended: by error maps, histogram matching and Poisson fusion like
+// ezsynth's Blender (passBlend.ts) when the synthesizer reports errors, else by distance.
 //
-// No imports: the synthesizer and the flow source are passed in, so this runs in Node tests.
+// The synthesizer and the flow source are passed in, so this runs in Node tests.
+
+import { blendPasses, type PoissonOptions } from "./passBlend.ts";
 
 /** RGB frames, width*height*3 bytes each. */
 export interface Frames {
@@ -37,8 +39,15 @@ export interface GuideInput {
   weight: number;
 }
 
-/** Stylize one frame: style and guides are RGB of the frame size; resolves to RGB. */
-export type SynthFn = (style: Uint8Array, guides: GuideInput[]) => Promise<Uint8Array>;
+export interface SynthOutput {
+  /** RGB result. */
+  image: Uint8Array;
+  /** Per-pixel patch error (width*height), used to blend the two passes. */
+  error?: Float32Array;
+}
+
+/** Stylize one frame: style and guides are RGB of the frame size. */
+export type SynthFn = (style: Uint8Array, guides: GuideInput[]) => Promise<SynthOutput>;
 
 export interface GuideWeights {
   edge: number;
@@ -235,8 +244,13 @@ export function blendByDistance(a: Uint8Array, b: Uint8Array, wa: number): Uint8
 
 // ── Passes ─────────────────────────────────────────────────────────────────────────────────
 
+export type PassBlend = "poisson" | "histogram" | "distance";
+
 export interface VideoOptions {
   weights: GuideWeights;
+  /** How the two passes between keyframes are combined (poisson/histogram need errors). */
+  blend?: PassBlend;
+  poisson?: PoissonOptions;
   flow?: FlowProvider;
   signal?: AbortSignal;
   /** Frames synthesized so far, out of the total for this run. */
@@ -260,11 +274,11 @@ interface PassContext {
  * One pass (pass_runner.run): walk from keyframe `key` towards `to`, synthesizing every frame
  * strictly after the keyframe up to and including `to`. Returns frames in walk order.
  */
-async function runPass(ctx: PassContext, key: number, to: number): Promise<Uint8Array[]> {
+async function runPass(ctx: PassContext, key: number, to: number): Promise<SynthOutput[]> {
   const step = to >= key ? 1 : -1;
   const style = ctx.keyframes.get(key)!;
   const { video, opts } = ctx;
-  const out: Uint8Array[] = [];
+  const out: SynthOutput[] = [];
   let previous = style;
   for (let source = key; source !== to; source += step) {
     if (opts.signal?.aborted) throw new Cancelled();
@@ -284,7 +298,7 @@ async function runPass(ctx: PassContext, key: number, to: number): Promise<Uint8
     }
     const frame = await ctx.synth(style, guides);
     out.push(frame);
-    previous = frame;
+    previous = frame.image;
     ctx.tick();
   }
   return out;
@@ -325,18 +339,36 @@ export async function synthesizeVideo(video: Frames, keyframes: Map<number, Uint
     if (seq.mode !== "blend") {
       const frames = await runPass(ctx, seq.from, seq.to);
       const step = seq.to >= seq.from ? 1 : -1;
-      frames.forEach((f, j) => put(seq.from + step * (j + 1), f));
+      frames.forEach((f, j) => put(seq.from + step * (j + 1), f.image));
       continue;
     }
     const { from: l, to: r } = seq;
     // Both passes stop one short of the opposite keyframe, which stays as painted.
     const fwd = await runPass(ctx, l, r - 1);
     const bwd = await runPass(ctx, r, l + 1);
-    for (let m = l + 1; m < r; m++) {
-      const a = fwd[m - l - 1];
-      const b = bwd[r - m - 1];
-      put(m, blendByDistance(a, b, (r - m) / (r - l)));
+    // Frame m: fwd[m - l - 1], bwd[r - m - 1].
+    const f = Array.from({ length: r - l - 1 }, (_, j) => fwd[j]);
+    const b = Array.from({ length: r - l - 1 }, (_, j) => bwd[r - l - 2 - j]);
+    const mode = opts.blend ?? "poisson";
+    const errors = f.every((x) => x.error) && b.every((x) => x.error);
+    if (mode === "distance" || !errors) {
+      for (let m = l + 1; m < r; m++) put(m, blendByDistance(f[m - l - 1].image, b[m - l - 1].image, (r - m) / (r - l)));
+      continue;
     }
+    const flow = opts.flow;
+    const blended = await blendPasses({
+      width: video.width,
+      height: video.height,
+      fwd: f.map((x) => x.image),
+      bwd: b.map((x) => x.image),
+      errFwd: f.map((x) => x.error!),
+      errBwd: b.map((x) => x.error!),
+      first: l + 1,
+      // Warp.run_warping_float_map(prev_mask, flow[m - 1]) in Blender.warp_masks.
+      warpMask: flow ? async (prev, transition) => warpFloat(prev, 1, await flow.forward(transition)) : undefined,
+      poisson: mode === "poisson" ? (opts.poisson ?? {}) : false,
+    });
+    blended.forEach((img, j) => put(l + 1 + j, img));
   }
   return output.map((f, i) => f ?? video.frames[i]);
 }

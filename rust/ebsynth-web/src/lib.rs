@@ -239,6 +239,65 @@ impl WebSynth {
         options: JsValue,
         progress: Option<Function>,
     ) -> Result<js_sys::Promise, JsError> {
+        self.run(
+            style,
+            (style_width, style_height),
+            source_guides,
+            target_guides,
+            weights,
+            (target_width, target_height),
+            options,
+            progress,
+            false,
+        )
+    }
+
+    /// Like `synthesize`, but resolves to `{ image, error }`: the RGBA result and its
+    /// per-pixel patch error (`Float32Array`, target_width x target_height), which the video
+    /// pipeline uses to choose between forward and backward passes.
+    #[allow(clippy::too_many_arguments)]
+    #[wasm_bindgen(js_name = synthesizeWithError)]
+    pub fn synthesize_with_error(
+        &self,
+        style: Vec<u8>,
+        style_width: u32,
+        style_height: u32,
+        source_guides: Array,
+        target_guides: Array,
+        weights: Vec<f32>,
+        target_width: u32,
+        target_height: u32,
+        options: JsValue,
+        progress: Option<Function>,
+    ) -> Result<js_sys::Promise, JsError> {
+        self.run(
+            style,
+            (style_width, style_height),
+            source_guides,
+            target_guides,
+            weights,
+            (target_width, target_height),
+            options,
+            progress,
+            true,
+        )
+    }
+}
+
+impl WebSynth {
+    #[allow(clippy::too_many_arguments)]
+    fn run(
+        &self,
+        style: Vec<u8>,
+        (style_width, style_height): (u32, u32),
+        source_guides: Array,
+        target_guides: Array,
+        weights: Vec<f32>,
+        (target_width, target_height): (u32, u32),
+        options: JsValue,
+        progress: Option<Function>,
+        with_error: bool,
+    ) -> Result<js_sys::Promise, JsError> {
         let p = params(&options)?;
         let sources = byte_arrays(&source_guides, "source guides")?;
         let targets = byte_arrays(&target_guides, "target guides")?;
@@ -287,7 +346,19 @@ impl WebSynth {
             .await;
             *inner.borrow_mut() = Some(synth);
             let out = out.map_err(|e| JsError::new(&e.to_string()))?;
-            Ok(Uint8Array::from(rgb_to_rgba(&out.image).as_slice()).into())
+            let image: JsValue = Uint8Array::from(rgb_to_rgba(&out.image).as_slice()).into();
+            if !with_error {
+                return Ok(image);
+            }
+            let result = Object::new();
+            Reflect::set(&result, &"image".into(), &image).map_err(|_| JsError::new("result"))?;
+            Reflect::set(
+                &result,
+                &"error".into(),
+                &Float32Array::from(out.error.as_slice()).into(),
+            )
+            .map_err(|_| JsError::new("result"))?;
+            Ok(result.into())
         }))
     }
 }

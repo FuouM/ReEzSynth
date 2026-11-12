@@ -7,8 +7,8 @@ import { FileButton, NumberRow, SelectRow, ToggleRow } from "../components/Field
 import { SYNTH_DEFAULTS, SynthParamRows } from "../components/SynthParams";
 import { BlendSettingsRows, createBlendSettings, createLoadSettings, ExportBox, FrameSetBox, loadAsJob, LoadSettingsRows } from "../components/VideoPanels";
 import { Thumb, Viewer, ViewerEmpty, type Layer } from "../components/Viewer";
-import { createFastBlend, fastBlendBatchLimit, loadEngine, synthesizeRgb } from "../core/engine";
-import { synthesizeVideo } from "../core/ebsynthVideo";
+import { createFastBlend, fastBlendBatchLimit, loadEngine, synthesizeRgbWithError } from "../core/engine";
+import { synthesizeVideo, type PassBlend } from "../core/ebsynthVideo";
 import { createPersisted } from "../core/persist";
 import { blendSequence, interpolateKeyframes } from "../core/fastblend";
 import { isVideoFile, keyframeIndex, type FrameSet } from "../core/frames";
@@ -36,6 +36,7 @@ export function KeyframeMode(props: ModeProps) {
     imageWeight: 6,
     deflicker: true,
     deflickerWindow: 3,
+    passBlend: "poisson" as PassBlend,
   });
   const [synthParams, setSynthParams] = createPersisted("keyframes-synth", { ...SYNTH_DEFAULTS });
   const [result, setResult] = createSignal<FrameSet | null>(null);
@@ -143,9 +144,10 @@ export function KeyframeMode(props: ModeProps) {
       const frames = await synthesizeVideo(
         v,
         new Map(keys.map((k) => [k.index, k.data])),
-        (style, guides) => synthesizeRgb(e, style, v.width, v.height, guides, v.width, v.height, params),
+        (style, guides) => synthesizeRgbWithError(e, style, v.width, v.height, guides, v.width, v.height, params),
         {
           weights: { edge: method.edgeWeight, image: method.imageWeight, pos: 0, warp: 0 },
+          blend: method.passBlend,
           signal: c.signal,
           onProgress: c.progress,
           onFrame: (i, f) => {
@@ -301,6 +303,18 @@ export function KeyframeMode(props: ModeProps) {
               <NumberRow label="Edge weight" value={method.edgeWeight} min={0} step={0.5} onChange={(v) => setMethod("edgeWeight", Math.max(0, v))} />
               <NumberRow divider label="Colour weight" desc="How closely each frame's colours steer patch choice" value={method.imageWeight} min={0} step={0.5} onChange={(v) => setMethod("imageWeight", Math.max(0, v))} />
               <p class="ds-muted rz-help rz-help--row">Positional and temporal (warp) guides need optical flow, which is not in the browser yet.</p>
+              <SelectRow
+                divider
+                label="Pass blending"
+                desc="How the forward and backward passes between two keyframes are combined"
+                value={method.passBlend}
+                options={[
+                  { value: "poisson", label: "Error maps + Poisson" },
+                  { value: "histogram", label: "Error maps + histogram" },
+                  { value: "distance", label: "By distance" },
+                ]}
+                onChange={(v) => setMethod("passBlend", v)}
+              />
               <ToggleRow divider label="Deflicker afterwards" checked={method.deflicker} onChange={(v) => setMethod("deflicker", v)} />
               <Show when={method.deflicker}>
                 <NumberRow divider label="Deflicker window" desc="Neighbours on each side (FastBlend)" value={method.deflickerWindow} min={1} max={30} onChange={(v) => setMethod("deflickerWindow", Math.max(1, v))} />
