@@ -262,7 +262,9 @@ Single image:
 from ezsynth.api import ImageSynth, RunConfig, load_guide
 from ezsynth.utils.io_utils import write_image
 
-synth = ImageSynth(style_image="path/to/style.png", config=RunConfig(patch_size=7, uniformity=4000))
+synth = ImageSynth(
+    style_image="path/to/style.png", config=RunConfig(patch_size=7, uniformity=4000)
+)
 image, error = synth.run(
     guides=[
         load_guide("source_guide1.png", "target_guide1.png", weight=2.0),
