@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from ...engines.backends.wgpu_backend import import_wgpu
+from ...utils.wgpu_runtime import import_wgpu
 
 
 def staging_device(gpu_id: int) -> torch.device:

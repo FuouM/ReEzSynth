@@ -1,7 +1,7 @@
 """FastBlend on the JIT-built CUDA extension (sources in ``cuda_src/``).
 
 This is FastBlend's own small extension (remap / patch_error / pairwise_patch_error),
-separate from the ``ezsynth/ebsynth_extension`` synthesis extension.
+separate from the ``kernels/synth/cuda_src`` synthesis extension.
 """
 
 from __future__ import annotations

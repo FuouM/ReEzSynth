@@ -8,9 +8,9 @@ from ezsynth.consts import (
     COST_FUNCTION_SSD,
     EBSYNTH_VOTEMODE_WEIGHTED,
 )
-from ezsynth.engines.backends.pytorch_backend import PyTorchBackend
-from ezsynth.torch_ops import omega_ops
-from ezsynth.torch_ops.patch_memory import (
+from ezsynth.kernels.synth.torch import Backend as TorchBackend
+from ezsynth.kernels.synth.torch_ops import omega_ops
+from ezsynth.kernels.synth.torch_ops.patch_memory import (
     BUDGET_ENV,
     STRATEGY_ENV,
     LevelShape,
@@ -18,7 +18,7 @@ from ezsynth.torch_ops.patch_memory import (
     estimate_materialized_bytes,
     plan_level,
 )
-from ezsynth.torch_ops.patch_ops import ImagePatches, extract_patches
+from ezsynth.kernels.synth.torch_ops.patch_ops import ImagePatches, extract_patches
 from ezsynth.utils.gpu_memory import apply_gpu_memory_limit
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
@@ -157,7 +157,7 @@ def _inputs(device: torch.device, with_modulation: bool):
 
 
 def _run(device, residual, cost, bilateral, inputs, **params):
-    backend = PyTorchBackend(
+    backend = TorchBackend(
         EbsynthParamsConfig(
             use_bilateral=bilateral, search_pruning_threshold=40.0, **params
         ),

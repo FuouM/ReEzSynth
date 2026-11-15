@@ -10,11 +10,11 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from ..engines.backends.common import get_auto_torch_device
 from ..raft.raft import RAFT
 from ..raft.utils import InputPadder
 from ..utils.gpu_memory import apply_gpu_memory_limit
 from ..utils.progress import report_progress
+from ..utils.torch_device import get_auto_torch_device
 from .types import FlowTorchDevice, RaftCheckpointName
 
 logger = logging.getLogger(__name__)

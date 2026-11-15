@@ -18,7 +18,7 @@ ignore = [
 # immediately inside the same loop iteration, so the loop variable is never
 # read late. Revisit if closures are ever deferred or run asynchronously.
 "ezsynth/engines/synthesis_engine.py" = ["B023"]
-"ezsynth/engines/backends/pytorch_backend.py" = ["B023"]
-"ezsynth/engines/backends/taichi_backend.py" = ["B023"]
+"ezsynth/kernels/synth/torch.py" = ["B023"]
+"ezsynth/kernels/synth/taichi.py" = ["B023"]
 # Opt-in profiler report printed from an atexit hook (logging may already be shut down).
-"ezsynth/torch_ops/microprofile.py" = ["T20"]
+"ezsynth/kernels/synth/torch_ops/microprofile.py" = ["T20"]

@@ -13,6 +13,12 @@
 - Native extension sources moved `ebsynth_extension/` → `ezsynth/ebsynth_extension/`; `ebsynth_torch_loader.py` removed (use `ezsynth.native.ensure_extension_loaded()`).
 - The project installs as a package (`uv sync` installs it editable); the root `__init__.py` remains only as the ComfyUI entry point.
 - The prototype `ebsynth_torch` wheel in Releases no longer matches the supported PyTorch; wheels without `compiled_with_cuda()` are treated as CPU-only.
+- Compute kernels are grouped by operation family under `ezsynth/kernels/`, one module per backend:
+  - `synth` (`cuda`, `torch`, `taichi`, `wgpu`): was `ezsynth/engines/backends/`, `ezsynth/torch_ops/`, `ezsynth/ebsynth_extension/` (now `kernels/synth/cuda_src/`) and `ezsynth/native.py` (now `kernels/synth/cuda_loader.py`). Each module's class is `Backend`; `kernels.synth.create(backend, ...)` builds it.
+  - `fastblend` (`cuda`, `cupy`, `taichi`, `wgpu`): was `FastBlend/src/backends/`, `FastBlend/fastblend_extension/` (now `kernels/fastblend/cuda_src/`) and `FastBlend/src/runtime/`. Each module has `PyramidPatchMatcher` and `staging_device()`; `resolve()` / `build_pyramid_matcher()` replace `resolve_fastblend_backend` / `build_pyramid_patch_matcher`.
+  - `imageops` (`opencv`, `taichi`, `wgpu`): was `ezsynth/utils/image_ops.py` and `ezsynth/engines/backends/taichi_ops.py`.
+  - `ezsynth.utils.wgpu_runtime` owns the `ezsynth_wgpu` import; `get_auto_torch_device` is in `ezsynth.utils.torch_device`; `grid_sample_bilinear_pixel` is `ezsynth.flow.grid_sample`.
+- Fail fast instead of substituting: the Taichi image ops raise on nearest-neighbour warps (NNF propagation warps on OpenCV or wgpu), `poisson_solver="taichi-cg"` without Taichi raises (it returned zeros), and `Warp` accepts only linear or nearest interpolation.
 
 ### Added
 - GPU memory budget: outside ComfyUI, the PyTorch CUDA allocator is capped from the memory free at startup, keeping 1.5 GiB for other applications (`EZSYNTH_GPU_MEMORY_*` overrides).

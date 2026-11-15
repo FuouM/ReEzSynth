@@ -107,7 +107,7 @@ With `wgpu` the video pipeline's flow warping, forward splatting, histogram blen
 
 ### `cuda` / `cpu` native extension
 
-The `ebsynth_torch` C++/CUDA extension (`ezsynth/ebsynth_extension/`) is JIT-compiled the first time the `cuda` or `cpu` backend is used, then cached by PyTorch.
+The `ebsynth_torch` C++/CUDA extension (`ezsynth/kernels/synth/cuda_src/`) is JIT-compiled the first time the `cuda` or `cpu` backend is used, then cached by PyTorch.
 
 - **Compiler**: C++20 (Visual Studio 2022 "Desktop development with C++" on Windows, GCC 10+ on Linux).
 - **CUDA kernels**: CUDA Toolkit 12.4 or newer. The `.cu` files include no PyTorch headers and compile as C++17.

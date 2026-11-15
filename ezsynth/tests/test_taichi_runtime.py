@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = """
 import taichi as ti
 from ezsynth.utils import taichi_runtime as rt
-from ezsynth.engines.backends import taichi_backend as ez
+from ezsynth.kernels.synth import taichi as ez
 from ezsynth.kernels.fastblend import taichi as fb
 
 assert rt.get_ti_arch("cpu") == ti.cpu

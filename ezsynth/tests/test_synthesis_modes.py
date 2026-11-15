@@ -7,11 +7,14 @@ import torch
 from ezsynth.api import ImageSynth, RunConfig
 from ezsynth.config import EbsynthParamsConfig, PipelineConfig
 from ezsynth.consts import COST_FUNCTION_SAD
-from ezsynth.engines.backends import pytorch_backend
-from ezsynth.engines.backends.cuda_backend import validate_native_options
 from ezsynth.engines.synthesis_engine import EbsynthEngine
 from ezsynth.guide import GuideObject, load_guide
-from ezsynth.torch_ops.patch_ops import compute_patch_ssd_vectorized, extract_patches
+from ezsynth.kernels.synth import torch as torch_backend
+from ezsynth.kernels.synth.cuda import validate_native_options
+from ezsynth.kernels.synth.torch_ops.patch_ops import (
+    compute_patch_ssd_vectorized,
+    extract_patches,
+)
 from ezsynth.utils import io_utils
 from ezsynth.utils.progress import progress_hook
 
@@ -31,7 +34,7 @@ SEARCH_MODES = [("jfa", 3), ("multicand", 2), ("multicand", 3)]
 @pytest.fixture(autouse=True)
 def _torch_backend_on_cpu(monkeypatch):
     # Exact-equality assertions below hold for CPU float math.
-    monkeypatch.setattr(pytorch_backend, "get_auto_torch_device", lambda: "cpu")
+    monkeypatch.setattr(torch_backend, "get_auto_torch_device", lambda: "cpu")
 
 
 def _images(seed: int = 7):
@@ -115,7 +118,7 @@ def test_torch_sad_matches_numpy_reference(with_modulation):
 @needs_taichi
 @pytest.mark.parametrize("with_modulation", [False, True], ids=["plain", "mod"])
 def test_taichi_sad_error_map_matches_reference(with_modulation):
-    from ezsynth.engines.backends import taichi_kernels as tk
+    from ezsynth.kernels.synth import taichi_kernels as tk
     from ezsynth.utils.taichi_runtime import ensure_ti_init, get_taichi_torch_device
 
     ensure_ti_init()

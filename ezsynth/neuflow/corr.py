@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn.functional as F
 
-from ..torch_ops.grid_sample_bilinear_pixel import grid_sample_bilinear_pixel_coords
+from ..flow.grid_sample import grid_sample_bilinear_pixel_coords
 from . import utils
 
 

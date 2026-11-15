@@ -41,8 +41,9 @@ SEARCH_MODE_BY_NAME = {
 }
 
 # --- Native extension loader controls ---
-# The loader itself lives in ``ezsynth.native``. When False (default): try the
-# pip-installed `ebsynth_torch` wheel first, then JIT-build ``ebsynth_extension/``.
+# The loader itself lives in ``ezsynth.kernels.synth.cuda_loader``. When False
+# (default): try the pip-installed `ebsynth_torch` wheel first, then JIT-build
+# ``kernels/synth/cuda_src/``.
 # Set FORCE_EBSYNTH_JIT_LOADER=1 in the environment for JIT-only workflows.
 FORCE_EBSYNTH_JIT_LOADER = _env_bool("FORCE_EBSYNTH_JIT_LOADER", False)
 # When True, only a precompiled wheel is allowed; JIT compilation is disabled.
@@ -54,7 +55,7 @@ JIT_VERBOSE = False
 TORCH_CUDA_CLEAR_CACHE = True
 TORCH_MPS_CLEAR_CACHE = True
 
-# --- Torch microprofiler (``ezsynth.torch_ops.microprofile``) ---
+# --- Torch microprofiler (``ezsynth.kernels.synth.torch_ops.microprofile``) ---
 # "" = off. "1", "true", "yes" = wall time. "sync", "2", "gpu" = device sync per region.
 TORCH_MICROPROFILE = os.environ.get("EZSYNTH_TORCH_MICROPROFILE", "")
 
@@ -93,13 +94,13 @@ def vote_chunk_budget_bytes() -> int:
 
 
 def ensure_extension_loaded() -> bool:
-    """Load native ``ebsynth_torch`` once; see :func:`ezsynth.native.ensure_extension_loaded`."""
-    from . import native
+    """Load native ``ebsynth_torch`` once; see ``kernels.synth.cuda_loader``."""
+    from .kernels.synth import cuda_loader as native
 
     return native.ensure_extension_loaded()
 
 
-# Extension state, mirrored from ``ezsynth.native`` (updated by
+# Extension state, mirrored from ``kernels.synth.cuda_loader`` (updated by
 # ``ensure_extension_loaded()``):
 # - ``EXTENSION_AVAILABLE``: the native module is loaded.
 # - ``EXTENSION_CUDA_AVAILABLE``: it was compiled with CUDA kernels and a GPU exists.
@@ -115,6 +116,6 @@ def __getattr__(name: str):
     getter = _NATIVE_STATE.get(name)
     if getter is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    from . import native
+    from .kernels.synth import cuda_loader as native
 
     return getter(native)

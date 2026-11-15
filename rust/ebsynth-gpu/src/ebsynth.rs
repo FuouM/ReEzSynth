@@ -674,7 +674,7 @@ fn validate(input: &LevelInput<'_>, p: &LevelParams) -> Result<Validated, Error>
     })
 }
 
-/// The dispatch sequence of `TaichiBackend.run_level`.
+/// The dispatch sequence of the Taichi backend's `run_level` (`ezsynth/kernels/synth/taichi.py`).
 fn plan_level(
     p: &LevelParams,
     v: Validated,

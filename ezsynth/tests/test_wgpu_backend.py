@@ -13,8 +13,8 @@ from ezsynth.consts import (
     COST_FUNCTION_SSD,
     EBSYNTH_VOTEMODE_WEIGHTED,
 )
-from ezsynth.engines.backends.common import random_init_nnf
-from ezsynth.engines.backends.wgpu_backend import WgpuBackend
+from ezsynth.kernels.synth.common import random_init_nnf
+from ezsynth.kernels.synth.wgpu import Backend as WgpuBackend
 
 pytest.importorskip("ezsynth_wgpu")
 
@@ -103,7 +103,7 @@ def test_vote_and_error_map_match_taichi(
     level_inputs, cost, bilateral, n_size_step, modulation
 ):
     # search_vote_iters=0 runs only the deterministic kernels: initial vote and error map.
-    from ezsynth.engines.backends.taichi_backend import TaichiBackend
+    from ezsynth.kernels.synth.taichi import Backend as TaichiBackend
 
     cfg = EbsynthParamsConfig(use_bilateral=bilateral, n_size_step=n_size_step)
     ti_img, ti_err, _ = _run(

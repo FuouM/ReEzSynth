@@ -50,7 +50,7 @@ def resolve(requested: str) -> FastBlendEngine:
         )
     if req == "wgpu":
         if not _installed("ezsynth_wgpu"):
-            from ...engines.backends.wgpu_backend import INSTALL_HINT
+            from ...utils.wgpu_runtime import INSTALL_HINT
 
             raise ImportError(INSTALL_HINT)
         return "wgpu"

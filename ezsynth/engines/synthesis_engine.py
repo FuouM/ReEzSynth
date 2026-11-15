@@ -15,10 +15,11 @@ from ..consts import (
     EBSYNTH_VOTEMODE_WEIGHTED,
 )
 from ..guide import GuideObject
+from ..kernels import synth
+from ..kernels.synth.common import random_init_nnf, resample_tensor
 from ..utils.gpu_memory import apply_gpu_memory_limit
 from ..utils.progress import report_progress
 from ..utils.timer import SynthesisTimer
-from .backends.common import random_init_nnf, resample_tensor
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +246,7 @@ class PreparedSynthesisContext:
 class EbsynthEngine:
     """
     Multi-level patch-based synthesis: builds an image pyramid and runs the
-    configured backend (native extension, pure PyTorch, or Taichi) level by level.
+    configured ``kernels.synth`` backend level by level.
     """
 
     def __init__(
@@ -263,37 +264,7 @@ class EbsynthEngine:
         self.pipeline_config = pipeline_config
         self.backend_type = ebsynth_config.backend
 
-        # Create the appropriate backend. Concrete backend imports are kept
-        # branch-local so optional dependencies do not affect unrelated backends.
-        if self.backend_type == "cuda":
-            from ..consts import ensure_extension_loaded
-            from .backends.cuda_backend import CudaBackend, validate_native_options
-
-            # Reject unsupported options before a possible JIT build.
-            validate_native_options(ebsynth_config)
-            ensure_extension_loaded()
-            # Check if device is specified in config (for CPU mode with C++ extension)
-            device = getattr(ebsynth_config, "device", None)
-            self.backend = CudaBackend(ebsynth_config, pipeline_config, device=device)
-        elif self.backend_type == "torch":
-            from .backends.pytorch_backend import PyTorchBackend
-
-            self.backend = PyTorchBackend(ebsynth_config, pipeline_config)
-        elif self.backend_type == "taichi":
-            try:
-                from .backends.taichi_backend import TaichiBackend
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Taichi backend requested but Taichi is not available. "
-                    "Please install taichi: pip install taichi"
-                ) from exc
-            self.backend = TaichiBackend(ebsynth_config, pipeline_config)
-        elif self.backend_type == "wgpu":
-            from .backends.wgpu_backend import WgpuBackend
-
-            self.backend = WgpuBackend(ebsynth_config, pipeline_config)
-        else:
-            raise ValueError(f"Unsupported backend: {self.backend_type}")
+        self.backend = synth.create(self.backend_type, ebsynth_config, pipeline_config)
 
         self.device = self.backend.device
         apply_gpu_memory_limit(self.device)

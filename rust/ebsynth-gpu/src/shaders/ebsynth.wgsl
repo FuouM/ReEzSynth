@@ -1,4 +1,4 @@
-// EbSynth pyramid-level synthesis (WGSL port of ezsynth/engines/backends/taichi_kernels.py).
+// EbSynth pyramid-level synthesis (WGSL port of ezsynth/kernels/synth/taichi_kernels.py).
 //
 // Images are uint8 HWC, packed 4 channels per u32 word and zero padded to whole words.
 //   src            per source pixel: WS style words, then WG guide words

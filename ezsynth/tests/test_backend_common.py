@@ -1,11 +1,10 @@
 import torch
 
-from ezsynth import consts, torch_ops
-from ezsynth.engines import backends
-from ezsynth.engines.backends import taichi_kernels
-from ezsynth.engines.backends.common import random_init_nnf, resample_tensor
-from ezsynth.torch_ops import microprofile
-from ezsynth.torch_ops.device_cache import clear_torch_device_cache
+from ezsynth import consts
+from ezsynth.kernels.synth import cuda_loader, taichi_kernels, torch_ops
+from ezsynth.kernels.synth.common import random_init_nnf, resample_tensor
+from ezsynth.kernels.synth.torch_ops import microprofile
+from ezsynth.kernels.synth.torch_ops.device_cache import clear_torch_device_cache
 
 
 def test_resample_tensor_preserves_uint8_dtype():
@@ -45,19 +44,12 @@ def test_random_init_nnf_shape_dtype_and_bounds():
     assert int(nnf[..., 1].max()) < 7
 
 
-def test_backend_package_does_not_eagerly_export_concrete_backends():
-    assert not hasattr(backends, "PyTorchBackend")
-    assert not hasattr(backends, "CudaBackend")
-    assert not hasattr(backends, "TaichiBackend")
-
-
 def test_torch_ops_package_is_lightweight_and_device_cache_accepts_none():
     assert not hasattr(torch_ops, "extract_patches")
     clear_torch_device_cache(None)
 
 
 def test_consts_expose_extension_and_tuning_controls(monkeypatch):
-    from ezsynth import native
     from ezsynth.utils import ebsynth_jit_platform as jit
 
     assert consts.vote_chunk_budget_bytes() >= 8 << 20
@@ -65,10 +57,10 @@ def test_consts_expose_extension_and_tuning_controls(monkeypatch):
     assert hasattr(consts, "TORCH_MICROPROFILE")
     assert hasattr(consts, "TAICHI_INIT_VERBOSE")
     assert callable(consts.ensure_extension_loaded)
-    # Extension state is mirrored from ezsynth.native without loading anything.
-    assert consts.EXTENSION_AVAILABLE is (native.module is not None)
-    assert consts.ebsynth_torch is native.module
-    assert consts.EXTENSION_CUDA_AVAILABLE is native.cuda_available
+    # Extension state is mirrored from the loader without loading anything.
+    assert consts.EXTENSION_AVAILABLE is (cuda_loader.module is not None)
+    assert consts.ebsynth_torch is cuda_loader.module
+    assert consts.EXTENSION_CUDA_AVAILABLE is cuda_loader.cuda_available
 
     # Host flags are portable unless EZSYNTH_NATIVE_ARCH opts in.
     monkeypatch.delenv(jit.NATIVE_ARCH_ENV, raising=False)

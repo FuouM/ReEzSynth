@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ...engines.backends.wgpu_backend import import_wgpu
+from ...utils.wgpu_runtime import import_wgpu
 
 _ew = import_wgpu()
 

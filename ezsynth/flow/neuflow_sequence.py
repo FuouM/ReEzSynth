@@ -9,10 +9,10 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from ..engines.backends.common import get_auto_torch_device
 from ..neuflow.neuflow import NeuFlow
 from ..utils.gpu_memory import apply_gpu_memory_limit
 from ..utils.progress import report_progress
+from ..utils.torch_device import get_auto_torch_device
 from .pad import pad_bgr_to_stride
 from .types import FlowTorchDevice, NeuFlowCheckpointName
 
