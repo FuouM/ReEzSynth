@@ -10,6 +10,8 @@ import torch
 import torch.nn.functional as F
 
 from ....consts import (
+    COST_FUNCTION_NCC,
+    COST_FUNCTION_SAD,
     TORCH_COMPILE_FUSED_SSD,
     TORCH_COMPILE_PATCH_SSD,
 )
@@ -224,68 +226,44 @@ class ImagePatches:
         return self.gather_index(self.pixel_index(ys, xs))
 
 
-# (patch_size, n_size_step, device_id) -> (k_idx long[K], spatial_sq float[K]) on that device
-_SSD_SPARSE_PATCH_CACHE: dict = {}
+def _gather_rows(
+    grid: torch.Tensor, ys: torch.Tensor, xs: torch.Tensor
+) -> torch.Tensor:
+    """``grid[ys, xs]`` for an (H, W, D) patch grid as one ``index_select`` of rows
+    (faster than advanced indexing on CUDA)."""
+    width = grid.shape[1]
+    return grid.reshape(-1, grid.shape[-1]).index_select(0, (ys * width + xs).view(-1))
 
 
-def _ssd_sparse_patch_layout(
+# (patch_size, n_size_step, device) -> (k_idx long[K], spatial_sq float[K]) on that device
+_SAMPLED_PATCH_LAYOUT: dict = {}
+
+
+def _sampled_patch_layout(
     patch_size: int, n_size_step: int, device: torch.device
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Linear patch indices and spatial_sq for the n_size_step sampling grid."""
-    dev_key = str(device)
-    key = (patch_size, n_size_step, dev_key)
-    if key not in _SSD_SPARSE_PATCH_CACHE:
-        ps = patch_size
-        r = ps // 2
-        idx_list = []
-        sp_list = []
-        for py in range(-r, r + 1, n_size_step):
-            for px in range(-r, r + 1, n_size_step):
-                ky = py + r
-                kx = px + r
-                k_sp = ky * ps + kx
-                idx_list.append(k_sp)
-                sp_list.append(float(py * py + px * px))
-        _SSD_SPARSE_PATCH_CACHE[key] = (
-            torch.tensor(idx_list, dtype=torch.long, device=device),
-            torch.tensor(sp_list, dtype=torch.float32, device=device),
+    """Linear patch indices and squared offsets of the ``n_size_step`` sampling grid."""
+    key = (patch_size, n_size_step, str(device))
+    if key not in _SAMPLED_PATCH_LAYOUT:
+        r = patch_size // 2
+        offsets = [
+            (py, px)
+            for py in range(-r, r + 1, n_size_step)
+            for px in range(-r, r + 1, n_size_step)
+        ]
+        _SAMPLED_PATCH_LAYOUT[key] = (
+            torch.tensor(
+                [(py + r) * patch_size + px + r for py, px in offsets],
+                dtype=torch.long,
+                device=device,
+            ),
+            torch.tensor(
+                [float(py * py + px * px) for py, px in offsets],
+                dtype=torch.float32,
+                device=device,
+            ),
         )
-    return _SSD_SPARSE_PATCH_CACHE[key]
-
-
-def _ssd_bilateral_position_weights(
-    matched_style_nc_ps: torch.Tensor,
-    patch_size: int,
-    use_bilateral: bool,
-    sigma_spatial: float,
-    sigma_color: float,
-    n_size_step: int,
-) -> torch.Tensor:
-    """
-    Per-patch spatial weights (length ps²), zero outside the n_size_step grid.
-    Matches cost_functions_cpu.cpp: weight 1 or exp(-spatial/(2σ_s²) - color/(2σ_c²))
-    with color distance in **source style** vs patch center.
-    """
-    N, _, ps_sq = matched_style_nc_ps.shape
-    ps = patch_size
-    r = ps // 2
-    device = matched_style_nc_ps.device
-    dtype = torch.float32
-    k0 = r * ps + r
-    center = matched_style_nc_ps[:, :, k0].float()
-    k_idx, spatial_sq = _ssd_sparse_patch_layout(patch_size, n_size_step, device)
-    cur = matched_style_nc_ps[:, :, k_idx].float()
-    color_sq = ((cur - center.unsqueeze(-1)) ** 2).sum(dim=1)
-    if use_bilateral:
-        inv_ss = 1.0 / (2.0 * sigma_spatial * sigma_spatial)
-        inv_sc = 1.0 / (2.0 * sigma_color * sigma_color)
-        spatial_b = spatial_sq.to(dtype=dtype).view(1, -1)
-        W_sparse = torch.exp(-spatial_b * inv_ss - color_sq * inv_sc)
-    else:
-        W_sparse = torch.ones((N, k_idx.shape[0]), device=device, dtype=dtype)
-    W = torch.zeros(N, ps_sq, device=device, dtype=dtype)
-    W[:, k_idx] = W_sparse
-    return W
+    return _SAMPLED_PATCH_LAYOUT[key]
 
 
 def compute_patch_ssd_vectorized(
@@ -295,25 +273,15 @@ def compute_patch_ssd_vectorized(
     weights: torch.Tensor,
     target_modulation_patches: torch.Tensor | None = None,
     *,
-    use_bilateral: bool = False,
-    sigma_spatial: float = 4.0,
-    sigma_color: float = 10.0,
-    n_size_step: int = 1,
-    source_style_patches_for_bilateral: torch.Tensor | None = None,
     l1: bool = False,
 ) -> torch.Tensor:
-    """Computes SSD (or SAD with ``l1=True``). Handles both 2D grid and 1D list of
-    target patches.
+    """Dense SSD (or SAD with ``l1=True``) over the whole patch. Handles both a 2D
+    grid and a 1D list of target patches.
 
     When ``target_modulation_patches`` is set (same layout as ``target_patches``),
     scales each per-pixel guide squared difference by ``mod/255`` to match the
     CPU extension / Taichi cost (modulation applies to guide channels only).
-
-    Bilateral weighting (``use_bilateral``) follows ``compute_patch_ssd_split_cpu``:
-    Gaussian on spatial offset and summed squared **style** channel differences
-    from the source patch center. ``source_style_patches_for_bilateral`` must be
-    the style patch grid when ``source_patches`` are guide patches; if omitted,
-    ``source_patches`` are used (correct for the style term).
+    Bilateral or ``n_size_step > 1`` costs: :func:`compute_patch_cost_sampled`.
     """
     H_s, W_s = source_patches.shape[:2]
 
@@ -327,7 +295,7 @@ def compute_patch_ssd_vectorized(
 
     source_x = nnf[..., 0].clamp(0, W_s - 1)
     source_y = nnf[..., 1].clamp(0, H_s - 1)
-    matched_source_patches = source_patches[source_y, source_x]
+    matched_source_patches = _gather_rows(source_patches, source_y, source_x)
 
     diff = matched_source_patches.float()
     diff.sub_(target_patches)
@@ -337,43 +305,12 @@ def compute_patch_ssd_vectorized(
         diff.square_()
     C = len(weights)
     ps_sq = source_patches.shape[2] // C
-    patch_size = round(ps_sq**0.5)
-    if patch_size * patch_size != ps_sq:
-        raise ValueError("patch flatten size must be a perfect square")
-
-    # Dense unweighted SSD: W is all-ones on the full patch (n_size_step==1).
-    if not use_bilateral and n_size_step == 1:
-        diff_reshaped = diff.view(-1, C, ps_sq)
-        if target_modulation_patches is None:
-            error = (diff_reshaped.sum(dim=2) * weights.view(1, -1)).sum(dim=1)
-        else:
-            mod = target_modulation_patches.float().view(-1, C, ps_sq) / 255.0
-            error = (diff_reshaped * mod * weights.view(1, -1, 1)).sum(dim=(1, 2))
+    diff_reshaped = diff.view(-1, C, ps_sq)
+    if target_modulation_patches is None:
+        error = (diff_reshaped.sum(dim=2) * weights.view(1, -1)).sum(dim=1)
     else:
-        diff_reshaped = diff.view(-1, C, ps_sq)
-        weighted_diff = diff_reshaped * weights.view(1, -1, 1)
-        if target_modulation_patches is not None:
-            mod = target_modulation_patches.float().view(-1, C, ps_sq) / 255.0
-            weighted_diff = weighted_diff * mod
-        style_grid = (
-            source_style_patches_for_bilateral
-            if source_style_patches_for_bilateral is not None
-            else source_patches
-        )
-        matched_style = style_grid[source_y, source_x].view(
-            -1, style_grid.shape[-1] // ps_sq, ps_sq
-        )
-        W = _ssd_bilateral_position_weights(
-            matched_style.float(),
-            patch_size,
-            use_bilateral,
-            sigma_spatial,
-            sigma_color,
-            n_size_step,
-        )
-        err_sum = (weighted_diff * W.unsqueeze(1)).sum(dim=(1, 2))
-        w_sum = W.sum(dim=1).clamp(min=1e-6)
-        error = err_sum / w_sum * float(ps_sq)
+        mod = target_modulation_patches.float().view(-1, C, ps_sq) / 255.0
+        error = (diff_reshaped * mod * weights.view(1, -1, 1)).sum(dim=(1, 2))
 
     # Reshape back to original if it was a grid
     if len(original_shape) > 1:
@@ -391,20 +328,12 @@ def compute_patch_ssd_style_guide_fused(
     guide_weights: torch.Tensor,
     target_modulation_patches: torch.Tensor | None,
     *,
-    use_bilateral: bool = False,
-    sigma_spatial: float = 4.0,
-    sigma_color: float = 10.0,
-    n_size_step: int = 1,
     l1: bool = False,
 ) -> torch.Tensor:
     """
-    Style + guide SSD (or SAD with ``l1=True``) in one pass: one NNF flatten/clamp,
-    one bilateral ``W`` when used, and two gathers from the same source indices
-    (less Python than two separate ``compute_patch_ssd_vectorized`` calls).
-
-    **Parity:** match the legacy two-call path only when ``not use_bilateral`` and
-    ``n_size_step == 1`` (dense SSD). Call sites must gate on that; for bilateral
-    or sparse ``n_size_step > 1``, keep two ``compute_patch_ssd_vectorized`` calls.
+    Dense style + guide SSD (or SAD with ``l1=True``) in one pass: one NNF
+    flatten/clamp and two gathers from the same source indices (less Python than two
+    separate ``compute_patch_ssd_vectorized`` calls).
     """
     H_s, W_s = source_style_patches.shape[:2]
     Cs = int(style_weights.shape[0])
@@ -429,8 +358,8 @@ def compute_patch_ssd_style_guide_fused(
 
     source_x = nnf_work[..., 0].clamp(0, W_s - 1)
     source_y = nnf_work[..., 1].clamp(0, H_s - 1)
-    ms = source_style_patches[source_y, source_x]
-    mg = source_guide_patches[source_y, source_x]
+    ms = _gather_rows(source_style_patches, source_y, source_x)
+    mg = _gather_rows(source_guide_patches, source_y, source_x)
 
     diff_s = ms.float()
     diff_s.sub_(ts)
@@ -444,38 +373,18 @@ def compute_patch_ssd_style_guide_fused(
         diff_g.abs_()
     else:
         diff_g.square_()
-    if not use_bilateral and n_size_step == 1:
-        ds = diff_s.view(-1, Cs, ps_sq_style)
-        dg = diff_g.view(-1, Cg, ps_sq_style)
-        style_error = (ds.sum(dim=2) * style_weights.view(1, -1)).sum(dim=1)
-        if mod is None:
-            guide_error = (dg.sum(dim=2) * guide_weights.view(1, -1)).sum(dim=1)
-        else:
-            guide_error = (
-                dg
-                * (mod.float().view(-1, Cg, ps_sq_style) / 255.0)
-                * guide_weights.view(1, -1, 1)
-            ).sum(dim=(1, 2))
-        error = style_error + guide_error
+    ds = diff_s.view(-1, Cs, ps_sq_style)
+    dg = diff_g.view(-1, Cg, ps_sq_style)
+    style_error = (ds.sum(dim=2) * style_weights.view(1, -1)).sum(dim=1)
+    if mod is None:
+        guide_error = (dg.sum(dim=2) * guide_weights.view(1, -1)).sum(dim=1)
     else:
-        wd_s = diff_s.view(-1, Cs, ps_sq_style) * style_weights.view(1, -1, 1)
-        wd_g = diff_g.view(-1, Cg, ps_sq_style) * guide_weights.view(1, -1, 1)
-        if mod is not None:
-            wd_g = wd_g * (mod.float().view(-1, Cg, ps_sq_style) / 255.0)
-        matched_style_nc_ps = ms.float().view(-1, Cs, ps_sq_style)
-        W = _ssd_bilateral_position_weights(
-            matched_style_nc_ps,
-            patch_size,
-            use_bilateral,
-            sigma_spatial,
-            sigma_color,
-            n_size_step,
-        )
-        err_sum = (wd_s * W.unsqueeze(1)).sum(dim=(1, 2)) + (wd_g * W.unsqueeze(1)).sum(
-            dim=(1, 2)
-        )
-        w_sum = W.sum(dim=1).clamp(min=1e-6)
-        error = err_sum / w_sum * float(ps_sq_style)
+        guide_error = (
+            dg
+            * (mod.float().view(-1, Cg, ps_sq_style) / 255.0)
+            * guide_weights.view(1, -1, 1)
+        ).sum(dim=(1, 2))
+    error = style_error + guide_error
 
     if len(original_shape) > 1:
         return error.view(original_shape)
@@ -525,12 +434,10 @@ def compute_patch_ncc_vectorized(
     source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
-    use_bilateral: bool = False,
-    sigma_spatial: float = 4.0,
-    sigma_color: float = 10.0,
-    n_size_step: int = 1,
 ) -> torch.Tensor:
-    """Computes NCC/SSD. Handles both 2D grid and 1D list of target patches."""
+    """Dense NCC style cost plus guide SSD. Handles both 2D grid and 1D list of
+    target patches. Bilateral or ``n_size_step > 1``: :func:`compute_patch_cost_sampled`.
+    """
     H_s, W_s = source_style_patches.shape[:2]
     C_style = style_weights.shape[0]
     ps_sq = patch_size * patch_size
@@ -548,7 +455,7 @@ def compute_patch_ncc_vectorized(
 
     source_x = nnf[..., 0].clamp(0, W_s - 1)
     source_y = nnf[..., 1].clamp(0, H_s - 1)
-    matched_source_patches = source_style_patches[source_y, source_x]
+    matched_source_patches = _gather_rows(source_style_patches, source_y, source_x)
 
     # --- NCC Computation (on flattened data) ---
     num_active = matched_source_patches.shape[0]
@@ -577,11 +484,6 @@ def compute_patch_ncc_vectorized(
             nnf,
             guide_weights,
             target_modulation_patches,
-            use_bilateral=use_bilateral,
-            sigma_spatial=sigma_spatial,
-            sigma_color=sigma_color,
-            n_size_step=n_size_step,
-            source_style_patches_for_bilateral=source_style_patches,
         )
         total_error = style_error + guide_error
     else:
@@ -591,6 +493,109 @@ def compute_patch_ncc_vectorized(
     if len(original_shape) > 1:
         return total_error.view(original_shape)
     return total_error
+
+
+def compute_patch_cost_sampled(
+    source_style_patches: torch.Tensor,
+    target_style_patches: torch.Tensor,
+    source_guide_patches: torch.Tensor,
+    target_guide_patches: torch.Tensor,
+    nnf: torch.Tensor,
+    style_weights: torch.Tensor,
+    guide_weights: torch.Tensor,
+    target_modulation_patches: torch.Tensor | None,
+    *,
+    cost_function_mode: int,
+    use_bilateral: bool,
+    sigma_spatial: float,
+    sigma_color: float,
+    n_size_step: int,
+) -> torch.Tensor:
+    """Patch cost over the ``n_size_step`` sampling grid with optional bilateral
+    weights, term for term as Taichi ``compute_patch_ssd`` / ``compute_patch_ncc``
+    (and WGSL ``patch_cost``). Values are the weighted sums, not normalized by the
+    sample count or weight total.
+
+    SSD/SAD weight of offset ``p``: ``exp(-|p|^2 / (2 sigma_s^2) - ((s_p - s_0)^2 +
+    (t_p - t_0)^2) / (2 sigma_c^2))`` with ``s``/``t`` the channel-mean source/target
+    style and ``0`` the patch centre. NCC weight: the same spatial term and the
+    centre difference ``(s_0 - t_0)^2``; NCC statistics use the weighted moments and
+    the style term is ``(1 - ncc) * style_weights[0] * sum(weights)``. Guide terms are
+    squared for NCC and follow ``cost_function_mode`` otherwise.
+    """
+    H_s, W_s = source_style_patches.shape[:2]
+    original_shape = target_style_patches.shape[:-1]
+    ts = target_style_patches.flatten(0, -2)
+    nnf = nnf.flatten(0, -2)
+    sx = nnf[:, 0].clamp(0, W_s - 1)
+    sy = nnf[:, 1].clamp(0, H_s - 1)
+    Cs = int(style_weights.shape[0])
+    ps_sq = ts.shape[-1] // Cs
+    patch_size = round(ps_sq**0.5)
+    centre = (patch_size // 2) * patch_size + patch_size // 2
+    k_idx, spatial_sq = _sampled_patch_layout(patch_size, n_size_step, ts.device)
+
+    source_style = (
+        _gather_rows(source_style_patches, sy, sx).view(-1, Cs, ps_sq).float()
+    )
+    target_style = ts.view(-1, Cs, ps_sq).float()
+    s_mean = source_style.mean(dim=1)  # (N, ps_sq)
+    t_mean = target_style.mean(dim=1)
+    s_centre = s_mean[:, centre : centre + 1]
+    t_centre = t_mean[:, centre : centre + 1]
+    s_k, t_k = s_mean[:, k_idx], t_mean[:, k_idx]  # (N, K)
+    ncc = cost_function_mode == COST_FUNCTION_NCC
+
+    if use_bilateral:
+        inv_ss = 1.0 / (2.0 * sigma_spatial * sigma_spatial)
+        inv_sc = 1.0 / (2.0 * sigma_color * sigma_color)
+        if ncc:
+            colour_sq = (s_centre - t_centre).square()
+        else:
+            colour_sq = (s_k - s_centre).square() + (t_k - t_centre).square()
+        weight = torch.exp(-spatial_sq.view(1, -1) * inv_ss - colour_sq * inv_sc)
+    else:
+        weight = torch.ones_like(s_k)
+
+    per_offset = torch.zeros_like(s_k)
+    if source_guide_patches.numel() > 0:
+        Cg = int(guide_weights.shape[0])
+        source_guide = _gather_rows(source_guide_patches, sy, sx).view(-1, Cg, ps_sq)
+        source_guide = source_guide[:, :, k_idx]
+        target_guide = target_guide_patches.flatten(0, -2).view(-1, Cg, ps_sq)
+        diff = source_guide.float() - target_guide[:, :, k_idx].float()
+        diff = diff.abs() if cost_function_mode == COST_FUNCTION_SAD else diff.square()
+        diff = diff * guide_weights.view(1, -1, 1)
+        if target_modulation_patches is not None:
+            mod = target_modulation_patches.flatten(0, -2).view(-1, Cg, ps_sq)
+            diff = diff * (mod[:, :, k_idx].float() / 255.0)
+        per_offset = per_offset + diff.sum(dim=1)
+
+    if ncc:
+        epsilon = 1e-6
+        guide_error = (weight * per_offset).sum(dim=1)
+        total = weight.sum(dim=1)
+        safe = total.clamp(min=epsilon)
+        mean_s = (weight * s_k).sum(dim=1) / safe
+        mean_t = (weight * t_k).sum(dim=1) / safe
+        var_s = (weight * s_k.square()).sum(dim=1) / safe - mean_s.square()
+        var_t = (weight * t_k.square()).sum(dim=1) / safe - mean_t.square()
+        std_s = var_s.clamp(min=0.0).sqrt()
+        std_t = var_t.clamp(min=0.0).sqrt()
+        cov = (weight * s_k * t_k).sum(dim=1) / safe - mean_s * mean_t
+        defined = (std_s > epsilon) & (std_t > epsilon)
+        corr = torch.where(defined, cov / (std_s * std_t), torch.zeros_like(cov))
+        style_error = (1.0 - corr.clamp(-1.0, 1.0)) * style_weights[0] * total
+        error = torch.where(total > epsilon, style_error + guide_error, guide_error)
+    else:
+        diff = source_style[:, :, k_idx] - target_style[:, :, k_idx]
+        diff = diff.abs() if cost_function_mode == COST_FUNCTION_SAD else diff.square()
+        per_offset = per_offset + (diff * style_weights.view(1, -1, 1)).sum(dim=1)
+        error = (weight * per_offset).sum(dim=1)
+
+    if len(original_shape) > 1:
+        return error.view(original_shape)
+    return error
 
 
 if TORCH_COMPILE_PATCH_SSD:

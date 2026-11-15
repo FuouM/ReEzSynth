@@ -14,7 +14,6 @@ import torch
 
 from ezsynth.consts import COST_FUNCTION_NCC, COST_FUNCTION_SAD
 
-from .device_cache import clear_torch_device_cache
 from .microprofile import region as _mp_region
 from .omega_ops import (
     gather_omega_scores_from_patches,
@@ -25,6 +24,7 @@ from .omega_ops import (
 )
 from .patch_ops import (
     ImagePatches,
+    compute_patch_cost_sampled,
     compute_patch_ncc_vectorized,
     compute_patch_ssd_style_guide_fused,
     compute_patch_ssd_vectorized,
@@ -36,8 +36,6 @@ if TYPE_CHECKING:
 # OPTIMIZATION: Cache for small offset tensors to avoid repeated allocations
 _OFFSET_TENSOR_CACHE = {}
 
-# Reused snapshot for propagation omega deltas (avoids ``nnf.clone()`` each step).
-_PROP_NNF_SNAPSHOT: dict = {}
 
 # Reused random-search buffers keyed by device / NNF dtype. The active set is
 # usually full-frame, so this removes repeated temporary allocations per radius.
@@ -60,16 +58,6 @@ def _prop_neighbor_nnf_buf(nnf: torch.Tensor) -> torch.Tensor:
     if buf is None or buf.shape != nnf.shape:
         buf = torch.empty_like(nnf)
         _PROP_NEIGHBOR_NNF_BUF[key] = buf
-    return buf
-
-
-def _prop_nnf_snapshot(nnf: torch.Tensor) -> torch.Tensor:
-    key = (nnf.shape, str(nnf.device), nnf.dtype)
-    buf = _PROP_NNF_SNAPSHOT.get(key)
-    if buf is None:
-        buf = torch.empty_like(nnf)
-        _PROP_NNF_SNAPSHOT[key] = buf
-    buf.copy_(nnf)
     return buf
 
 
@@ -141,6 +129,20 @@ def _patch_errors(
 ) -> torch.Tensor:
     """SSD/NCC/SAD patch cost of ``candidate_coords`` against materialized grids."""
     dev = candidate_coords.device
+    if ssd_kw["use_bilateral"] or ssd_kw["n_size_step"] > 1:
+        with _mp_region(f"{region}:sampled", dev):
+            return compute_patch_cost_sampled(
+                source_style_patches,
+                target_style_patches,
+                source_guide_patches,
+                target_guide_patches,
+                candidate_coords,
+                style_weights,
+                guide_weights,
+                target_modulation_patches,
+                cost_function_mode=cost_function_mode,
+                **ssd_kw,
+            )
     if cost_function_mode == COST_FUNCTION_NCC:
         with _mp_region(f"{region}:ncc", dev):
             return compute_patch_ncc_vectorized(
@@ -155,11 +157,10 @@ def _patch_errors(
                 source_stats,
                 target_stats,
                 target_modulation_patches,
-                **ssd_kw,
             )
     has_guide = source_guide_patches.numel() > 0
     l1 = cost_function_mode == COST_FUNCTION_SAD
-    if has_guide and not ssd_kw["use_bilateral"] and ssd_kw["n_size_step"] == 1:
+    if has_guide:
         with _mp_region(f"{region}:ssd_fused", dev):
             return compute_patch_ssd_style_guide_fused(
                 source_style_patches,
@@ -171,31 +172,16 @@ def _patch_errors(
                 guide_weights,
                 target_modulation_patches,
                 l1=l1,
-                **ssd_kw,
             )
     with _mp_region(f"{region}:ssd_style", dev):
-        errors = compute_patch_ssd_vectorized(
+        return compute_patch_ssd_vectorized(
             source_style_patches,
             target_style_patches,
             candidate_coords,
             style_weights,
             None,
             l1=l1,
-            **ssd_kw,
         )
-    if has_guide:
-        with _mp_region(f"{region}:ssd_guide", dev):
-            errors = errors + compute_patch_ssd_vectorized(
-                source_guide_patches,
-                target_guide_patches,
-                candidate_coords,
-                guide_weights,
-                target_modulation_patches,
-                source_style_patches_for_bilateral=source_style_patches,
-                l1=l1,
-                **ssd_kw,
-            )
-    return errors
 
 
 def _gather_chunk(grid, ys: torch.Tensor, xs: torch.Tensor, indices: dict, role: str):
@@ -736,10 +722,7 @@ def propagation_step(
     H_s, W_s = source_style_patches.shape[:2]
     device = nnf.device
     active_mask = mask == 255
-
-    # OPTIMIZATION: Snapshot NNF before updates (reused buffer per shape/device/dtype).
-    with _mp_region("prop:nnf_snapshot", device):
-        nnf_original = _prop_nnf_snapshot(nnf)
+    nnf_before = nnf.clone()
 
     omega_mean_map = None
     if uniformity_weight != 0.0:
@@ -772,7 +755,7 @@ def propagation_step(
     # Apply propagation offset
     horiz_candidates = nb + _get_offset_tensor((prop_x, 0), device)
 
-    new_nnf, new_errors, horiz_updates = try_patch_batch(
+    _, new_errors, horiz_updates = try_patch_batch(
         horiz_candidates,
         nnf,
         error_map,
@@ -796,13 +779,8 @@ def propagation_step(
         n_size_step,
         omega_mean_map=omega_mean_map,
     )
-
-    # OPTIMIZATION: Collect changes but don't update omega yet
-    horiz_changed_indices = (horiz_updates & active_mask).nonzero(as_tuple=False)
-
-    # Update NNF and errors for vertical propagation
-    nnf.copy_(new_nnf)
-    error_map.copy_(new_errors)
+    horiz = horiz_updates & active_mask
+    _accept(nnf, error_map, horiz_candidates, new_errors, horiz)
 
     # --- Vertical Propagation ---
     if shift_y == 1:
@@ -812,7 +790,7 @@ def propagation_step(
 
     vert_candidates = nb + _get_offset_tensor((0, prop_y), device)
 
-    new_nnf, new_errors, vert_updates = try_patch_batch(
+    _, new_errors, vert_updates = try_patch_batch(
         vert_candidates,
         nnf,
         error_map,
@@ -836,45 +814,32 @@ def propagation_step(
         n_size_step,
         omega_mean_map=omega_mean_map,
     )
+    vert = vert_updates & active_mask
+    _accept(nnf, error_map, vert_candidates, new_errors, vert)
 
-    # OPTIMIZATION: Collect vertical changes
-    vert_changed_indices = (vert_updates & active_mask).nonzero(as_tuple=False)
-
-    # Update NNF and errors
-    nnf.copy_(new_nnf)
-    error_map.copy_(new_errors)
-
-    # Omega: horizontal then vertical NNF changes — scatter deltas sum commutatively, but
-    # vertical ``old`` coords must be read after ``nnf_original`` is patched for horiz winners.
+    # One omega update for both directions: from the NNF before the step to the
+    # final one, for the pixels either direction moved.
     with _mp_region("prop:omega_updates", device):
-        old_parts = []
-        new_parts = []
-        if len(horiz_changed_indices) > 0:
-            y_h, x_h = horiz_changed_indices[:, 0], horiz_changed_indices[:, 1]
-            old_parts.append(nnf_original[y_h, x_h])
-            new_parts.append(nnf[y_h, x_h])
-            nnf_original[y_h, x_h] = nnf[y_h, x_h]
-        if len(vert_changed_indices) > 0:
-            y_v, x_v = vert_changed_indices[:, 0], vert_changed_indices[:, 1]
-            old_parts.append(nnf_original[y_v, x_v])
-            new_parts.append(nnf[y_v, x_v])
-        if old_parts:
-            if len(old_parts) == 1:
-                update_omega_map(
-                    omega_map,
-                    old_parts[0],
-                    new_parts[0],
-                    patch_size,
-                    clear_device_cache=False,
-                )
-            else:
-                update_omega_map(
-                    omega_map,
-                    torch.cat(old_parts, dim=0),
-                    torch.cat(new_parts, dim=0),
-                    patch_size,
-                    clear_device_cache=False,
-                )
+        moved = (horiz | vert).nonzero(as_tuple=True)
+        update_omega_map(
+            omega_map,
+            nnf_before[moved],
+            nnf[moved],
+            patch_size,
+            clear_device_cache=False,
+        )
+
+
+def _accept(
+    nnf: torch.Tensor,
+    error_map: torch.Tensor,
+    candidates: torch.Tensor,
+    candidate_errors: torch.Tensor,
+    update: torch.Tensor,
+) -> None:
+    """Write the ``update`` pixels' candidates and errors (masked, no host sync)."""
+    nnf.copy_(torch.where(update.unsqueeze(-1), candidates.to(nnf.dtype), nnf))
+    error_map.copy_(torch.where(update, candidate_errors, error_map))
 
 
 def random_search_step(
@@ -1065,38 +1030,33 @@ def random_search_step(
                         update_mask_v, current_errors_active, cand_errors_v
                     )
 
-                update_indices_in_v = update_mask_v.nonzero(as_tuple=True)[0]
-                if update_indices_in_v.numel() > 0:
-                    # Get original coordinates of pixels to update
-                    final_y = y_coords[update_indices_in_v]
-                    final_x = x_coords[update_indices_in_v]
-
-                    old_nnf_vals = nnf[final_y, final_x]
-                    new_nnf_vals = cand_v[update_indices_in_v]
-
-                    update_omega_map(
-                        omega_map,
-                        old_nnf_vals,
-                        new_nnf_vals,
-                        patch_size,
-                        clear_device_cache=False,
+                # Omega moves only the updated pixels (compacted: a dense masked
+                # scatter over every active pixel costs more than the host sync).
+                moved = update_mask_v.nonzero(as_tuple=True)[0]
+                update_omega_map(
+                    omega_map,
+                    current_nnf_active[moved],
+                    cand_v[moved],
+                    patch_size,
+                    clear_device_cache=False,
+                )
+                current_nnf_active.copy_(
+                    torch.where(
+                        update_mask_v.unsqueeze(-1),
+                        cand_v.to(current_nnf_active.dtype),
+                        current_nnf_active,
                     )
-                    nnf[final_y, final_x] = new_nnf_vals.to(nnf.dtype)
-                    error_map[final_y, final_x] = cand_errors_v[update_indices_in_v]
-
-                    # OPTIMIZATION: Update cached current NNF and omega for updated pixels
-                    current_nnf_active[update_indices_in_v] = new_nnf_vals.to(
-                        current_nnf_active.dtype
+                )
+                current_errors_active.copy_(
+                    torch.where(update_mask_v, cand_errors_v, current_errors_active)
+                )
+                nnf[y_coords, x_coords] = current_nnf_active.to(nnf.dtype)
+                error_map[y_coords, x_coords] = current_errors_active
+                if use_omega_cost:
+                    curr_omega_active.copy_(
+                        torch.where(update_mask_v, cand_omega_v, curr_omega_active)
                     )
-                    if use_omega_cost:
-                        curr_omega_active[update_indices_in_v] = cand_omega_v[
-                            update_indices_in_v
-                        ]
-                        omega_patch_mean_map_into(omega_mean_buf, omega_map, patch_size)
-                        clear_torch_device_cache(device)
-                    current_errors_active[update_indices_in_v] = cand_errors_v[
-                        update_indices_in_v
-                    ]
+                    omega_patch_mean_map_into(omega_mean_buf, omega_map, patch_size)
 
                 if alternatives is not None:
                     alternatives.offer(

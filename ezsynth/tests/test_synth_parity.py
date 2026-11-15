@@ -85,11 +85,11 @@ def _run(backend, x, *, cost, iters, modulation=False, patch_size=PS):
 
 
 def _known_divergence(backend: str, bilateral: bool, n_size_step: int) -> str | None:
-    # The torch and cuda backends implement these options differently from the
-    # Taichi/wgpu pair (which agree bit for bit); kept as strict xfails so a fix shows.
-    if backend in ("torch", "cuda") and bilateral:
+    # The native cuda extension implements these options differently from the
+    # Taichi/wgpu/torch reference; kept as strict xfails so a fix shows.
+    if backend == "cuda" and bilateral:
         return "bilateral weights differ from Taichi (votes and errors)"
-    if backend in ("torch", "cuda") and n_size_step > 1:
+    if backend == "cuda" and n_size_step > 1:
         return "n_size_step > 1 error map differs from Taichi (votes agree)"
     return None
 
@@ -151,6 +151,56 @@ def test_vote_and_error_map_match_taichi(
     rtol = 1e-4 if backend == "wgpu" else 1e-3
     np.testing.assert_allclose(err, ref_err, rtol=rtol, atol=1e-2)
     np.testing.assert_array_equal(nnf, level_inputs["nnf"].numpy())
+
+
+@pytest.mark.parametrize("bilateral", [False, True], ids=["dense", "bilateral"])
+@pytest.mark.parametrize("weighted", [False, True], ids=["plain", "weighted"])
+def test_torch_vote_matches_taichi(level_inputs, weighted, bilateral):
+    # The level test above only reaches the initial plain vote; this covers the
+    # error-weighted vote. Errors of 1e9 in the left columns push the bilateral weight
+    # sums there below the reference kernel's 1e-4 threshold.
+    if reason := unavailable("taichi"):
+        pytest.skip(f"Taichi reference: {reason}")
+    from ezsynth.consts import EBSYNTH_VOTEMODE_PLAIN
+    from ezsynth.kernels.synth import taichi_kernels as tk
+    from ezsynth.kernels.synth.torch_ops.voting_ops import vote_plain, vote_weighted
+    from ezsynth.utils.taichi_runtime import ensure_ti_init, get_taichi_torch_device
+
+    ensure_ti_init()
+    device = get_taichi_torch_device()
+    rng = np.random.default_rng(4)
+    style = level_inputs["style"]
+    nnf = level_inputs["nnf"]
+    error_map = torch.from_numpy(
+        (10.0 ** rng.uniform(0, 6, (TH, TW))).astype(np.float32)
+    )
+    error_map[:, :12] = 1e9
+    kw = {"use_bilateral": bilateral, "sigma_spatial": 2.0, "sigma_color": 6.0}
+
+    if weighted:
+        got = vote_weighted(style, nnf, error_map, PS, **kw)
+    else:
+        got = vote_plain(style, nnf, PS, **kw)
+
+    out = torch.zeros((TH, TW, 3), dtype=torch.uint8, device=device)
+    tk.run_vote_dispatch(
+        out,
+        style.to(device),
+        torch.zeros_like(out),
+        nnf.to(device),
+        error_map.to(device),
+        PS,
+        EBSYNTH_VOTEMODE_WEIGHTED if weighted else EBSYNTH_VOTEMODE_PLAIN,
+        int(bilateral),
+        2.0,
+        6.0,
+        1,
+        torch.zeros((TH, TW, 3), dtype=torch.float32, device=device),
+        torch.zeros((TH, TW), dtype=torch.float32, device=device),
+    )
+    diff = np.abs(got.numpy().astype(int) - out.cpu().numpy().astype(int))
+    # Float sums in another order may cross an integer by one level.
+    assert diff.max() <= 1 and (diff == 0).mean() > 0.99
 
 
 def _search_params():

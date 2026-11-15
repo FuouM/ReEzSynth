@@ -104,7 +104,7 @@ class Backend:
         patch_size: int,
         plan: PatchPlan,
         *,
-        clear_device_cache: bool = True,
+        clear_device_cache: bool = False,
     ) -> torch.Tensor | ImagePatches:
         """Unfold grid for the materialized plan, on-demand view for the bounded one.
 

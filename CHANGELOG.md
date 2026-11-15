@@ -24,7 +24,7 @@
 - `ninja` moved to the `cuda` extra and `scipy` to the `scipy` extra (also pulled in by `pyamg`). The default `lsqr` Poisson solver runs on NumPy (matrix-free conjugate gradients on the same system, about 1000x closer to the exact solution than SciPy's `lsqr` and faster); `lsmr`, `cg` and `amg` need SciPy and fail at start-up without it.
 - `RunConfig(use_lsqr=...)` is replaced by `RunConfig(poisson_solver=...)` (any `BlendingConfig.poisson_solver` value); `use_lsqr` was silently ignored. `Ezsynth` now passes `RunConfig.alpha` to the pipeline (it always used 0.75).
 - Synthesis options are checked against `ezsynth/kernels/synth/capabilities.py` (shared with the ComfyUI nodes) before a backend is built: `precision="float16"|"bfloat16"` on a backend other than `torch` now raises instead of being ignored.
-- Cross-backend tests are one file per kernel family (`test_synth_parity.py`, `test_imageops_parity.py`, `test_fastblend_parity.py`, replacing `test_wgpu_backend.py`, `test_wgpu_image_ops.py` and `FastBlend/tests/`); each backend runs when it can on the machine, the JIT-built `cuda` extensions with `EZSYNTH_TEST_JIT=1`. Known divergences are strict xfails: the torch and cuda backends' bilateral votes and `n_size_step > 1` error maps differ from Taichi/wgpu.
+- Cross-backend tests are one file per kernel family (`test_synth_parity.py`, `test_imageops_parity.py`, `test_fastblend_parity.py`, replacing `test_wgpu_backend.py`, `test_wgpu_image_ops.py` and `FastBlend/tests/`); each backend runs when it can on the machine, the JIT-built `cuda` extensions with `EZSYNTH_TEST_JIT=1`. Known divergences are strict xfails: the cuda extension's bilateral votes and `n_size_step > 1` error maps differ from Taichi/wgpu/torch.
 
 ### Added
 - GPU memory budget: outside ComfyUI, the PyTorch CUDA allocator is capped from the memory free at startup, keeping 1.5 GiB for other applications (`EZSYNTH_GPU_MEMORY_*` overrides).
@@ -52,6 +52,7 @@
 - Torch patch planner always keeps `EZSYNTH_GPU_MEMORY_RESERVE_MB` free (also inside ComfyUI, where no allocator cap is set) and materializes patch grids only up to 2 GiB. The bounded strategy computes dense SSD/SAD/NCC costs straight from pixel gathers (same values, ~20% faster than before).
 - `phycv` is optional for ComfyUI installs (only the PAGE/PST edge methods use it).
 - `Warp` / `PositionalGuide` take `engine="opencv"|"taichi"|"wgpu"` instead of `use_taichi`; `hist_blender` takes `engine` instead of `use_taichi`. Forward splatting on the OpenCV engine raises instead of silently falling back to backward warping, and a missing Taichi raises instead of switching to OpenCV.
+- Torch backend about 14% faster: no allocator cache flush per search-vote iteration, per vote or per random-search radius; propagation updates omega once per step.
 
 ### Fixed
 - `run_img_synth.py` passed `GuideObject`s where `ImageSynth.run` expects `(source, target, weight)` tuples.
@@ -64,3 +65,4 @@
 - Taichi bilateral voting produced a black first estimate at every pyramid level (the initial vote's output aliased its centre-colour input).
 - FastBlend temporal tracking (`tracking_window_size > 0`) crashed on the backward shift (batch-size mismatch).
 - Taichi backward warping of multi-channel images failed to compile (a conditional expression evaluated both array ranks); the Taichi push pass read past the coarse level on odd image sizes.
+- Torch backend: bilateral weights and `n_size_step > 1` costs now follow the Taichi/WebGPU definition (`patch_ops.compute_patch_cost_sampled`: centre-relative luma weights on source and target, NCC on weighted moments, unnormalized sums; bilateral vote skips samples outside the source and weighs by luma distance to the pixel's own match). Its outputs matched neither Taichi/WebGPU nor the cuda extension before. Propagation no longer moves stopped (masked) pixels, which also left the omega counts out of step.
