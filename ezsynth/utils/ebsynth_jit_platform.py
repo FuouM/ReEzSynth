@@ -45,7 +45,13 @@ def ensure_ninja_on_path() -> None:
     PyTorch's JIT loader runs ``ninja`` from PATH, which does not include the virtualenv's
     scripts directory when the interpreter is started directly (``.venv/Scripts/python``).
     """
-    import ninja
+    try:
+        import ninja
+    except ImportError as exc:
+        raise ImportError(
+            "JIT-building the native `cuda` extensions needs ninja: "
+            "`uv sync --extra cuda` or `pip install ninja`."
+        ) from exc
 
     path = os.environ.get("PATH", "")
     if ninja.BIN_DIR not in path.split(os.pathsep):

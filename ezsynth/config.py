@@ -121,7 +121,7 @@ class EbsynthParamsConfig(BaseModel):
     # computed in float32; uint8 inputs are exact in all three dtypes.
     precision: Literal["float32", "float16", "bfloat16"] = "float32"
     # New: Backend for synthesis operations.
-    backend: Literal["cuda", "torch", "taichi", "wgpu"] = "cuda"
+    backend: Literal["cuda", "torch", "taichi", "wgpu"] = "wgpu"
     # New: Device for synthesis (allows CPU with C++ extension)
     device: str | None = None  # None for auto-detect, or "cpu"/"cuda"
     extra_pass_3x3: bool = False

@@ -42,6 +42,8 @@ EDGE_METHODS = ("Classic", "PAGE", "PST")
 OPENCV_FLOW_METHODS = ("DIS", "FARNEBACK")
 TORCHVISION_FLOW_MODELS = ("raft_large", "raft_small")
 POISSON_SOLVERS = ("disabled", "lsqr", "lsmr", "cg", "amg", "seamless", "taichi-cg")
+# Poisson solvers built on scipy.sparse (lsqr runs on NumPy).
+SCIPY_POISSON_SOLVERS = ("lsmr", "cg", "amg")
 
 FACEBLIT_BACKENDS = ("torch", "taichi")
 FACEBLIT_LANDMARK_DETECTORS = ("fan_blazeface", "fan_sfd")
@@ -64,6 +66,8 @@ OPTIONAL_DEPENDENCIES = {
         f"{WGPU_RELEASES_URL}; building from source needs a Rust toolchain)",
     ),
     "cupy": ("cupy-cuda12x", "the 'cupy' FastBlend backend"),
+    "ninja": ("ninja", "JIT-building the native 'cuda' synthesis / FastBlend backend"),
+    "scipy": ("scipy", "the lsmr / cg / amg Poisson solvers"),
     "phycv": ("phycv", "the PAGE / PST edge methods"),
     "pyamg": ("pyamg", "the 'amg' Poisson solver"),
     "huggingface_hub": ("huggingface-hub", "NeuFlow optical flow checkpoints"),
@@ -142,6 +146,8 @@ def check_synthesis_options(
         require_module("taichi")
     if backend == "wgpu":
         require_module("ezsynth_wgpu")
+    if backend == "cuda":
+        require_module("ninja")
 
 
 def check_patch_size(patch_size: int) -> None:

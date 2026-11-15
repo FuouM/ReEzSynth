@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # --- Optional Dependency Handling ---
 # Availability is probed without importing; scipy and pyamg load on first use.
 PYAMG_AVAILABLE = find_spec("pyamg") is not None
+SCIPY_AVAILABLE = find_spec("scipy") is not None
+# Solvers built on scipy.sparse matrices; "lsqr" runs on NumPy (imageops.opencv).
+SCIPY_SOLVERS = ("lsmr", "cg", "amg")
 
 
 # --- Algorithmic Alternatives ---
@@ -94,7 +97,6 @@ def construct_A_cpu(h: int, w: int, grad_weight: list[float]):
 
 
 def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weights):
-    import scipy.sparse.linalg
 
     Iab = cv2.cvtColor(blendI, cv2.COLOR_BGR2LAB).astype(np.float32)
     Ia = cv2.cvtColor(I1, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -124,12 +126,21 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
             ]
         )
         if solver == "lsqr":
-            A = cache["As"][ch]
-            out_all[:, ch] = scipy.sparse.linalg.lsqr(A, b, iter_lim=maxiter)[0]
+            out_all[:, ch] = load_op("opencv", "poisson_lsq")(
+                gx_reshaped[:, ch].reshape(h, w),
+                gy_reshaped[:, ch].reshape(h, w),
+                Iab_centered[:, ch].reshape(h, w),
+                grad_weights[ch],
+                max_iter=maxiter,
+            ).reshape(-1)
         elif solver == "lsmr":
+            import scipy.sparse.linalg
+
             A = cache["As"][ch]
             out_all[:, ch] = scipy.sparse.linalg.lsmr(A, b, maxiter=maxiter)[0]
         elif solver == "cg":
+            import scipy.sparse.linalg
+
             AtA, Atb = cache["AtAs"][ch], cache["As"][ch].T @ b
             out_all[:, ch] = scipy.sparse.linalg.cg(AtA, Atb, maxiter=maxiter)[0]
         elif solver == "amg":
@@ -163,6 +174,11 @@ class Reconstructor:
         )
         self._cache = {}
 
+        if self.solver in SCIPY_SOLVERS and not SCIPY_AVAILABLE:
+            raise ImportError(
+                f"The {self.solver!r} Poisson solver needs SciPy: pip install scipy "
+                "(or uv sync --extra scipy). The default 'lsqr' solver needs no SciPy."
+            )
         if self.solver == "amg" and not PYAMG_AVAILABLE:
             raise ImportError(
                 "PyAMG is not installed. Please install it with 'pip install pyamg' to use the 'amg' solver."
@@ -176,7 +192,7 @@ class Reconstructor:
         logger.info(f"Preparing solver cache for resolution {w}x{h}...")
         size_cache = {}
         # Only construct matrices if a solver that needs them is selected
-        if self.solver in ["lsqr", "lsmr", "cg", "amg"]:
+        if self.solver in SCIPY_SOLVERS:
             As = construct_A_cpu(h, w, self.grad_weights)
             size_cache["As"] = As
             if self.solver == "cg" or self.solver == "amg":

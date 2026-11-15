@@ -471,7 +471,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hole-synth-backend",
         type=str,
-        default="cuda",
+        default="wgpu",
         choices=["cuda", "torch", "taichi", "wgpu"],
     )
     add_image_ops_argument(parser)

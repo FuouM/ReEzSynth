@@ -1,12 +1,12 @@
 # Runtime dependencies for ComfyUI installs (ComfyUI provides torch, torchvision, Pillow).
-# Source of truth: [project.dependencies] in pyproject.toml (minus torch/torchvision),
-# plus taichi: the nodes' default synthesis backend (no wheels for Python >= 3.13; use
-# the torch backend there). Other optional extras are listed in README.md.
+# Source of truth: [project.dependencies] in pyproject.toml (minus torch/torchvision).
+# ezsynth-wgpu backs the nodes' default `wgpu` backend; prebuilt wheels exist for
+# Windows x64, Linux x86_64 and Apple Silicon. Optional extras are listed in README.md.
 numpy>=1.26
 opencv-python>=4.8
 pydantic>=2.5
 pyyaml>=6.0
 tqdm>=4.66
-scipy>=1.11
-ninja>=1.11
-taichi>=1.7; python_version < "3.13"
+ezsynth-wgpu @ https://github.com/FuouM/ReEzSynth/releases/download/v0.1.0/ezsynth_wgpu-0.1.0-cp310-abi3-win_amd64.whl ; sys_platform == "win32" and platform_machine == "AMD64"
+ezsynth-wgpu @ https://github.com/FuouM/ReEzSynth/releases/download/v0.1.0/ezsynth_wgpu-0.1.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl ; sys_platform == "linux" and platform_machine == "x86_64"
+ezsynth-wgpu @ https://github.com/FuouM/ReEzSynth/releases/download/v0.1.0/ezsynth_wgpu-0.1.0-cp310-abi3-macosx_11_0_arm64.whl ; sys_platform == "darwin" and platform_machine == "arm64"

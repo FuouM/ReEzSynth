@@ -20,8 +20,8 @@ def add_image_ops_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--image-ops",
         type=str,
-        default="taichi",
-        choices=["taichi", "wgpu"],
+        default="wgpu",
+        choices=["wgpu", "taichi"],
         help="Engine for forward splatting and flow warping",
     )
 

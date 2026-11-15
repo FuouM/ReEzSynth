@@ -9,9 +9,9 @@ Synthesis runs on one of several backends:
 
 | Backend | Runs on | Needs | Notes |
 |:-|:-|:-|:-|
-| `wgpu` | Any GPU via Vulkan, DX12 or Metal | A prebuilt wheel (or Rust to build it) | Fastest; Rust + WebGPU; the same kernels run in the browser |
-| `cuda` | NVIDIA GPUs | C++ compiler and CUDA Toolkit (JIT-built extension) | Native C++/CUDA extension |
-| `taichi` | GPU or CPU | `taichi` (Python 3.10–3.12) | Default of the ComfyUI nodes |
+| `wgpu` | Any GPU via Vulkan, DX12 or Metal | Nothing extra on Windows x64, Linux x86_64 and Apple Silicon (prebuilt wheel, installed by default) | Default and fastest; Rust + WebGPU; the same kernels run in the browser |
+| `cuda` | NVIDIA GPUs | `ninja` (`--extra cuda`), a C++ compiler and the CUDA Toolkit (JIT-built extension) | Native C++/CUDA extension |
+| `taichi` | GPU or CPU | `taichi` (Python 3.10–3.12) | |
 | `torch` | Anything PyTorch runs on | Nothing extra | Pure PyTorch, slowest |
 
 ## Features
@@ -72,42 +72,38 @@ Video, 100 frames at 960×544 with keyframes on the first and last frame:
 
 ## Installation
 
-You need Python 3.10–3.12 and [uv](https://docs.astral.sh/uv/). An NVIDIA GPU is used automatically when present; the `torch`, `taichi` and `wgpu` backends need no CUDA Toolkit.
+You need Python 3.10–3.12 and [uv](https://docs.astral.sh/uv/). The default `wgpu` backend runs on any GPU; the `torch`, `taichi` and `wgpu` backends need no CUDA Toolkit.
 
 ```bash
 git clone --filter=blob:none https://github.com/FuouM/ReEzSynth.git
 cd ReEzSynth
-uv sync                                   # core, with PyTorch for CUDA 12.6 (CPU/MPS build on macOS)
+uv sync                                   # core + the wgpu backend, with PyTorch for CUDA 12.6 (CPU/MPS build on macOS)
 uv sync --extra taichi --extra pyamg      # + Taichi backend and the AMG Poisson solver
 uv sync --all-extras                      # everything, incl. CuPy and FaceBlit (dlib needs CMake)
 ```
 
 `--filter=blob:none` skips the large media in older history; current example media comes from Git LFS. To skip it as well, clone with `GIT_LFS_SKIP_SMUDGE=1` and fetch what you need later, for example `git lfs pull --include="examples/**"`.
 
-Optional extras: `taichi`, `wgpu` (builds the Rust module from source), `cupy`, `pyamg`, `neuflow` (Hugging Face weight download), `faceblit`.
+Optional extras: `taichi`, `cuda` (ninja, for the JIT-built `cuda` backend), `scipy` (the `lsmr`/`cg` Poisson solvers), `cupy`, `pyamg`, `neuflow` (Hugging Face weight download), `phycv`, `faceblit`.
 
 ### `wgpu` backend
 
-Every [GitHub Release](https://github.com/FuouM/ReEzSynth/releases) has prebuilt `ezsynth_wgpu` wheels: one per OS, for any Python ≥ 3.10 and any PyTorch.
+`uv sync` and `requirements.txt` install the prebuilt `ezsynth_wgpu` wheel of the [GitHub Release](https://github.com/FuouM/ReEzSynth/releases) on Windows x64, Linux x86_64 and Apple Silicon (abi3: any Python ≥ 3.10, any PyTorch).
 
-```bash
-pip install ezsynth_wgpu-<version>-cp310-abi3-<platform>.whl
-```
-
-To build it from source, you need a Rust toolchain:
+On other platforms, or after changing the Rust code, build it from source with a Rust toolchain:
 
 - **Windows**: `setup_env.ps1` installs one into `.rust/`; load it with `. .\env.ps1`.
 - **Elsewhere**: install one with [rustup](https://rustup.rs).
 
-Then run `uv sync --extra wgpu` (or `pip install ./rust/ezsynth-wgpu`).
+Then run `uv pip install ./rust/ezsynth-wgpu` (or `pip install ./rust/ezsynth-wgpu`); the next `uv sync` restores the release wheel.
 
-Select it with `backend: wgpu` or `--backend wgpu`; FastBlend `auto` prefers it after the native extension. To choose the graphics API and GPU, set `WGPU_BACKEND=vulkan|dx12|metal` and `WGPU_ADAPTER_NAME`.
+It is the default backend (`backend: wgpu`, `--backend wgpu`), and FastBlend `auto` picks it first. To choose the graphics API and GPU, set `WGPU_BACKEND=vulkan|dx12|metal` and `WGPU_ADAPTER_NAME`.
 
 With `wgpu` the video pipeline's flow warping, forward splatting, histogram blending and occlusion masks also run on WebGPU, so forward warping no longer needs Taichi. Warping and occlusion masks match OpenCV 5. Histogram blending converts to Lab in float, so a few pixels differ from OpenCV's 8-bit path (mean difference below one level).
 
 ### `cuda` / `cpu` native extension
 
-The `ebsynth_torch` C++/CUDA extension (`ezsynth/kernels/synth/cuda_src/`) is JIT-compiled the first time the `cuda` or `cpu` backend is used, then cached by PyTorch.
+The `ebsynth_torch` C++/CUDA extension (`ezsynth/kernels/synth/cuda_src/`) is JIT-compiled the first time the `cuda` or `cpu` backend is used, then cached by PyTorch. The build needs `ninja` (`uv sync --extra cuda`).
 
 - **Compiler**: C++20 (Visual Studio 2022 "Desktop development with C++" on Windows, GCC 10+ on Linux).
 - **CUDA kernels**: CUDA Toolkit 12.4 or newer. The `.cu` files include no PyTorch headers and compile as C++17.
@@ -132,24 +128,26 @@ Outside ComfyUI, each run caps PyTorch's CUDA allocator at 90% of the memory fre
 ## ComfyUI
 
 1. **Clone** into `ComfyUI/custom_nodes/ReEzSynth`, preferably without media: `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/FuouM/ReEzSynth.git` (in Windows `cmd`, run `set GIT_LFS_SKIP_SMUDGE=1` first).
-2. **Install the requirements** into ComfyUI's Python; torch and torchvision come from ComfyUI. Portable build: `python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ReEzSynth\requirements.txt`. The requirements include `taichi`, the nodes' default backend. Taichi has no wheels for Python 3.13+, so there use `wgpu` or `torch`.
-3. **Optional, fastest**: install a `wgpu` wheel from the [Releases](https://github.com/FuouM/ReEzSynth/releases), for example `python_embeded\python.exe -m pip install ezsynth_wgpu-<version>-cp310-abi3-win_amd64.whl`, then pick `wgpu` in the config nodes. FastBlend `auto` uses it when it's installed.
-4. **Optical flow models**: for the default RAFT engine, put the RAFT checkpoints in `models/raft/` (see `models/model_files.md`). TorchVision downloads its weights itself; OpenCV needs none.
-5. **Restart ComfyUI.** The nodes appear under `ReEzSynth`: Guide, Guides Append, Image Synth Config, Image Synth, Video Style Keyframe(s), Video Style Keyframes Append, Video Synth Config, Video Synth, FastBlend Interpolate, FaceBlit.
-6. **Example graphs** are in `workflows/`: image synthesis (`reezsynth_imgsynth_*.json`), `reezsynth_videosynth.json`, `reezsynth_fastblend.json` and `reezsynth_faceblit.json`. Drag one onto the canvas.
+2. **Install the requirements** into ComfyUI's Python; torch and torchvision come from ComfyUI. Portable build: `python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ReEzSynth\requirements.txt`. They include the `ezsynth_wgpu` wheel of the nodes' default `wgpu` backend on Windows x64, Linux x86_64 and Apple Silicon; elsewhere pick `torch` (or install `taichi`).
+3. **Optical flow models**: for the default RAFT engine, put the RAFT checkpoints in `models/raft/` (see `models/model_files.md`). TorchVision downloads its weights itself; OpenCV needs none.
+4. **Restart ComfyUI.** The nodes appear under `ReEzSynth`: Guide, Guides Append, Image Synth Config, Image Synth, Video Style Keyframe(s), Video Style Keyframes Append, Video Synth Config, Video Synth, FastBlend Interpolate, FaceBlit.
+5. **Example graphs** are in `workflows/`: image synthesis (`reezsynth_imgsynth_*.json`), `reezsynth_videosynth.json`, `reezsynth_fastblend.json` and `reezsynth_faceblit.json`. Drag one onto the canvas.
 
 Some options need extra packages. A node that needs a missing one stops and shows the `pip install` command.
 
 | Package | Needed for |
 |:-|:-|
+| `taichi` | `taichi` synthesis, FastBlend and FaceBlit backends |
 | `cupy-cuda12x` | FastBlend `cupy` backend |
+| `ninja` | `cuda` backends (JIT build) |
+| `scipy` | `lsmr`, `cg` and `amg` Poisson solvers |
 | `phycv` | PAGE and PST edge methods |
 | `pyamg` | `amg` Poisson solver |
 | `huggingface-hub` | NeuFlow flow engine (checkpoints in `models/neuflow/`) |
 | `face-alignment` | FaceBlit landmark detection when no landmarks are connected |
 | `numba` | FaceBlit `numba` DFS mode |
 
-The `cuda` backends JIT-build the native extension, which needs a C++ compiler and the CUDA Toolkit matching ComfyUI's PyTorch.
+The `cuda` backends JIT-build the native extension, which needs `ninja`, a C++ compiler and the CUDA Toolkit matching ComfyUI's PyTorch.
 
 Inside ComfyUI the memory cap is off, since ComfyUI manages VRAM. The nodes:
 
@@ -288,8 +286,9 @@ Settings come from a YAML file (defaults in `configs/default.yml`) or from `RunC
 
 `blending.poisson_solver`:
 
-- `lsqr`, `lsmr`: high-quality iterative solvers.
-- `cg`: conjugate gradient; faster.
+- `lsqr`: least-squares solve (NumPy conjugate gradients; no SciPy needed).
+- `lsmr`: SciPy's iterative solver; needs `scipy`.
+- `cg`: SciPy conjugate gradient; needs `scipy`.
 - `amg`: fastest high-quality CPU option for large frames; needs `pyamg`.
 - `seamless`: OpenCV `seamlessClone`; fast.
 - `disabled`: no Poisson fusion; only histogram blending.

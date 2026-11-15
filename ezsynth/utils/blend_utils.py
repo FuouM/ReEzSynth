@@ -24,7 +24,7 @@ class Blender:
         poisson_grad_weight_ab=0.5,
         use_taichi_ops=False,
         use_forward_warping=False,
-        backend="cuda",
+        backend="wgpu",
     ):
         engine = resolve_image_ops(
             backend, gpu_ops=use_taichi_ops or use_forward_warping

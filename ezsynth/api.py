@@ -36,7 +36,7 @@ class RunConfig:
         pyramid_levels=6,
         search_vote_iters=12,
         patch_match_iters=6,
-        backend="cuda",
+        backend="wgpu",
         extra_pass_3x3=False,
         edge_weight=1.0,
         image_weight=6.0,

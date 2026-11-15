@@ -154,12 +154,12 @@ def _combo(options, default, tooltip):
 
 
 BACKEND_TOOLTIP = (
-    "Synthesis backend. taichi (default): compiled GPU/CPU kernels, installed with "
-    "requirements.txt. wgpu: WebGPU kernels in Rust (Vulkan/DX12/Metal, any GPU "
-    "vendor); fastest, needs the ezsynth-wgpu package built from rust/ezsynth-wgpu. "
-    "torch: pure PyTorch, slower, for platforms without Taichi. cuda: native "
-    "extension (JIT build needs a CUDA toolkit + compiler matching ComfyUI's "
-    "PyTorch); supports cost ssd/ncc and search_mode patchmatch only."
+    "Synthesis backend. wgpu (default): WebGPU kernels in Rust (Vulkan/DX12/Metal, "
+    "any GPU vendor), fastest, installed with requirements.txt on Windows x64, Linux "
+    "x86_64 and Apple Silicon. taichi: compiled GPU/CPU kernels (pip install taichi). "
+    "torch: pure PyTorch, slower, runs anywhere. cuda: native extension (JIT build "
+    "needs ninja, a CUDA toolkit and a compiler matching ComfyUI's PyTorch); supports "
+    "cost ssd/ncc and search_mode patchmatch only."
 )
 COST_TOOLTIP = (
     "Patch distance: ssd (sum of squared differences, default), ncc (normalized "
@@ -207,7 +207,7 @@ class ReEzSynthImageSynthConfig:
         return {
             # Widget order is part of saved workflows: append new inputs at the end.
             "required": {
-                "backend": _combo(SYNTH_BACKENDS, "taichi", BACKEND_TOOLTIP),
+                "backend": _combo(SYNTH_BACKENDS, "wgpu", BACKEND_TOOLTIP),
                 "cost_function": _combo(COST_FUNCTIONS, "ssd", COST_TOOLTIP),
                 "use_residual_transfer": _bool(
                     True,

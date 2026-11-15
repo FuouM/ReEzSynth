@@ -50,7 +50,7 @@ ebsynth_params:
   cost_function: "ncc" # Options: "ssd", "ncc"
 
   # Backend and device
-  backend: "cuda"
+  backend: "wgpu"
   device: null
   use_optimization: true
 

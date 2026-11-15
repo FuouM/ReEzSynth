@@ -44,7 +44,7 @@ class PrecomputeRunner:
         pipeline_cfg: PipelineConfig,
         debug_cfg: DebugConfig,
         state: PrecomputeState | None = None,
-        backend: str = "cuda",
+        backend: str = "wgpu",
     ) -> None:
         self.project_cfg = project_cfg
         self.precomputation_cfg = precomputation_cfg

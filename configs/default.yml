@@ -41,9 +41,9 @@ blending:
   # Select the solver for Poisson reconstruction.
   # Options:
   # "disabled": Skips Poisson step entirely. Fastest option, but blend seam will be visible. Default
-  # "lsqr": High-quality iterative solver.
-  # "lsmr": Alternative iterative solver, can be slightly faster than lsqr.
-  # "cg": Conjugate Gradient solver. May be faster on some systems.
+  # "lsqr": High-quality least-squares solve (NumPy; no SciPy needed).
+  # "lsmr": SciPy iterative solver. Requires 'pip install scipy'.
+  # "cg": SciPy Conjugate Gradient solver. Requires 'pip install scipy'.
   # "amg": Algebraic Multigrid solver. Very fast for large images. Requires 'pip install pyamg'.
   # "seamless": OpenCV's seamlessClone. Fast alternative, but blends in BGR space.
   poisson_solver: "disabled"
@@ -69,7 +69,7 @@ ebsynth_params:
   cost_function: "ncc" # Options: "ssd", "ncc"
 
   # Backend and device
-  backend: "cuda" # "cuda", "torch", "taichi", or "wgpu"
+  backend: "wgpu" # "wgpu", "cuda", "torch" or "taichi"
   device: null # "cpu", "cuda", or null for auto-detect
   use_optimization: true # Use optimized index_vector CPU backend if applicable.
 

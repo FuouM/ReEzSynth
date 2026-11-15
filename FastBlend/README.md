@@ -150,7 +150,7 @@ Apply FastBlend post-processing to stylized video frames.
 - `window_size`: Temporal window size for blending. Uses default if None
 - `batch_size`: Batch size for processing. Uses default if None
 - `progress_callback`: Optional callback function called with (current_frame, total_frames)
-- `backend`: Backend to use ("auto", "cuda", "cupy", "taichi", "wgpu"). Default: "auto" (Taichi on Apple Silicon, else the CUDA extension, wgpu, Taichi, CuPy in that order)
+- `backend`: Backend to use ("auto", "cuda", "cupy", "taichi", "wgpu"). Default: "auto" (the first installed of wgpu, Taichi, CuPy; the CUDA extension only when requested)
 - `config`: Optional FastBlendConfig. If provided, other parameters are ignored
 
 **Returns:** List of smoothed frames as numpy arrays (H, W, 3) uint8

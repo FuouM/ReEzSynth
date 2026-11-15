@@ -31,6 +31,7 @@ from .options import (
     OPENCV_FLOW_METHODS,
     POISSON_SOLVERS,
     PRECISIONS,
+    SCIPY_POISSON_SOLVERS,
     SEARCH_MODES,
     SYNTH_BACKENDS,
     TORCHVISION_FLOW_MODELS,
@@ -142,6 +143,8 @@ def check_video_dependencies(cfg: ReEzVideoSynthConfig) -> None:
     )
     if cfg.edge_method in ("PAGE", "PST"):
         require_module("phycv")
+    if cfg.poisson_solver in SCIPY_POISSON_SOLVERS:
+        require_module("scipy")
     if cfg.poisson_solver == "amg":
         require_module("pyamg")
     # Forward splatting and Taichi ops run on WebGPU with the wgpu backend.
@@ -410,7 +413,7 @@ class ReEzSynthVideoSynthConfig:
                     "Warp blend masks with Taichi (needs taichi). The wgpu backend runs "
                     "warping, histogram blending and occlusion masks on WebGPU.",
                 ),
-                "backend": _combo(SYNTH_BACKENDS, "taichi", BACKEND_TOOLTIP),
+                "backend": _combo(SYNTH_BACKENDS, "wgpu", BACKEND_TOOLTIP),
                 "cost_function": _combo(COST_FUNCTIONS, "ncc", COST_TOOLTIP),
                 "vote_mode": _combo(
                     VOTE_MODES,

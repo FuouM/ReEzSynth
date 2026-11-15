@@ -22,7 +22,6 @@ single-level matcher. ``wgpu`` runs the whole pyramid in Rust.
 
 from __future__ import annotations
 
-import platform
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
@@ -39,9 +38,9 @@ def _installed(module: str) -> bool:
 def resolve(requested: str) -> FastBlendEngine:
     """Engine for ``requested`` (an engine name or ``auto``).
 
-    An explicit engine must be usable or ImportError is raised. ``auto`` prefers Taichi
-    on Apple Silicon, then the CUDA extension (JIT-built here when a CUDA device
-    exists), then wgpu, Taichi and CuPy.
+    An explicit engine must be usable or ImportError is raised. ``auto`` picks the first
+    installed of wgpu, Taichi and CuPy; it never JIT-builds the CUDA extension, which
+    runs only when ``cuda`` is requested.
     """
     req = (requested or "auto").lower().strip()
     if req != "auto" and req not in ENGINES:
@@ -68,20 +67,13 @@ def resolve(requested: str) -> FastBlendEngine:
                 "CUDA backend requested but the FastBlend CUDA extension is not available"
             )
         return "cuda"
-    if (
-        platform.system() == "Darwin"
-        and platform.machine() == "arm64"
-        and _installed("taichi")
+    for engine, module in (
+        ("wgpu", "ezsynth_wgpu"),
+        ("taichi", "taichi"),
+        ("cupy", "cupy"),
     ):
-        return "taichi"
-    if load("cuda").is_available():
-        return "cuda"
-    if _installed("ezsynth_wgpu"):
-        return "wgpu"
-    if _installed("taichi"):
-        return "taichi"
-    if _installed("cupy"):
-        return "cupy"
+        if _installed(module):
+            return engine
     raise ImportError("No FastBlend backend available")
 
 

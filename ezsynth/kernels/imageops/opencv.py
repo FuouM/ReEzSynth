@@ -7,7 +7,7 @@ from functools import lru_cache
 import cv2
 import numpy as np
 
-OPS = frozenset({"warp", "hist_blend", "occlusion_masks"})
+OPS = frozenset({"warp", "hist_blend", "occlusion_masks", "poisson_lsq"})
 
 
 def flow_grid(height: int, width: int) -> np.ndarray:
@@ -155,3 +155,64 @@ def occlusion_masks(
         fwd_mask = np.maximum(fwd_mask, _coverage_holes(fwd).astype(np.uint8) * 255)
         bwd_mask = np.maximum(bwd_mask, _coverage_holes(bwd).astype(np.uint8) * 255)
     return fwd_mask, bwd_mask
+
+
+def poisson_lsq(
+    gx: np.ndarray,
+    gy: np.ndarray,
+    target: np.ndarray,
+    weight: float,
+    *,
+    max_iter: int | None = None,
+    tol: float = 1e-8,
+) -> np.ndarray:
+    """Least-squares solve of one channel's screened Poisson system, ``u`` (H, W).
+
+    Rows: ``weight * (u[i] - u[i+W]) = weight * gx[i]`` for flat ``i < (H-1)W``,
+    ``weight * (u[i] - u[i+1]) = weight * gy[i]`` for flat ``i < H(W-1)`` and
+    ``u = target``. These are the flat-index operators of the original SciPy
+    ``construct_A_cpu`` (the horizontal pairs run along the flattened image), so the
+    solution matches SciPy's ``lsqr`` on that matrix; ``web/src/core/passBlend.ts``
+    solves the same system. Conjugate gradients on the normal equations, matrix-free,
+    from ``target``; stops at relative residual ``tol`` or after ``max_iter`` steps.
+    """
+    h, w = target.shape
+    n = h * w
+    nx, ny = (h - 1) * w, h * (w - 1)
+    k2 = float(weight) ** 2
+    gx_flat = np.asarray(gx, dtype=np.float64).reshape(n)
+    gy_flat = np.asarray(gy, dtype=np.float64).reshape(n)
+    c = np.asarray(target, dtype=np.float64).reshape(n)
+
+    def normal(u: np.ndarray) -> np.ndarray:
+        out = u.copy()
+        d = k2 * (u[:nx] - u[w:])
+        out[:nx] += d
+        out[w:] -= d
+        d = k2 * (u[:ny] - u[1 : ny + 1])
+        out[:ny] += d
+        out[1 : ny + 1] -= d
+        return out
+
+    rhs = c.copy()
+    rhs[:nx] += k2 * gx_flat[:nx]
+    rhs[w:] -= k2 * gx_flat[:nx]
+    rhs[:ny] += k2 * gy_flat[:ny]
+    rhs[1 : ny + 1] -= k2 * gy_flat[:ny]
+
+    u = c.copy()
+    r = rhs - normal(u)
+    p = r.copy()
+    rr = float(r @ r)
+    stop = tol * tol * max(float(rhs @ rhs), 1e-30)
+    it = 0
+    while rr > stop and (max_iter is None or it < max_iter):
+        q = normal(p)
+        alpha = rr / float(p @ q)
+        u += alpha * p
+        r -= alpha * q
+        rr_next = float(r @ r)
+        p = r + (rr_next / rr) * p
+        rr = rr_next
+        it += 1
+    return u.reshape(h, w)

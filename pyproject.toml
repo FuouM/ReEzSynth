@@ -1,7 +1,7 @@
 [project]
 name = "reezsynth"
 version = "0.1.0"
-description = "EbSynth-style example-based image and video stylization with PyTorch, Taichi and CUDA backends"
+description = "EbSynth-style example-based image and video stylization on WebGPU, PyTorch, Taichi and CUDA"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10,<3.13"
@@ -14,9 +14,9 @@ dependencies = [
     "pydantic>=2.5",
     "pyyaml>=6.0",
     "tqdm>=4.66",
-    "scipy>=1.11",
-    # JIT build of the optional ebsynth / FastBlend native extensions (torch.utils.cpp_extension).
-    "ninja>=1.11",
+    # The default `wgpu` backend: prebuilt abi3 wheels from the GitHub Releases
+    # (tool.uv.sources) for the platforms CI builds. Elsewhere build rust/ezsynth-wgpu.
+    "ezsynth-wgpu==0.1.0; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
 ]
 
 [project.scripts]
@@ -27,10 +27,12 @@ fastblend-interpolate = "ezsynth.cli.fastblend_interpolate:main"
 
 [project.optional-dependencies]
 taichi = ["taichi>=1.7"]
-# WebGPU backend (Rust; built from rust/ezsynth-wgpu, needs a Rust toolchain until wheels ship).
-wgpu = ["ezsynth-wgpu"]
+# JIT build of the native `cuda` synthesis / FastBlend extensions (torch.utils.cpp_extension).
+cuda = ["ninja>=1.11"]
+# The lsmr / cg / amg Poisson solvers (the default lsqr runs on NumPy).
+scipy = ["scipy>=1.11"]
 cupy = ["cupy-cuda12x>=13; sys_platform != 'darwin'"]
-pyamg = ["pyamg>=5.0"]
+pyamg = ["pyamg>=5.0", "scipy>=1.11"]
 neuflow = ["huggingface-hub>=0.20"]
 # PAGE / PST edge methods.
 phycv = ["phycv>=1.2"]
@@ -43,7 +45,7 @@ faceblit = [
 ]
 # Optional dlib landmark backend (sdist only: needs CMake and a C++ compiler).
 dlib = ["dlib>=19.22"]
-all = ["reezsynth[taichi,cupy,pyamg,neuflow,phycv,faceblit,dlib]"]
+all = ["reezsynth[taichi,cuda,scipy,cupy,pyamg,neuflow,phycv,faceblit,dlib]"]
 
 [dependency-groups]
 dev = [
@@ -69,7 +71,11 @@ default-groups = ["dev"]
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
 torchvision = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
-ezsynth-wgpu = { path = "rust/ezsynth-wgpu" }
+ezsynth-wgpu = [
+    { url = "https://github.com/FuouM/ReEzSynth/releases/download/v0.1.0/ezsynth_wgpu-0.1.0-cp310-abi3-win_amd64.whl", marker = "sys_platform == 'win32'" },
+    { url = "https://github.com/FuouM/ReEzSynth/releases/download/v0.1.0/ezsynth_wgpu-0.1.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", marker = "sys_platform == 'linux'" },
+    { url = "https://github.com/FuouM/ReEzSynth/releases/download/v0.1.0/ezsynth_wgpu-0.1.0-cp310-abi3-macosx_11_0_arm64.whl", marker = "sys_platform == 'darwin'" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu126"
