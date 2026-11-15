@@ -42,34 +42,6 @@ Synthesis runs on one of several backends:
 
 > Sum of squared differences (top) and normalized cross-correlation (bottom) patch costs
 
-### Speed
-
-All times below are on an RTX 3060 with a Ryzen 5 3600.
-
-Single image, full pyramid (`run_img_synth.py` parameters):
-
-| Backend | retarget 462×320 | stylit 912×1200 | facestyle 1000×810 |
-|:-|-:|-:|-:|
-| `wgpu` | 0.13 s | 0.97 s | 0.61 s |
-| `cuda` | 0.17 s | 1.36 s | 0.85 s |
-| `taichi` | 1.51 s | 8.84 s | 6.27 s |
-
-Video, 100 frames at 960×544 with keyframes on the first and last frame:
-
-- The bundled ComfyUI video workflow takes 2 min 43 s with `wgpu` and 12 min 39 s with `taichi`. The FastBlend workflow (98 frames) takes 125 s and 298 s.
-- With `wgpu` the pipeline's image operations also run on the GPU. Blending 40 bidirectional frames takes 0.8 s instead of 13.4 s, and occlusion masks for 40 flow pairs take 0.3 s instead of 6.5 s.
-- Poisson blending method and total pipeline time, including saving to disk. One EbSynth pass takes about 46 s and histogram blending about 22 s.
-
-| Blend method | Pipeline time | Poisson solve |
-|:-|-:|-:|
-| none (forward or reverse pass only) | ~73 s | — |
-| `disabled` | 147 s | — |
-| `seamless` | 164 s | 0:17 |
-| `cg` | 192 s | 0:52 |
-| `amg` | 235 s | 1:31 |
-| `lsmr` | 299 s | 2:36 |
-| `lsqr` | 351 s | 3:33 |
-
 ## Installation
 
 You need Python 3.10–3.12 and [uv](https://docs.astral.sh/uv/). The default `wgpu` backend runs on any GPU; the `torch`, `taichi` and `wgpu` backends need no CUDA Toolkit.
@@ -181,8 +153,6 @@ uv run --with onnx --with onnxscript python web/export_neuflow.py --size 960x544
 ```
 
 The model has a fixed input size. Frames up to 31 px smaller are padded; other sizes are resized and the flow rescaled.
-
-On the cat clip (100 frames, 960×544, keyframes 0 and 99, histogram blending) the browser takes 2 min 52 s on an RTX 3060. Its frames are within 37–39 dB PSNR of the Python `wgpu` pipeline. Keyframes stay exactly as painted, whereas Python re-blends the first one.
 
 ### Build
 
@@ -350,7 +320,6 @@ MIT (see `LICENSE`). Bundled third-party code (RAFT, NeuFlow v2, FastBlend, Face
 - **johnBuffer** for the Stable Index Vector implementation: <https://github.com/johnBuffer/StableIndexVector>
 - **Taichi Lang**: <https://github.com/taichi-dev/taichi>
 - **RongxuanTan** for bilateral weighting and sparse sampling: <https://github.com/RongxuanTan/MP-MVS>
-- **Gemini 2.5 Pro** (via Google AI Studio) for assistance with coding and documentation.
 
 ```bibtex
 @misc{Jamriska2018,

@@ -11,6 +11,11 @@ projects/*
 output/*
 cache/*
 output_synth_api_*/
+debug/*
+references/
+deprecated/*
+.scratch/*
+.tools/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
