@@ -58,7 +58,6 @@ OPTIONAL_DEPENDENCIES = {
     "scipy": ("scipy", "the lsmr / cg / amg Poisson solvers"),
     "phycv": ("phycv", "the PAGE / PST edge methods"),
     "pyamg": ("pyamg", "the 'amg' Poisson solver"),
-    "huggingface_hub": ("huggingface-hub", "NeuFlow optical flow checkpoints"),
     "face_alignment": ("face-alignment", "automatic FaceBlit landmark detection"),
     "numba": ("numba", "the FaceBlit CPU DFS path with dfs_mode='numba'"),
 }

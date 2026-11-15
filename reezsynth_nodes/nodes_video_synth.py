@@ -159,8 +159,6 @@ def check_video_dependencies(cfg: ReEzVideoSynthConfig) -> None:
     ) and cfg.backend != "wgpu"
     if cfg.poisson_solver == "taichi-cg" or taichi_ops:
         require_module("taichi")
-    if cfg.flow_engine == "NeuFlow":
-        require_module("huggingface_hub")
 
 
 def build_video_info(
@@ -342,8 +340,8 @@ class ReEzSynthVideoSynthConfig:
                     FLOW_ENGINES,
                     "RAFT",
                     "Optical flow: RAFT (raft-*.pth in models/raft, see "
-                    "models/model_files.md), NeuFlow (needs huggingface-hub; "
-                    "neuflow_*.pth in models/neuflow), OpenCV (CPU, no weights), "
+                    "models/model_files.md), NeuFlow (neuflow_*.pth in "
+                    "models/neuflow), OpenCV (CPU, no weights), "
                     "TorchVision RAFT (weights download automatically).",
                 ),
                 "flow_model": _combo(

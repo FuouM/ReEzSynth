@@ -3,17 +3,8 @@ import torch.nn.functional as F
 
 from . import backbone_v7, config, corr, matching, refine, transformer, upsample
 
-try:
-    from huggingface_hub import PyTorchModelHubMixin
-except ImportError:
-    # A simple fallback if huggingface_hub is not installed.
-    # This allows the model to be used locally without the dependency.
-    class PyTorchModelHubMixin:
-        def __init__(self, *args, **kwargs):
-            pass
 
-
-class NeuFlow(torch.nn.Module, PyTorchModelHubMixin):
+class NeuFlow(torch.nn.Module):
     def __init__(self):
         super().__init__()
 

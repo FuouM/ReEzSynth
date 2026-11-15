@@ -84,7 +84,7 @@ uv sync --all-extras                      # everything, incl. CuPy and FaceBlit 
 
 `--filter=blob:none` skips the large media in older history; current example media comes from Git LFS. To skip it as well, clone with `GIT_LFS_SKIP_SMUDGE=1` and fetch what you need later, for example `git lfs pull --include="examples/**"`.
 
-Optional extras: `taichi`, `cuda` (ninja, for the JIT-built `cuda` backend), `scipy` (the `lsmr`/`cg` Poisson solvers), `cupy`, `pyamg`, `neuflow` (Hugging Face weight download), `phycv`, `faceblit`.
+Optional extras: `taichi`, `cuda` (ninja, for the JIT-built `cuda` backend), `scipy` (the `lsmr`/`cg` Poisson solvers), `cupy`, `pyamg`, `phycv`, `faceblit`.
 
 ### `wgpu` backend
 
@@ -143,7 +143,6 @@ Some options need extra packages. A node that needs a missing one stops and show
 | `scipy` | `lsmr`, `cg` and `amg` Poisson solvers |
 | `phycv` | PAGE and PST edge methods |
 | `pyamg` | `amg` Poisson solver |
-| `huggingface-hub` | NeuFlow flow engine (checkpoints in `models/neuflow/`) |
 | `face-alignment` | FaceBlit landmark detection when no landmarks are connected |
 | `numba` | FaceBlit `numba` DFS mode |
 

@@ -33,7 +33,6 @@ cuda = ["ninja>=1.11"]
 scipy = ["scipy>=1.11"]
 cupy = ["cupy-cuda12x>=13; sys_platform != 'darwin'"]
 pyamg = ["pyamg>=5.0", "scipy>=1.11"]
-neuflow = ["huggingface-hub>=0.20"]
 # PAGE / PST edge methods.
 phycv = ["phycv>=1.2"]
 # FaceBlit: face-alignment (FAN + BlazeFace/S3FD) detects landmarks; numba runs the CPU DFS path.
@@ -45,7 +44,7 @@ faceblit = [
 ]
 # Optional dlib landmark backend (sdist only: needs CMake and a C++ compiler).
 dlib = ["dlib>=19.22"]
-all = ["reezsynth[taichi,cuda,scipy,cupy,pyamg,neuflow,phycv,faceblit,dlib]"]
+all = ["reezsynth[taichi,cuda,scipy,cupy,pyamg,phycv,faceblit,dlib]"]
 
 [dependency-groups]
 dev = [

@@ -33,6 +33,7 @@
 - `SynthesisPipeline(configs, data)` takes a `MainConfig`, which replaces the duplicate `SynthesisConfigs`; `configs_from_yaml` / `configs_from_mapping` return `MainConfig`. `RunConfig` is a dataclass (same fields and order).
 - Flow caches use `save_array_cache` / `load_cached_arrays` (`save_flow_cache` / `load_cached_flow` removed). FastBlend config builders raise `TypeError` on unknown keys.
 - `reezsynth-video` and `reezsynth-prepare` exit non-zero on failure (they logged the error and exited 0); a missing or unreadable video, or a failed frame write, raises.
+- The `neuflow` extra is gone: NeuFlow no longer inherits the unused Hugging Face `PyTorchModelHubMixin` (weights always load from `models/neuflow/*.pth`), so `huggingface-hub` is not needed and the ComfyUI video node no longer asks for it.
 
 ### Added
 - GPU memory budget: outside ComfyUI, the PyTorch CUDA allocator is capped from the memory free at startup, keeping 1.5 GiB for other applications (`EZSYNTH_GPU_MEMORY_*` overrides).
