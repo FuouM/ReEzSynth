@@ -10,7 +10,7 @@ Synthesis runs on one of several backends:
 | Backend | Runs on | Needs | Notes |
 |:-|:-|:-|:-|
 | `wgpu` | Any GPU via Vulkan, DX12 or Metal | Nothing extra on Windows x64, Linux x86_64 and Apple Silicon (prebuilt wheel, installed by default) | Default and fastest; Rust + WebGPU; the same kernels run in the browser |
-| `cuda` | NVIDIA GPUs | `ninja` (`--extra cuda`), a C++ compiler and the CUDA Toolkit (JIT-built extension) | Native C++/CUDA extension |
+| `cuda` | NVIDIA GPUs | `ninja` (`--extra cuda`), a C++ compiler and the CUDA Toolkit (JIT-built extension) | Native C++/CUDA extension; SSD/NCC costs and PatchMatch search only |
 | `taichi` | GPU or CPU | `taichi` (Python 3.10–3.12) | |
 | `torch` | Anything PyTorch runs on | Nothing extra | Pure PyTorch, slowest |
 
@@ -18,7 +18,7 @@ Synthesis runs on one of several backends:
 
 - **EbSynth parity**: any number of weighted guides (edges, colours, positional maps, …), modulation maps, and weighted or plain voting.
 - **Video pipeline**: forward and reverse passes from each keyframe, blended between keyframes by error maps and histogram matching, then Poisson fusion (several solvers). Optical flow from RAFT, NeuFlow v2, OpenCV or TorchVision; edge guides from Classic, PAGE or PST.
-- **Extra matching options**: SSD, NCC or SAD patch costs; PatchMatch, jump flooding or multi-candidate search; bilateral weights; float16/bfloat16 storage (torch and Taichi backends).
+- **Extra matching options**: SSD, NCC or SAD patch costs; PatchMatch, jump flooding or multi-candidate search; bilateral weights; float16/bfloat16 patch storage (torch backend). `ezsynth/kernels/synth/capabilities.py` lists the options of each backend; others raise an error.
 - **Temporal stability (experimental)**: temporal NNF propagation (each frame starts from the previous frame's matches) and sparse feature guides (tracked features pin the style to moving objects).
 - **FastBlend**: blends a video stylized frame by frame against the original to remove flicker, or spreads stylized keyframes over every frame.
 - **FaceBlit**: landmark-guided face style transfer.

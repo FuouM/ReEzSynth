@@ -99,6 +99,9 @@ def test_validation_messages_name_the_problem():
     assert "multicand_k" in validate_synthesis_options(
         "torch", "ssd", "multicand", "float32", 9
     )
+    assert "precision='float16'" in validate_synthesis_options(
+        "wgpu", "ssd", "patchmatch", "float16"
+    )
 
 
 def test_parse_indices():

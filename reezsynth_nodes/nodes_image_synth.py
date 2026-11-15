@@ -173,8 +173,8 @@ SEARCH_MODE_TOOLTIP = (
 )
 MULTICAND_TOOLTIP = "Candidates kept per pixel when search_mode is multicand."
 PRECISION_TOOLTIP = (
-    "Compute precision of the patch-cost math. float16/bfloat16 roughly halve memory "
-    "traffic on GPUs with fast half precision; float32 is the reference."
+    "Storage dtype of the patch grids (torch backend only; costs and votes stay "
+    "float32). float16/bfloat16 roughly halve memory traffic; float32 is the reference."
 )
 
 

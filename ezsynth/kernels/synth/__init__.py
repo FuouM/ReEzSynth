@@ -22,19 +22,38 @@ from importlib import import_module
 from types import ModuleType
 from typing import Literal, get_args
 
+from .capabilities import unsupported_option
+
 SynthBackend = Literal["cuda", "torch", "taichi", "wgpu"]
 BACKENDS: tuple[str, ...] = get_args(SynthBackend)
 
 
-def load(backend: str) -> ModuleType:
-    """Import the module of synthesis ``backend``."""
+def _check_name(backend: str) -> None:
     if backend not in BACKENDS:
         raise ValueError(
             f"Unsupported synthesis backend {backend!r}; expected one of {BACKENDS}"
         )
+
+
+def load(backend: str) -> ModuleType:
+    """Import the module of synthesis ``backend``."""
+    _check_name(backend)
     return import_module(f"{__name__}.{backend}")
 
 
 def create(backend: str, ebsynth_config, pipeline_config):
-    """``Backend`` instance of synthesis ``backend``."""
+    """``Backend`` instance of synthesis ``backend``.
+
+    Options the backend does not implement (``capabilities``) raise ValueError before
+    its module is imported or the ``cuda`` extension loads (or JIT-builds).
+    """
+    _check_name(backend)
+    error = unsupported_option(
+        backend,
+        ebsynth_config.cost_function,
+        ebsynth_config.search_mode,
+        ebsynth_config.precision,
+    )
+    if error is not None:
+        raise ValueError(error)
     return load(backend).Backend(ebsynth_config, pipeline_config)

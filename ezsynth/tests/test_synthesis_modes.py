@@ -10,7 +10,6 @@ from ezsynth.consts import COST_FUNCTION_SAD
 from ezsynth.engines.synthesis_engine import EbsynthEngine
 from ezsynth.guide import GuideObject, load_guide
 from ezsynth.kernels.synth import torch as torch_backend
-from ezsynth.kernels.synth.cuda import validate_native_options
 from ezsynth.kernels.synth.torch_ops.patch_ops import (
     compute_patch_ssd_vectorized,
     extract_patches,
@@ -239,34 +238,25 @@ def test_low_precision_patches_match_float32_for_uint8_inputs(cost_function, pre
     np.testing.assert_array_equal(error, ref_error)
 
 
-# --- native backend option validation --------------------------------------------
+# --- backend option validation -----------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "options",
+    ("backend", "options"),
     [
-        {"cost_function": "sad"},
-        {"search_mode": "jfa"},
-        {"search_mode": "multicand"},
+        ("cuda", {"cost_function": "sad"}),
+        ("cuda", {"search_mode": "jfa"}),
+        ("cuda", {"search_mode": "multicand"}),
+        ("wgpu", {"precision": "float16"}),
+        ("taichi", {"precision": "bfloat16"}),
     ],
-    ids=["sad", "jfa", "multicand"],
+    ids=["cuda-sad", "cuda-jfa", "cuda-multicand", "wgpu-fp16", "taichi-bf16"],
 )
-def test_native_backend_rejects_unsupported_options(options):
-    config = EbsynthParamsConfig(backend="cuda", **options)
-    with pytest.raises(ValueError, match="native 'cuda' backend"):
-        validate_native_options(config)
-    # The engine rejects them before loading (or JIT-building) the extension.
-    with pytest.raises(ValueError, match="native 'cuda' backend"):
+def test_engine_rejects_options_the_backend_lacks(backend, options):
+    config = EbsynthParamsConfig(backend=backend, **options)
+    # Raised before the backend is built (no extension load, JIT build or GPU init).
+    with pytest.raises(ValueError, match=f"by the '{backend}' backend"):
         EbsynthEngine(config, PipelineConfig())
-
-
-@pytest.mark.parametrize("cost_function", ["ssd", "ncc"])
-def test_native_backend_accepts_supported_options(cost_function):
-    validate_native_options(
-        EbsynthParamsConfig(
-            backend="cuda", cost_function=cost_function, search_mode="patchmatch"
-        )
-    )
 
 
 # --- ImageSynth API ----------------------------------------------------------------

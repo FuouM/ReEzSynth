@@ -8,26 +8,14 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-SYNTH_BACKENDS = ("torch", "taichi", "cuda", "wgpu")
-COST_FUNCTIONS = ("ssd", "ncc", "sad")
-SEARCH_MODES = ("patchmatch", "jfa", "multicand")
-PRECISIONS = ("float32", "float16", "bfloat16")
+from ezsynth.kernels.synth import capabilities
+
+SYNTH_BACKENDS = tuple(capabilities.BACKEND_COST_FUNCTIONS)
+COST_FUNCTIONS = capabilities.COST_FUNCTIONS
+SEARCH_MODES = capabilities.SEARCH_MODES
+PRECISIONS = capabilities.PRECISIONS
 VOTE_MODES = ("weighted", "plain")
 MULTICAND_K_RANGE = (2, 8)
-
-# What each synthesis backend implements (shared contract with ezsynth core).
-BACKEND_COST_FUNCTIONS = {
-    "torch": COST_FUNCTIONS,
-    "taichi": COST_FUNCTIONS,
-    "wgpu": COST_FUNCTIONS,
-    "cuda": ("ssd", "ncc"),
-}
-BACKEND_SEARCH_MODES = {
-    "torch": SEARCH_MODES,
-    "taichi": SEARCH_MODES,
-    "wgpu": SEARCH_MODES,
-    "cuda": ("patchmatch",),
-}
 
 FLOW_ENGINES = ("RAFT", "NeuFlow", "OpenCV", "TorchVision")
 FLOW_MODELS = (
@@ -104,7 +92,7 @@ def validate_synthesis_options(
     multicand_k: int = 3,
 ) -> str | None:
     """Return an error message for an unsupported combination, else ``None``."""
-    if backend not in BACKEND_COST_FUNCTIONS:
+    if backend not in SYNTH_BACKENDS:
         return (
             f"Unknown backend {backend!r}; expected one of {', '.join(SYNTH_BACKENDS)}."
         )
@@ -112,18 +100,11 @@ def validate_synthesis_options(
         return (
             f"Unknown precision {precision!r}; expected one of {', '.join(PRECISIONS)}."
         )
-    costs = BACKEND_COST_FUNCTIONS[backend]
-    if cost_function not in costs:
-        return (
-            f"The {backend!r} backend does not support cost_function={cost_function!r} "
-            f"(supported: {', '.join(costs)}). Use the torch, taichi or wgpu backend for it."
-        )
-    modes = BACKEND_SEARCH_MODES[backend]
-    if search_mode not in modes:
-        return (
-            f"The {backend!r} backend does not support search_mode={search_mode!r} "
-            f"(supported: {', '.join(modes)}). Use the torch, taichi or wgpu backend for it."
-        )
+    error = capabilities.unsupported_option(
+        backend, cost_function, search_mode, precision
+    )
+    if error is not None:
+        return error
     low, high = MULTICAND_K_RANGE
     if not low <= int(multicand_k) <= high:
         return f"multicand_k must be in [{low}, {high}], got {multicand_k}."
