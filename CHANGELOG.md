@@ -22,6 +22,7 @@
 - Fail fast instead of substituting: the Taichi image ops raise on nearest-neighbour warps (NNF propagation warps on OpenCV or wgpu), `poisson_solver="taichi-cg"` without Taichi raises (it returned zeros), and `Warp` accepts only linear or nearest interpolation.
 - `wgpu` is the default synthesis backend (config, `RunConfig`, ComfyUI nodes, `warp_video` tools) and a core dependency: `uv sync` and `requirements.txt` install the v0.1.0 release wheel on Windows x64, Linux x86_64 and Apple Silicon. FastBlend `auto` picks wgpu, then Taichi, then CuPy, and no longer JIT-builds the CUDA extension (request `cuda` for it). The ComfyUI requirements no longer include Taichi.
 - `ninja` moved to the `cuda` extra and `scipy` to the `scipy` extra (also pulled in by `pyamg`). The default `lsqr` Poisson solver runs on NumPy (matrix-free conjugate gradients on the same system, about 1000x closer to the exact solution than SciPy's `lsqr` and faster); `lsmr`, `cg` and `amg` need SciPy and fail at start-up without it.
+- `RunConfig(use_lsqr=...)` is replaced by `RunConfig(poisson_solver=...)` (any `BlendingConfig.poisson_solver` value); `use_lsqr` was silently ignored. `Ezsynth` now passes `RunConfig.alpha` to the pipeline (it always used 0.75).
 
 ### Added
 - GPU memory budget: outside ComfyUI, the PyTorch CUDA allocator is capped from the memory free at startup, keeping 1.5 GiB for other applications (`EZSYNTH_GPU_MEMORY_*` overrides).

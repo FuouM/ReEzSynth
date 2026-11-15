@@ -43,7 +43,7 @@ class RunConfig:
         pos_weight=2.0,
         warp_weight=0.5,
         sparse_anchor_weight=50.0,
-        use_lsqr=True,
+        poisson_solver: str = "lsqr",
         poisson_maxiter: int | None = None,
         alpha: float = 0.75,
         use_temporal_nnf_propagation: bool = True,
@@ -78,7 +78,7 @@ class RunConfig:
         self.sparse_anchor_weight = sparse_anchor_weight
 
         # Blending params
-        self.use_lsqr = use_lsqr
+        self.poisson_solver = poisson_solver
         self.poisson_maxiter = poisson_maxiter
 
         # Pipeline params
@@ -168,13 +168,14 @@ class Ezsynth:
 
         pipeline_cfg = PipelineConfig(
             pyramid_levels=config.pyramid_levels,
+            alpha=config.alpha,
             use_residual_transfer=config.use_residual_transfer,
             use_temporal_nnf_propagation=config.use_temporal_nnf_propagation,
             use_sparse_feature_guide=config.use_sparse_feature_guide,
         )
 
         blending_cfg = BlendingConfig(
-            use_lsqr=config.use_lsqr,
+            poisson_solver=config.poisson_solver,
             poisson_maxiter=config.poisson_maxiter,
             use_taichi_ops=config.use_taichi_ops,
         )
