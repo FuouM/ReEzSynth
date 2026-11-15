@@ -1,8 +1,4 @@
-"""Taichi backend for FastBlend — init, launch helpers, thin matcher classes.
-
-Kernels live in :mod:`taichi_kernels` (same split as ``ezsynth`` ``taichi_kernels`` /
-``taichi_backend``).
-"""
+"""FastBlend on Taichi (kernels in ``taichi_kernels.py``)."""
 
 from __future__ import annotations
 
@@ -10,22 +6,9 @@ import platform
 
 import torch
 
-from ezsynth.utils.taichi_runtime import ensure_ti_init as ensure_ti_init
-from ezsynth.utils.taichi_runtime import get_ti_arch as get_ti_arch
-
+from ...utils.taichi_runtime import ensure_ti_init
 from . import taichi_kernels as tk
-from .patch_matcher_core import FaceBlitPatchMatcherCore, PyramidPatchMatcherCore
-
-
-class FastBlendTaichiBackend:
-    """Backward-compat: ``.remap_kernel`` etc. point at :mod:`taichi_kernels`."""
-
-    remap_kernel = tk.remap_kernel
-    patch_error_kernel = tk.patch_error_kernel
-    pairwise_patch_error_kernel = tk.pairwise_patch_error_kernel
-
-    def __init__(self):
-        ensure_ti_init()
+from .core import FaceBlitPatchMatcherCore, PyramidPatchMatcherCore
 
 
 def _launch_remap(
@@ -117,15 +100,16 @@ def _launch_pairwise_patch_error(
     return error.repeat_interleave(2, dim=0)
 
 
-def _pyramid_device_string(gpu_id: int) -> str:
+def staging_device(gpu_id: int) -> torch.device:
+    """The torch device whose tensors the active Taichi arch reads."""
     if torch.cuda.is_available():
-        return f"cuda:{gpu_id}"
+        return torch.device("cuda", gpu_id)
     if torch.backends.mps.is_available() and platform.system() == "Darwin":
-        return "mps"
-    return "cpu"
+        return torch.device("mps")
+    return torch.device("cpu")
 
 
-class PatchMatcherTaichi(FaceBlitPatchMatcherCore):
+class PatchMatcher(FaceBlitPatchMatcherCore):
     def __init__(self, *args, **kwargs):
         ensure_ti_init()
         super().__init__(*args, **kwargs)
@@ -169,7 +153,7 @@ class PatchMatcherTaichi(FaceBlitPatchMatcherCore):
         )
 
 
-class PyramidPatchMatcherTaichi(PyramidPatchMatcherCore):
+class PyramidPatchMatcher(PyramidPatchMatcherCore):
     def __init__(
         self,
         image_height,
@@ -185,7 +169,7 @@ class PyramidPatchMatcherTaichi(PyramidPatchMatcherCore):
         tracking_window_size=0,
         initialize="identity",
     ):
-        self.device = _pyramid_device_string(gpu_id)
+        self.device = staging_device(gpu_id)
         super().__init__(
             image_height,
             image_width,
@@ -203,10 +187,10 @@ class PyramidPatchMatcherTaichi(PyramidPatchMatcherCore):
 
     @property
     def _pyramid_torch_device(self) -> torch.device:
-        return torch.device(self.device)
+        return self.device
 
     def _new_level_matcher(self, height: int, width: int, channel: int):
-        return PatchMatcherTaichi(
+        return PatchMatcher(
             height,
             width,
             channel,

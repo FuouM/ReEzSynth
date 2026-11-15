@@ -1,7 +1,7 @@
 // FastBlend CUDA kernels (remap / patch_error / pairwise_patch_error).
 //
 // Implementation relationships:
-// - Shared Python orchestration lives in ``src/backends/patch_matcher_core.py``
+// - Shared Python orchestration lives in ``ezsynth/kernels/fastblend/core.py``
 //   (``FaceBlitPatchMatcherCore`` / ``PyramidPatchMatcherCore``). Only the hooks
 //   ``_kernel_remap``, ``_kernel_patch_error``, ``_kernel_pairwise_patch_error``
 //   differ per backend (CUDA here, CuPy RawKernels, Taichi in ``taichi_kernels.py``).
@@ -13,7 +13,7 @@
 // - ``patch_error_kernel`` is a straight per-pixel patch SSD (sum of squared
 //   channel differences). EBSynth costs live in ``ezsynth/ebsynth_extension/cost_functions.cu``
 //   (weighted style+guide, NCC, bilateral, early-out); FastBlend combines a
-//   separate guide SSD and style SSD in Python (``cuda_patch_match.py``) with
+//   separate guide SSD and style SSD in Python (``core.py``) with
 //   ``guide_weight``, instead of fusing inside one CUDA cost kernel.
 //
 // PatchMatch *iteration* (propagation, random search, omega map, pruning) for

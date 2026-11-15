@@ -3,7 +3,7 @@ import torch
 
 pytest.importorskip("taichi")
 
-from FastBlend.src.backends import taichi_backend
+from ezsynth.kernels.fastblend import taichi as fastblend_taichi
 
 B, H, W, C = 1, 16, 16, 3
 PATCH_SIZE = 7
@@ -48,7 +48,7 @@ def _reference_ssd(source, nnf, target):
 
 @pytest.fixture
 def matcher():
-    return taichi_backend.PatchMatcherTaichi(H, W, C, PATCH_SIZE, num_iter=1)
+    return fastblend_taichi.PatchMatcher(H, W, C, PATCH_SIZE, num_iter=1)
 
 
 def test_identity_nnf_remap_reconstructs_source(matcher):
@@ -76,7 +76,7 @@ def test_estimate_nnf_keeps_coordinates_in_bounds(matcher):
 
 def test_pyramid_estimate_returns_full_resolution_in_bounds_nnf():
     size = 64
-    pyramid = taichi_backend.PyramidPatchMatcherTaichi(size, size, C, 5, num_iter=2)
+    pyramid = fastblend_taichi.PyramidPatchMatcher(size, size, C, 5, num_iter=2)
     torch.manual_seed(0)
     guide = torch.rand((1, size, size, C), device=pyramid._pyramid_torch_device)
     style = torch.rand_like(guide)

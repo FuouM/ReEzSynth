@@ -181,9 +181,7 @@ def test_invalid_patch_size_raises_value_error(level_inputs):
     ids=["plain", "mean", "pairwise", "track"],
 )
 def test_fastblend_recovers_a_shift(mode):
-    from FastBlend.src.backends.patch_matcher_dispatch import (
-        build_pyramid_patch_matcher,
-    )
+    from ezsynth.kernels.fastblend import build_pyramid_matcher
 
     rng = np.random.default_rng(0)
     h, w, b, dy, dx = 96, 128, 2, 3, 5
@@ -200,9 +198,7 @@ def test_fastblend_recovers_a_shift(mode):
         .permute(0, 2, 3, 1)
         .contiguous()
     )
-    matcher = build_pyramid_patch_matcher(
-        h, w, 3, 5, num_iter=5, backend="wgpu", **mode
-    )
+    matcher = build_pyramid_matcher("wgpu", h, w, 3, 5, num_iter=5, **mode)
 
     nnf, style = matcher.estimate_nnf(source, source, source)
     rows = np.arange(h)[None, :, None]

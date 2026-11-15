@@ -15,7 +15,7 @@ _SCRIPT = """
 import taichi as ti
 from ezsynth.utils import taichi_runtime as rt
 from ezsynth.engines.backends import taichi_backend as ez
-from FastBlend.src.backends import taichi_backend as fb
+from ezsynth.kernels.fastblend import taichi as fb
 
 assert rt.get_ti_arch("cpu") == ti.cpu
 assert rt.get_ti_arch("cuda:0") in (ti.cuda, ti.cpu)

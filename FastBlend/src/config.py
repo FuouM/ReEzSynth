@@ -1,16 +1,14 @@
 """
 Standalone FastBlend configuration.
 
-FastBlend uses its own CUDA extension (``FastBlend/fastblend_extension/``) for patch
-costs and remap when the ``cuda`` backend is selected. That is separate from the
+FastBlend uses its own CUDA extension (``ezsynth/kernels/fastblend/cuda_src/``) for
+patch costs and remap when the ``cuda`` backend is selected. That is separate from the
 ``ezsynth/ebsynth_extension`` / ``ebsynth_torch`` stack used by ``ezsynth`` for
 full synthesis (PatchMatch + voting). Naming here avoids ``ebsynth_*`` to prevent
 confusion with ``ezsynth``'s synthesis settings (``EbsynthParamsConfig``).
 """
 
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Any
 
 
 @dataclass
@@ -62,7 +60,7 @@ class FastBlendConfig:
             raise ValueError("guide_weight must be >= 0")
 
     def get_pyramid_patch_matcher_config(self) -> dict:
-        """Keyword-style settings for :func:`~FastBlend.src.patch_match.build_pyramid_patch_matcher`."""
+        """Keyword settings for ``ezsynth.kernels.fastblend.build_pyramid_matcher``."""
         return {
             "minimum_patch_size": self.minimum_patch_size,
             "threads_per_block": 8,
@@ -73,35 +71,6 @@ class FastBlendConfig:
             "tracking_window_size": self.tracking_window_size,
             "backend": self.backend,
         }
-
-    def as_pyramid_patch_matcher_kwargs(
-        self, image_height: int, image_width: int, channel: int = 3
-    ) -> dict[str, Any]:
-        """Kwargs for ``build_pyramid_patch_matcher`` in one dict (no duplicate keys)."""
-        return merge_pyramid_patch_matcher_kwargs(
-            image_height, image_width, channel, self.get_pyramid_patch_matcher_config()
-        )
-
-
-def merge_pyramid_patch_matcher_kwargs(
-    image_height: int,
-    image_width: int,
-    channel: int,
-    patch_matcher_config: Mapping[str, Any],
-) -> dict[str, Any]:
-    """
-    Build a single kwargs mapping for ``build_pyramid_patch_matcher``.
-
-    ``get_pyramid_patch_matcher_config()`` already includes ``minimum_patch_size``
-    and related fields. Do not also pass those as separate positionals while
-    unpacking the same dict, or Python raises ``TypeError: ... multiple values for argument``.
-    """
-    return {
-        "image_height": image_height,
-        "image_width": image_width,
-        "channel": channel,
-        **dict(patch_matcher_config),
-    }
 
 
 # Default configurations for different accuracy modes

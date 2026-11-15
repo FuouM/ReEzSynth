@@ -5,8 +5,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from .patch_match import build_pyramid_patch_matcher, resolve_fastblend_backend
-from .runtime.torch_device import balanced_mode_torch_device
+from ezsynth.kernels.fastblend import build_pyramid_matcher, load, resolve
 
 logger = logging.getLogger(__name__)
 
@@ -168,22 +167,22 @@ class BalancedModeRunner:
         """
         Run FastBlend processing with progress tracking.
         """
-        resolved = resolve_fastblend_backend(backend)
+        resolved = resolve(backend)
 
         suffix = " (auto)" if backend == "auto" else ""
         logger.info(f"FastBlend: Using {resolved} backend{suffix}")
 
         pm_cfg = {k: v for k, v in patch_matcher_config.items() if k != "backend"}
         # Setup Engine
-        patch_match_engine = build_pyramid_patch_matcher(
+        patch_match_engine = build_pyramid_matcher(
+            resolved,
             image_height=frames_style[0].shape[0],
             image_width=frames_style[0].shape[1],
             channel=3,
-            backend=resolved,
             **pm_cfg,
         )
-        device = balanced_mode_torch_device(
-            resolved, int(patch_matcher_config.get("gpu_id", 0))
+        device = load(resolved).staging_device(
+            int(patch_matcher_config.get("gpu_id", 0))
         )
 
         # Generate all tasks

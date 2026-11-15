@@ -1,53 +1,15 @@
-"""Public patch-match API: availability flags, builders, and interpolation wrapper."""
+"""Interpolation wrapper over the FastBlend engines of ``ezsynth.kernels.fastblend``."""
 
 from __future__ import annotations
 
-from typing import Any
-
-from .backends.fb_availability import cupy_available, taichi_available
-from .backends.patch_matcher_dispatch import (
-    build_patch_matcher,
-    build_pyramid_patch_matcher,
-)
-from .backends.resolve_backend import resolve_fastblend_backend
-
-
-def __getattr__(name: str) -> Any:
-    """Lazy imports so optional backends (e.g. CuPy) are not loaded unless accessed."""
-    if name in ("PatchMatcherCUDA", "PyramidPatchMatcherCUDA"):
-        from .backends import cuda_patch_match as m
-
-        return getattr(m, name)
-    if name in ("PatchMatcherCupy", "PyramidPatchMatcherCupy"):
-        from .backends import cupy_patch_match as m
-
-        return getattr(m, name)
-    if name in (
-        "PatchMatcherTaichi",
-        "PyramidPatchMatcherTaichi",
-        "FastBlendTaichiBackend",
-    ):
-        from .backends import taichi_backend as m
-
-        return getattr(m, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-__all__ = [
-    "PyramidPatchMatcher",
-    "build_patch_matcher",
-    "build_pyramid_patch_matcher",
-    "cupy_available",
-    "resolve_fastblend_backend",
-    "taichi_available",
-]
+from ezsynth.kernels.fastblend import build_pyramid_matcher, resolve
 
 
 class PyramidPatchMatcher:
     """
     Pyramid patch matcher for keyframe interpolation (stable third-party shape).
 
-    Dispatches to CUDA, CuPy, or Taichi pyramid engines based on ``backend``.
+    Dispatches to the pyramid matcher of the resolved ``ezsynth.kernels.fastblend`` engine.
     """
 
     def __init__(
@@ -78,8 +40,9 @@ class PyramidPatchMatcher:
         self.use_pairwise_patch_error = use_pairwise_patch_error
         self.tracking_window_size = tracking_window_size
 
-        resolved = resolve_fastblend_backend(backend)
-        self.patch_matcher = build_pyramid_patch_matcher(
+        resolved = resolve(backend)
+        self.patch_matcher = build_pyramid_matcher(
+            resolved,
             image_height,
             image_width,
             channel,
@@ -92,7 +55,6 @@ class PyramidPatchMatcher:
             use_pairwise_patch_error=use_pairwise_patch_error,
             tracking_window_size=tracking_window_size,
             initialize=initialize,
-            backend=resolved,
         )
         self.backend = resolved
 

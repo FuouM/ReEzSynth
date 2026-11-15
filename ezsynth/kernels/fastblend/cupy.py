@@ -1,19 +1,23 @@
-"""FaceBlit-style patch match via CuPy RawKernels (same math as ``kernels.cu``)."""
+"""FastBlend on CuPy: ``cupy_kernels.py`` holds ``cuda_src/kernels.cu`` as RawKernels."""
 
 from __future__ import annotations
 
 import cupy as cp
 import torch
 
+from .core import FaceBlitPatchMatcherCore, PyramidPatchMatcherCore
 from .cupy_kernels import (
     pairwise_patch_error_kernel,
     patch_error_kernel,
     remapping_kernel,
 )
-from .patch_matcher_core import FaceBlitPatchMatcherCore, PyramidPatchMatcherCore
 
 
-class PatchMatcherCupy(FaceBlitPatchMatcherCore):
+def staging_device(gpu_id: int) -> torch.device:
+    return torch.device("cuda", gpu_id)
+
+
+class PatchMatcher(FaceBlitPatchMatcherCore):
     def _kernel_remap(self, nnf: torch.Tensor, source: torch.Tensor) -> torch.Tensor:
         batch_size = source.shape[0]
         target = torch.zeros(
@@ -116,16 +120,16 @@ class PatchMatcherCupy(FaceBlitPatchMatcherCore):
         return torch.cuda.device(self.gpu_id)
 
 
-class PyramidPatchMatcherCupy(PyramidPatchMatcherCore):
+class PyramidPatchMatcher(PyramidPatchMatcherCore):
     @property
     def _pyramid_torch_device(self) -> torch.device:
-        return torch.device(f"cuda:{self.gpu_id}")
+        return staging_device(self.gpu_id)
 
     def _pyramid_run_context(self):
         return torch.cuda.device(self.gpu_id)
 
     def _new_level_matcher(self, height: int, width: int, channel: int):
-        return PatchMatcherCupy(
+        return PatchMatcher(
             height,
             width,
             channel,

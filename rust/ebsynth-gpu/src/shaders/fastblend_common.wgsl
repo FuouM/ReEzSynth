@@ -1,5 +1,5 @@
-// FastBlend pyramid patch matching (WGSL port of FastBlend/src/backends/patch_matcher_core.py
-// and the remap / patch-error kernels of FastBlend/src/backends/taichi_kernels.py).
+// FastBlend pyramid patch matching (WGSL port of ezsynth/kernels/fastblend/core.py
+// and the remap / patch-error kernels of ezsynth/kernels/fastblend/taichi_kernels.py).
 //
 // Images are float32 (B, H, W, C) row-major with C <= 4. Padded images carry a reflect
 // border of `pad` pixels. NNFs are int32 (B, h, w, 2) holding (row, col) source coordinates.

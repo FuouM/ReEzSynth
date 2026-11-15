@@ -1,8 +1,7 @@
 """FastBlend Taichi kernels (module-level, no class).
 
-Same layout as ``ezsynth/engines/backends/taichi_kernels.py``: ``ti.types.ndarray()``
-arguments come first, then scalar ``int`` / ``float``. Remap / patch SSD mirror
-``fastblend_extension/kernels.cu``.
+``ti.types.ndarray()`` arguments come first, then scalar ``int`` / ``float``. Remap /
+patch SSD mirror ``cuda_src/kernels.cu``.
 """
 
 import taichi as ti

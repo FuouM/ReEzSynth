@@ -1,4 +1,4 @@
-"""CuPy RawKernels — must stay aligned with ``fastblend_extension/kernels.cu``."""
+"""CuPy RawKernels; must stay aligned with ``cuda_src/kernels.cu``."""
 
 import cupy as cp
 

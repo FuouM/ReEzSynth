@@ -38,7 +38,7 @@ from typing import ContextManager
 import numpy as np
 import torch
 
-from ezsynth.utils.gpu_memory import apply_gpu_memory_limit
+from ...utils.gpu_memory import apply_gpu_memory_limit
 
 
 @dataclass

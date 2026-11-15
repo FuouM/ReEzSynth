@@ -1,7 +1,8 @@
-"""WebGPU FastBlend backend: the pyramid matcher of the ``ezsynth_wgpu`` Rust module.
+"""FastBlend on WebGPU: the pyramid matcher of the ``ezsynth_wgpu`` Rust module.
 
 The whole pyramid (resampling, propagation, random search, tracking, remap) runs on the
-GPU through wgpu; inputs and results are CPU tensors.
+GPU through wgpu (``rust/ebsynth-gpu/src/fastblend.rs``, ``shaders/fastblend_*.wgsl``);
+inputs and results are CPU tensors.
 """
 
 from __future__ import annotations
@@ -9,7 +10,11 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from ezsynth.engines.backends.wgpu_backend import import_wgpu
+from ...engines.backends.wgpu_backend import import_wgpu
+
+
+def staging_device(gpu_id: int) -> torch.device:
+    return torch.device("cpu")
 
 
 def _array(x: np.ndarray | torch.Tensor) -> np.ndarray:
@@ -18,8 +23,8 @@ def _array(x: np.ndarray | torch.Tensor) -> np.ndarray:
     return np.ascontiguousarray(x, dtype=np.float32)
 
 
-class PyramidPatchMatcherWgpu:
-    """Same constructor and ``estimate_nnf`` contract as ``PyramidPatchMatcherCore``."""
+class PyramidPatchMatcher:
+    """Same constructor and ``estimate_nnf`` contract as ``core.PyramidPatchMatcherCore``."""
 
     def __init__(
         self,
