@@ -744,7 +744,7 @@ def _prepare_faceblit_style_taichi(
     device: str,
 ):
     """Precompute / load Taichi style LUT and guides; returns ``FaceBlitInput_Style``."""
-    from FaceBlit.src.backends.taichi_backend import ensure_ti_init
+    from ezsynth.utils.taichi_runtime import ensure_ti_init
     from FaceBlit.src.engine import FaceBlitInput_Style
 
     ensure_ti_init(device)

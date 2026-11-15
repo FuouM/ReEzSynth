@@ -1,7 +1,6 @@
-"""NumPy / SciPy helpers for FaceBlit (no PyTorch, no Numba).
-
-Used by :mod:`torch_backend` for CPU paths, LUT reference implementation, I/O, and geometry.
-Numba-accelerated CPU paths live in :mod:`torch_backend_numba` and are wired from ``torch_backend``.
+"""NumPy FaceBlit kernels (no PyTorch, no Numba): the LUT reference implementation,
+DFS seed-grow NNF, NNF denoising and voting. ``numba.py`` accelerates the DFS and
+denoise paths.
 """
 
 from __future__ import annotations

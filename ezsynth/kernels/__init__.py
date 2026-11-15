@@ -9,6 +9,8 @@ the same function names, so all versions of one operation sit in one directory:
   blending, occlusion masks, Taichi Poisson CG (``opencv``, ``taichi``, ``wgpu``).
 - ``fastblend``: FastBlend pyramid patch matching (``cuda``, ``cupy``, ``taichi``,
   ``wgpu``).
+- ``faceblit``: FaceBlit look-up-cube matching (``numpy``, ``numba``, ``torch``,
+  ``taichi``).
 
 The family names match the Rust crate ``rust/ebsynth-gpu`` (``ebsynth.rs``,
 ``imageops.rs``, ``fastblend.rs`` and their ``shaders/*.wgsl``).

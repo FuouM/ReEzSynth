@@ -6,7 +6,7 @@ from typing import Literal
 import cv2
 
 from ezsynth.logging_setup import configure_cli_logging
-from FaceBlit.src.backends.taichi_backend import ensure_ti_init
+from ezsynth.utils.taichi_runtime import ensure_ti_init
 from FaceBlit.src.engine import (
     FaceBlitEngine,
     FaceBlitInput_Style,

@@ -1,3 +1,5 @@
+"""Numba FaceBlit kernels: the DFS seed-grow NNF and denoise paths of ``numpy.py``."""
+
 from __future__ import annotations
 
 import numpy as np

@@ -1,7 +1,4 @@
-"""PyTorch / NumPy FaceBlit kernels, LUT, stylization, and style-asset pipeline.
-
-Guide adapter lives in ``torch_guide.py`` (mirrors ``taichi_backend`` + ``taichi_guide``).
-"""
+"""PyTorch FaceBlit kernels: LUT build, NNF denoising and voting on any torch device."""
 
 from __future__ import annotations
 

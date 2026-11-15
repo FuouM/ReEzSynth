@@ -4,7 +4,19 @@ from typing import Literal
 import numpy as np
 import torch
 
-from FaceBlit.src.backends.commons import (
+from ezsynth.kernels.faceblit.numpy import (
+    _lookup_coords_from_guides,
+    denoise_nnf_python,
+    dfs_seed_grow_voting_numpy,
+    initialize_nnf_vectorized,
+    prepare_dfs_voting_arrays,
+    voting_on_rgb,
+)
+from ezsynth.kernels.faceblit.torch import (
+    compute_look_up_cube_optimized,
+    style_blit_voting_torch,
+)
+from FaceBlit.src.commons import (
     alpha_blend,
     get_app_guide,
     get_head_area_rect,
@@ -12,18 +24,6 @@ from FaceBlit.src.backends.commons import (
     gradient_guide,
     gray_hist_matching,
     warp_mls_similarity,
-)
-from FaceBlit.src.backends.torch_backend import (
-    compute_look_up_cube_optimized,
-    style_blit_voting_torch,
-)
-from FaceBlit.src.backends.torch_backend_numpy import (
-    _lookup_coords_from_guides,
-    denoise_nnf_python,
-    dfs_seed_grow_voting_numpy,
-    initialize_nnf_vectorized,
-    prepare_dfs_voting_arrays,
-    voting_on_rgb,
 )
 from FaceBlit.src.utils_face import DEFAULT_FAN_FACE_DETECTOR, detect_landmarks
 from FaceBlit.src.utils_io import (
@@ -49,22 +49,22 @@ NUMBA_INSTALL_HINT = (
 def _numba_backend():
     """Import the Numba kernels on first use (numba is an optional dependency)."""
     try:
-        from FaceBlit.src.backends import torch_backend_numba
+        from ezsynth.kernels.faceblit import numba
     except ImportError as exc:
         raise ImportError(NUMBA_INSTALL_HINT) from exc
-    return torch_backend_numba
+    return numba
 
 
 def _taichi_backend():
     """Import the Taichi kernels on first use (taichi is an optional dependency)."""
     try:
-        from FaceBlit.src.backends import taichi_backend
+        from ezsynth.kernels.faceblit import taichi
     except ImportError as exc:
         raise ImportError(
             "The FaceBlit 'taichi' backend needs the 'taichi' package "
             "(pip install taichi); use backend='torch' otherwise."
         ) from exc
-    return taichi_backend
+    return taichi
 
 
 def compute_style_look_up_cube(
