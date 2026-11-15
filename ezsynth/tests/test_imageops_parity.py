@@ -1,35 +1,24 @@
-"""WebGPU image ops: parity with OpenCV (warp, occlusion, histogram blend) and Taichi
-(forward splatting, pull-push). Warp parity assumes OpenCV 5's remap (exact float
-bilinear for 1/3/4 channels, 1/32-pixel fixed point for 2)."""
+"""Image-op engines (``kernels.imageops``) against their reference: OpenCV for warping,
+occlusion masks and histogram blending, Taichi for forward splatting and pull-push.
+Warp parity assumes OpenCV 5's remap (exact float bilinear for 1/3/4 channels,
+1/32-pixel fixed point for 2)."""
 
 import cv2
 import numpy as np
 import pytest
 
+from ezsynth.tests.engines import engine_param, unavailable
 from ezsynth.utils.blend_logic import hist_blender
 from ezsynth.utils.occlusion import compute_flow_occlusion_masks
 from ezsynth.utils.warp_utils import Warp
 
-pytest.importorskip("ezsynth_wgpu")
-
-try:
-    import ezsynth_wgpu
-
-    ezsynth_wgpu.adapter_info()
-except RuntimeError as exc:  # no WebGPU adapter on this machine
-    pytest.skip(f"no WebGPU adapter: {exc}", allow_module_level=True)
-
-try:
-    import taichi  # noqa: F401
-
-    HAS_TAICHI = True
-except ImportError:
-    HAS_TAICHI = False
-
-needs_taichi = pytest.mark.skipif(not HAS_TAICHI, reason="taichi not installed")
-
 # Odd sizes exercise the last row/column of the pull-push pyramid.
 H, W = 45, 61
+
+
+def _require(engine: str) -> None:
+    if reason := unavailable(engine):
+        pytest.skip(f"{engine} reference: {reason}")
 
 
 def _smooth_image(rng, h=H, w=W):
@@ -45,9 +34,15 @@ def _flow(rng, scale, h=H, w=W, noise=0.4):
     return (smooth + rng.normal(0, noise, (h, w, 2))).astype(np.float32)
 
 
+# --- warp (reference: OpenCV) ---------------------------------------------------
+
+
 @pytest.mark.parametrize("channels", [1, 2, 3, 4])
 @pytest.mark.parametrize("border", ["reflect", "constant"])
-def test_warp_matches_cv2_remap(channels, border):
+@pytest.mark.parametrize("engine", [engine_param("wgpu")])
+def test_raw_warp_matches_cv2_remap(engine, channels, border):
+    import ezsynth_wgpu
+
     rng = np.random.default_rng(channels)
     src = rng.random((H, W, channels)).astype(np.float32)
     flow = _flow(rng, 8.0)  # reaches well past the borders
@@ -62,12 +57,53 @@ def test_warp_matches_cv2_remap(channels, border):
     np.testing.assert_allclose(got, expected, atol=1e-5)
 
 
-def test_nearest_warp_of_int_map_is_exact():
+@pytest.mark.parametrize(
+    ("engine", "whole_frame"),
+    [
+        pytest.param(
+            *engine_param("wgpu").values, True, marks=engine_param("wgpu").marks
+        ),
+        # Taichi clamps samples outside the frame where OpenCV reflects.
+        pytest.param(
+            *engine_param("taichi").values, False, marks=engine_param("taichi").marks
+        ),
+    ],
+    ids=["wgpu", "taichi"],
+)
+def test_linear_warp_matches_opencv(engine, whole_frame):
+    rng = np.random.default_rng(6)
+    data = rng.random((H, W, 3)).astype(np.float32)
+    flow = _flow(rng, 3.0)
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    sx, sy = xx + flow[..., 0], yy + flow[..., 1]
+    inside = (sx >= 0) & (sx <= W - 1) & (sy >= 0) & (sy <= H - 1)
+    region = np.ones_like(inside) if whole_frame else inside
+
+    got = Warp(H, W, engine=engine).run_warping_float_map(data, flow)
+    expected = Warp(H, W).run_warping_float_map(data, flow)
+
+    np.testing.assert_allclose(got[region], expected[region], atol=1e-5)
+
+
+@pytest.mark.parametrize("engine", [engine_param("wgpu")])
+def test_uint8_warping_matches_opencv(engine):
+    rng = np.random.default_rng(6)
+    img = _smooth_image(rng)
+    flow = _flow(rng, 3.0)
+
+    got = Warp(H, W, engine=engine).run_warping(img, flow)
+    expected = Warp(H, W).run_warping(img, flow)
+
+    assert np.abs(got.astype(int) - expected.astype(int)).max() <= 1
+
+
+@pytest.mark.parametrize("engine", [engine_param("wgpu")])
+def test_nearest_warp_of_int_map_is_exact(engine):
     rng = np.random.default_rng(5)
     nnf = rng.integers(0, 400, (H, W, 2)).astype(np.int32)
     flow = _flow(rng, 20.0)
 
-    got = Warp(H, W, engine="wgpu").run_warping_float_map(
+    got = Warp(H, W, engine=engine).run_warping_float_map(
         nnf, flow, interpolation=cv2.INTER_NEAREST
     )
     expected = Warp(H, W).run_warping_float_map(
@@ -77,35 +113,44 @@ def test_nearest_warp_of_int_map_is_exact():
     np.testing.assert_array_equal(got, expected)
 
 
-def test_uint8_warping_matches_opencv_engine():
-    rng = np.random.default_rng(6)
-    img = _smooth_image(rng)
-    flow = _flow(rng, 3.0)
-
-    got = Warp(H, W, engine="wgpu").run_warping(img, flow)
-    expected = Warp(H, W).run_warping(img, flow)
-
-    assert np.abs(got.astype(int) - expected.astype(int)).max() <= 1
+# --- occlusion masks and histogram blending (reference: OpenCV) ---------------------
 
 
 @pytest.mark.parametrize(("dilate", "coverage"), [(0, False), (1, True), (2, True)])
-def test_occlusion_masks_match_opencv(dilate, coverage):
+@pytest.mark.parametrize("engine", [engine_param("wgpu")])
+def test_occlusion_masks_match_opencv(engine, dilate, coverage):
     rng = np.random.default_rng(dilate)
     fwd = [_flow(rng, 4.0, noise=0.05), _flow(rng, 2.0, noise=0.05)]
     bwd = [-f + rng.normal(0, 0.25, f.shape).astype(np.float32) for f in fwd]
     kwargs = {"dilate": dilate, "coverage": coverage}
 
     exp_fwd, exp_bwd = compute_flow_occlusion_masks(fwd, bwd, **kwargs)
-    got_fwd, got_bwd = compute_flow_occlusion_masks(fwd, bwd, engine="wgpu", **kwargs)
+    got_fwd, got_bwd = compute_flow_occlusion_masks(fwd, bwd, engine=engine, **kwargs)
 
     for got, exp in zip(got_fwd + got_bwd, exp_fwd + exp_bwd):
         assert 0 < np.count_nonzero(exp) < exp.size
         np.testing.assert_array_equal(got, exp)
 
 
-def test_hist_blend_is_close_to_opencv():
-    # OpenCV's 8-bit BGR2Lab interpolates a LUT; the GPU converts in float, so Lab
-    # values differ by up to 2 levels and the blend amplifies a few of them.
+@pytest.mark.parametrize(
+    ("engine", "max_mean_diff", "min_within_3"),
+    [
+        # OpenCV's 8-bit BGR2Lab interpolates a LUT; the GPU converts in float, so Lab
+        # values differ by up to 2 levels and the blend amplifies a few of them.
+        pytest.param(
+            *engine_param("wgpu").values, 0.6, 0.99, marks=engine_param("wgpu").marks
+        ),
+        # Taichi's blend is an approximation of the OpenCV path.
+        pytest.param(
+            *engine_param("taichi").values,
+            1.0,
+            0.98,
+            marks=engine_param("taichi").marks,
+        ),
+    ],
+    ids=["wgpu", "taichi"],
+)
+def test_hist_blend_is_close_to_opencv(engine, max_mean_diff, min_within_3):
     rng = np.random.default_rng(7)
     a = _smooth_image(rng, 120, 160)
     b = (_smooth_image(rng, 120, 160) * 0.6 + 60).astype(np.uint8)
@@ -113,16 +158,20 @@ def test_hist_blend_is_close_to_opencv():
     mask = ((xx // 20 + yy // 20) % 2).astype(np.uint8)
 
     expected = hist_blender(a, b, mask)
-    got = hist_blender(a, b, mask, engine="wgpu")
+    got = hist_blender(a, b, mask, engine=engine)
 
     diff = np.abs(got.astype(int) - expected.astype(int))
-    assert diff.mean() < 0.6
-    assert np.mean(diff <= 3) > 0.99
+    assert diff.mean() < max_mean_diff
+    assert np.mean(diff <= 3) > min_within_3
 
 
-@needs_taichi
+# --- forward splatting and pull-push (reference: Taichi) -------------------------
+
+
 @pytest.mark.parametrize("fill_holes", [False, True])
-def test_forward_splat_matches_taichi(fill_holes):
+@pytest.mark.parametrize("engine", [engine_param("wgpu")])
+def test_forward_splat_matches_taichi(engine, fill_holes):
+    _require("taichi")
     rng = np.random.default_rng(8)
     img = _smooth_image(rng)
     flow = _flow(rng, 3.0)
@@ -130,7 +179,7 @@ def test_forward_splat_matches_taichi(fill_holes):
     exp, exp_w = Warp(H, W, engine="taichi").run_forward_warping(
         img, flow, fill_holes=fill_holes, return_weight=True
     )
-    got, got_w = Warp(H, W, engine="wgpu").run_forward_warping(
+    got, got_w = Warp(H, W, engine=engine).run_forward_warping(
         img, flow, fill_holes=fill_holes, return_weight=True
     )
 
@@ -140,8 +189,9 @@ def test_forward_splat_matches_taichi(fill_holes):
     np.testing.assert_allclose(got_w, exp_w, atol=1e-5)
 
 
-@needs_taichi
-def test_bilateral_forward_splat_of_float_map_matches_taichi():
+@pytest.mark.parametrize("engine", [engine_param("wgpu")])
+def test_bilateral_forward_splat_of_float_map_matches_taichi(engine):
+    _require("taichi")
     rng = np.random.default_rng(9)
     data = rng.random((H, W)).astype(np.float32)
     flow = _flow(rng, 2.0)
@@ -150,13 +200,14 @@ def test_bilateral_forward_splat_of_float_map_matches_taichi():
     kwargs = {"src_guide": src_guide, "tgt_guide": tgt_guide}
 
     exp = Warp(H, W, engine="taichi").run_forward_warping(data, flow, **kwargs)
-    got = Warp(H, W, engine="wgpu").run_forward_warping(data, flow, **kwargs)
+    got = Warp(H, W, engine=engine).run_forward_warping(data, flow, **kwargs)
 
     np.testing.assert_allclose(got, exp, atol=1e-5)
 
 
-@needs_taichi
-def test_pull_push_matches_taichi():
+@pytest.mark.parametrize("engine", [engine_param("wgpu")])
+def test_pull_push_matches_taichi(engine):
+    _require("taichi")
     rng = np.random.default_rng(10)
     weight = np.where(rng.random((H, W)) < 0.4, 0.0, rng.random((H, W)) * 2)
     weight = weight.astype(np.float32)
@@ -165,7 +216,7 @@ def test_pull_push_matches_taichi():
     exp_c, exp_w = Warp(H, W, engine="taichi").run_pull_push(
         color.copy(), weight.copy()
     )
-    got_c, got_w = Warp(H, W, engine="wgpu").run_pull_push(color, weight)
+    got_c, got_w = Warp(H, W, engine=engine).run_pull_push(color, weight)
 
     np.testing.assert_allclose(got_c, exp_c, rtol=1e-5, atol=1e-3)
     np.testing.assert_allclose(got_w, exp_w, atol=1e-6)

@@ -89,6 +89,6 @@ version = "19.24.6"
 requires-dist = []
 
 [tool.pytest.ini_options]
-testpaths = ["ezsynth/tests", "FastBlend/tests"]
+testpaths = ["ezsynth/tests"]
 addopts = ["--import-mode=importlib"]
 pythonpath = ["."]

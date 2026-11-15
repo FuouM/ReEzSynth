@@ -24,6 +24,7 @@
 - `ninja` moved to the `cuda` extra and `scipy` to the `scipy` extra (also pulled in by `pyamg`). The default `lsqr` Poisson solver runs on NumPy (matrix-free conjugate gradients on the same system, about 1000x closer to the exact solution than SciPy's `lsqr` and faster); `lsmr`, `cg` and `amg` need SciPy and fail at start-up without it.
 - `RunConfig(use_lsqr=...)` is replaced by `RunConfig(poisson_solver=...)` (any `BlendingConfig.poisson_solver` value); `use_lsqr` was silently ignored. `Ezsynth` now passes `RunConfig.alpha` to the pipeline (it always used 0.75).
 - Synthesis options are checked against `ezsynth/kernels/synth/capabilities.py` (shared with the ComfyUI nodes) before a backend is built: `precision="float16"|"bfloat16"` on a backend other than `torch` now raises instead of being ignored.
+- Cross-backend tests are one file per kernel family (`test_synth_parity.py`, `test_imageops_parity.py`, `test_fastblend_parity.py`, replacing `test_wgpu_backend.py`, `test_wgpu_image_ops.py` and `FastBlend/tests/`); each backend runs when it can on the machine, the JIT-built `cuda` extensions with `EZSYNTH_TEST_JIT=1`. Known divergences are strict xfails: the torch and cuda backends' bilateral votes and `n_size_step > 1` error maps differ from Taichi/wgpu.
 
 ### Added
 - GPU memory budget: outside ComfyUI, the PyTorch CUDA allocator is capped from the memory free at startup, keeping 1.5 GiB for other applications (`EZSYNTH_GPU_MEMORY_*` overrides).

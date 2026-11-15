@@ -325,6 +325,8 @@ uv run pytest                          # CPU-safe test suite
 uv run ruff check . && uv run ruff format --check .
 ```
 
+`ezsynth/tests/test_{synth,imageops,fastblend}_parity.py` compare every backend of a kernel family against its reference and skip the backends that cannot run on the machine. The JIT-built `cuda` extensions take minutes to compile on the first run, so their tests run only with `EZSYNTH_TEST_JIT=1`.
+
 CI (`.github/workflows/ci.yml`) runs:
 
 - ruff;
