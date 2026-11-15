@@ -2,11 +2,11 @@
 import cv2
 import numpy as np
 
-from .image_ops import ImageOpsEngine
+from ..kernels.imageops import ImageOpsEngine, load
 
 
 class Warp:
-    """Flow warping on OpenCV, Taichi or WebGPU (``engine``, see ``image_ops``).
+    """Flow warping on OpenCV, Taichi or WebGPU (``engine``, see ``kernels.imageops``).
 
     Backward warping works on every engine; forward splatting and pull-push hole
     filling need ``taichi`` or ``wgpu``.
@@ -16,68 +16,25 @@ class Warp:
         self.H = height
         self.W = width
         self.engine = engine
-        self.grid = self._create_grid(self.H, self.W)
-        self._taichi_ops = None
-        self._wgpu = None
-
-        if engine == "taichi":
-            from ..engines.backends import taichi_ops
-            from .taichi_runtime import ensure_ti_init
-
-            ensure_ti_init()
-            self._taichi_ops = taichi_ops
-        elif engine == "wgpu":
-            from ..engines.backends.wgpu_backend import import_wgpu
-
-            self._wgpu = import_wgpu()
-        elif engine != "opencv":
-            raise ValueError(f"Unknown image ops engine {engine!r}")
+        self.ops = load(engine)
 
     @property
     def can_splat(self) -> bool:
         """Forward splatting and pull-push are available."""
-        return self.engine != "opencv"
-
-    def _create_grid(self, H: int, W: int):
-        x, y = np.meshgrid(np.arange(W), np.arange(H), indexing="xy")
-        return np.stack((x, y), axis=-1).astype(np.float32)
+        return "forward_splat" in self.ops.OPS
 
     def _warp(self, img: np.ndarray, flo: np.ndarray, interpolation=cv2.INTER_LINEAR):
+        if interpolation not in (cv2.INTER_LINEAR, cv2.INTER_NEAREST):
+            raise ValueError("Warping takes INTER_LINEAR or INTER_NEAREST only.")
         if flo.shape[:2] == (self.H, self.W):
             flo_resized = flo
         else:
             flo_resized = cv2.resize(
                 flo, (self.W, self.H), interpolation=cv2.INTER_LINEAR
             )
-
-        if self.engine == "wgpu":
-            if interpolation not in (cv2.INTER_LINEAR, cv2.INTER_NEAREST):
-                raise ValueError(
-                    "The wgpu engine warps with INTER_LINEAR or INTER_NEAREST only."
-                )
-            return self._wgpu.warp(
-                np.ascontiguousarray(img),
-                np.ascontiguousarray(flo_resized),
-                nearest=interpolation == cv2.INTER_NEAREST,
-                border="reflect",
-            )
-
-        if self.engine == "taichi" and interpolation == cv2.INTER_LINEAR:
-            dst = np.zeros_like(img)
-            self._taichi_ops.bilinear_warp_kernel(img, flo_resized, dst)
-            return dst
-
-        map_x = self.grid[..., 0] + flo_resized[..., 0]
-        map_y = self.grid[..., 1] + flo_resized[..., 1]
-
-        warped_img = cv2.remap(
-            img,
-            map_x,
-            map_y,
-            interpolation=interpolation,
-            borderMode=cv2.BORDER_REFLECT,
+        return self.ops.warp(
+            img, flo_resized, nearest=interpolation == cv2.INTER_NEAREST
         )
-        return warped_img
 
     def run_warping(self, img: np.ndarray, flow: np.ndarray) -> np.ndarray:
         """
@@ -139,53 +96,15 @@ class Warp:
 
         was_uint8 = img.dtype == np.uint8
         img_float = img.astype(np.float32) if was_uint8 else _as_float32_array(img)
-        flow_f32 = _as_float32_array(flow)
         use_bilateral = src_guide is not None and tgt_guide is not None
-
-        if self.engine == "wgpu":
-            guides = {}
-            if use_bilateral:
-                guides = {
-                    "src_guide": _as_float32_array(src_guide),
-                    "tgt_guide": _as_float32_array(tgt_guide),
-                }
-            splat, raw_weight = self._wgpu.forward_splat(
-                img_float, flow_f32, fill_holes=fill_holes, **guides
-            )
-            out = splat.clip(0, 255).astype(np.uint8) if was_uint8 else splat
-            if return_weight:
-                return out, raw_weight
-            return out
-
-        dst_color = np.zeros_like(img_float)
-        dst_weight = np.zeros((self.H, self.W), dtype=np.float32)
-        src_guide_f32 = (
-            _as_float32_array(src_guide)
-            if use_bilateral
-            else np.zeros((1, 1, 3), dtype=np.float32)
-        )
-        tgt_guide_f32 = (
-            _as_float32_array(tgt_guide)
-            if use_bilateral
-            else np.zeros((1, 1, 3), dtype=np.float32)
-        )
-
-        self._taichi_ops.soft_splat_kernel(
+        out, raw_weight = self.ops.forward_splat(
             img_float,
-            flow_f32,
-            dst_color,
-            dst_weight,
-            src_guide_f32,
-            tgt_guide_f32,
-            use_bilateral,
+            _as_float32_array(flow),
+            fill_holes=fill_holes,
+            src_guide=_as_float32_array(src_guide) if use_bilateral else None,
+            tgt_guide=_as_float32_array(tgt_guide) if use_bilateral else None,
+            uint8_out=was_uint8,
         )
-
-        raw_weight = dst_weight.copy()
-        if fill_holes:
-            dst_color, dst_weight = self.run_pull_push(dst_color, dst_weight)
-
-        out = np.zeros_like(img, dtype=np.uint8 if was_uint8 else np.float32)
-        self._taichi_ops.normalize_splat_kernel(dst_color, dst_weight, out, was_uint8)
         if return_weight:
             return out, raw_weight
         return out
@@ -200,39 +119,9 @@ class Warp:
         """
         if not self.can_splat:
             raise ValueError("Pull-push needs the 'taichi' or 'wgpu' image ops engine.")
-        if self.engine == "wgpu":
-            return self._wgpu.pull_push(
-                _as_float32_array(color), _as_float32_array(weight), levels=levels
-            )
-
-        pyramid_color = [color]
-        pyramid_weight = [weight]
-
-        for _ in range(levels - 1):
-            h, w = pyramid_color[-1].shape[:2]
-            if h <= 2 or w <= 2:
-                break
-            h_next, w_next = h // 2, w // 2
-            color_shape = pyramid_color[-1].shape[2:]
-            next_color = np.zeros((h_next, w_next, *color_shape), dtype=np.float32)
-            next_weight = np.zeros((h_next, w_next), dtype=np.float32)
-            self._taichi_ops.pull_kernel(
-                pyramid_color[-1],
-                pyramid_weight[-1],
-                next_color,
-                next_weight,
-            )
-            pyramid_color.append(next_color)
-            pyramid_weight.append(next_weight)
-
-        for i in range(len(pyramid_color) - 2, -1, -1):
-            self._taichi_ops.push_kernel(
-                pyramid_color[i + 1],
-                pyramid_weight[i + 1],
-                pyramid_color[i],
-                pyramid_weight[i],
-            )
-        return color, weight
+        return self.ops.pull_push(
+            _as_float32_array(color), _as_float32_array(weight), levels=levels
+        )
 
 
 def _as_uint8_array(array: np.ndarray) -> np.ndarray:

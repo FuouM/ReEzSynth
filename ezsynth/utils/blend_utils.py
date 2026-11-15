@@ -5,8 +5,8 @@ import logging
 import numpy as np
 from tqdm import tqdm
 
+from ..kernels.imageops import resolve_exact_ops, resolve_image_ops
 from .blend_logic import Reconstructor, hist_blender
-from .image_ops import resolve_image_ops
 from .progress import report_progress
 from .warp_utils import Warp
 
@@ -30,8 +30,7 @@ class Blender:
             backend, gpu_ops=use_taichi_ops or use_forward_warping
         )
         self.warp = Warp(height, width, engine=engine)
-        # Histogram blending runs on WebGPU with the wgpu backend, else on OpenCV.
-        self.hist_engine = "wgpu" if engine == "wgpu" else "opencv"
+        self.hist_engine = resolve_exact_ops(backend)
         self.use_forward_warping = use_forward_warping
         self.reconstructor = Reconstructor(
             solver=poisson_solver,

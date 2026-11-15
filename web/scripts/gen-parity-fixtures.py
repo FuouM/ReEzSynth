@@ -8,6 +8,7 @@ The functions are extracted from the source files, so torch is not needed.
 """
 
 import ast
+import importlib.util
 import json
 import pathlib
 import sys
@@ -23,9 +24,19 @@ def extract(root: pathlib.Path, path: str, names: set[str]) -> str:
     return "\n\n".join(ast.get_source_segment(src, n) or "" for n in nodes)
 
 
+def load_module(path: pathlib.Path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def main() -> None:
     root = pathlib.Path(sys.argv[1])
     ns: dict = {"np": np, "cv2": cv2}
+    # The OpenCV image-ops engine imports only numpy and cv2.
+    opencv_ops = load_module(root / "ezsynth/kernels/imageops/opencv.py")
+    ns["load"] = lambda engine: opencv_ops
     exec(extract(root, "ezsynth/edge/ops.py", {"create_gaussian_kernel"}), ns)
     exec(extract(root, "ezsynth/edge/classic.py", {"compute_classic_edge"}), ns)
     warp_names = {"_is_identity_flow", "_as_float32_array", "Warp", "PositionalGuide"}
@@ -59,8 +70,12 @@ def main() -> None:
     # gradients are meaningful.
     ns2: dict = {"np": np, "cv2": cv2, "time": __import__("time"), "logger": _Log()}
     blend_names = {"hist_blender", "construct_A_cpu", "poisson_fusion_cpu"}
-    exec(extract(root, "ezsynth/utils/blend_logic.py", blend_names), ns2)
-    ns2["TAICHI_AVAILABLE"] = False
+    exec(
+        "from __future__ import annotations\n"
+        + extract(root, "ezsynth/utils/blend_logic.py", blend_names),
+        ns2,
+    )
+    ns2["load_op"] = lambda engine, op: getattr(opencv_ops, op)
     bh, bw = 12, 16
     yy, xx = np.mgrid[0:bh, 0:bw]
     a = np.stack([xx * 12, yy * 15, (xx + yy) * 6], -1).clip(0, 255).astype(np.uint8)

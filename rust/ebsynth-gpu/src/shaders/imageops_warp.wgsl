@@ -1,5 +1,5 @@
 // Backward warping (cv2.remap) and the pull-push / normalize passes of forward splatting
-// (Taichi kernels in ezsynth/engines/backends/taichi_ops.py).
+// (Taichi kernels in ezsynth/kernels/imageops/taichi_kernels.py).
 
 @group(0) @binding(1) var<storage, read_write> src: array<f32>;
 // warp: flow (h, w, 2); pull / push / normalize: weight of `src`.

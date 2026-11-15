@@ -4,30 +4,19 @@ from __future__ import annotations
 import logging
 import time
 from importlib.util import find_spec
-from types import ModuleType
-from typing import Literal
 
 import cv2
 import numpy as np
 from tqdm import tqdm
 
+from ..kernels.imageops import ImageOpsEngine, load_op
 from .progress import report_progress
 
 logger = logging.getLogger(__name__)
 
 # --- Optional Dependency Handling ---
-# Availability is probed without importing; scipy, pyamg and taichi load on first use.
+# Availability is probed without importing; scipy and pyamg load on first use.
 PYAMG_AVAILABLE = find_spec("pyamg") is not None
-TAICHI_AVAILABLE = find_spec("taichi") is not None
-
-
-def _taichi_ops() -> ModuleType:
-    """Import the Taichi kernels and initialize the shared Taichi runtime."""
-    from ..engines.backends import taichi_ops
-    from .taichi_runtime import ensure_ti_init
-
-    ensure_ti_init()
-    return taichi_ops
 
 
 # --- Algorithmic Alternatives ---
@@ -60,7 +49,7 @@ def hist_blender(
     error_mask: np.ndarray,
     weight1=0.5,
     weight2=0.5,
-    engine: Literal["opencv", "taichi", "wgpu"] = "opencv",
+    engine: ImageOpsEngine = "opencv",
 ) -> np.ndarray:
     """Blend BGR frames ``a`` and ``b`` in Lab space with the statistics of the
     lower-error frame (``error_mask`` 0 where ``a`` wins).
@@ -68,79 +57,7 @@ def hist_blender(
     ``wgpu`` follows the OpenCV path on the GPU (Lab conversion within two levels of
     OpenCV's); ``taichi`` is an approximate float-Lab variant.
     """
-    if engine == "wgpu":
-        from ..engines.backends.wgpu_backend import import_wgpu
-
-        if error_mask.ndim != 2:
-            raise ValueError("The wgpu histogram blend takes a (H, W) error mask.")
-        return import_wgpu().hist_blend(
-            np.ascontiguousarray(a, dtype=np.uint8),
-            np.ascontiguousarray(b, dtype=np.uint8),
-            np.ascontiguousarray(error_mask, dtype=np.uint8),
-            float(weight1),
-            float(weight2),
-        )
-    if engine == "taichi":
-        taichi_ops = _taichi_ops()
-
-        # Prepare buffers
-        ma, sa = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
-        mb, sb = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
-        mme, sme = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
-
-        # Convert error_mask to 3ch if needed
-        m_lab = (
-            np.where(error_mask[..., None] == 0, a, b)
-            if len(error_mask.shape) == 2
-            else np.where(error_mask == 0, a, b)
-        )
-
-        taichi_ops.compute_stats_kernel(a, ma, sa)
-        taichi_ops.compute_stats_kernel(b, mb, sb)
-        taichi_ops.compute_stats_kernel(m_lab, mme, sme)
-
-        temp_lab = np.zeros_like(a, dtype=np.float32)
-        taichi_ops.hist_blend_apply_kernel(
-            a, b, error_mask, ma, sa, mb, sb, mme, sme, weight1, weight2, temp_lab
-        )
-
-        # Second pass for ab_stats
-        mab, sab = np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
-        # Compute stats of temp_lab (which is already in Lab-ish space in the kernel)
-        # Actually compute_stats_kernel converts BGR to Lab.
-        # I should add a compute_stats_lab_kernel if I want to be precise.
-        # For now, let's use the CPU for stats of the blended result to be safe, or just compute it in Taichi.
-
-        # Simplification: treat temp_lab as BGR for compute_stats (not correct but fine for now if we just want speed)
-        # Better: let's just use the CPU version if we want exact parity, or refine Taichi.
-        # Let's provide the Taichi version as an option.
-
-        out = np.zeros_like(a)
-        mab = np.mean(temp_lab, axis=(0, 1))
-        sab = np.std(temp_lab, axis=(0, 1))
-        taichi_ops.hist_blend_final_pass_kernel(temp_lab, mab, sab, mme, sme, out)
-        return out
-
-    if len(error_mask.shape) == 2:
-        error_mask = np.repeat(error_mask[:, :, np.newaxis], 3, axis=2)
-    a_lab = cv2.cvtColor(a, cv2.COLOR_BGR2Lab)
-    b_lab = cv2.cvtColor(b, cv2.COLOR_BGR2Lab)
-    min_error_lab = np.where(error_mask == 0, a_lab, b_lab)
-    a_mean, a_std = np.mean(a_lab, axis=(0, 1)), np.std(a_lab, axis=(0, 1))
-    b_mean, b_std = np.mean(b_lab, axis=(0, 1)), np.std(b_lab, axis=(0, 1))
-    min_error_mean, min_error_std = (
-        np.mean(min_error_lab, axis=(0, 1)),
-        np.std(min_error_lab, axis=(0, 1)),
-    )
-    t_mean = np.full(3, 0.5 * 256, dtype=np.float32)
-    t_std = np.full(3, (1 / 36) * 256, dtype=np.float32)
-    a_lab_norm = ((a_lab - a_mean) * t_std / (a_std + 1e-6) + t_mean).astype(np.float32)
-    b_lab_norm = ((b_lab - b_mean) * t_std / (b_std + 1e-6) + t_mean).astype(np.float32)
-    ab_lab = (a_lab_norm * weight1 + b_lab_norm * weight2 - 128) / 0.5 + 128
-    ab_mean, ab_std = np.mean(ab_lab, axis=(0, 1)), np.std(ab_lab, axis=(0, 1))
-    ab_lab_final = (ab_lab - ab_mean) * min_error_std / (ab_std + 1e-6) + min_error_mean
-    ab_lab_final = np.clip(np.round(ab_lab_final), 0, 255).astype(np.uint8)
-    return cv2.cvtColor(ab_lab_final, cv2.COLOR_Lab2BGR)
+    return load_op(engine, "hist_blend")(a, b, error_mask, weight1, weight2)
 
 
 # --- Poisson Solvers ---
@@ -218,9 +135,8 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
         elif solver == "amg":
             A, ml = cache["As"][ch], cache["MLs"][ch]
             out_all[:, ch] = ml.solve(A.T @ b, tol=1e-6, maxiter=maxiter, accel="cg")
-        elif solver == "taichi-cg" and TAICHI_AVAILABLE:
-            taichi_ops = _taichi_ops()
-            out_all[:, ch] = taichi_ops.poisson_solver_cg(
+        elif solver == "taichi-cg":
+            out_all[:, ch] = load_op("taichi", "poisson_cg")(
                 gx[..., ch],
                 gy[..., ch],
                 Iab_centered[..., ch].reshape(h, w),

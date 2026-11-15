@@ -3,10 +3,12 @@
 //!   coordinates for 1, 3 and 4 channels and at 1/32-pixel fixed point otherwise, or
 //!   nearest; reflect or constant border;
 //! - forward soft splatting with pull-push hole filling (the Taichi kernels of
-//!   `ezsynth/engines/backends/taichi_ops.py`);
-//! - histogram blending (`hist_blender`, OpenCV path; the Lab conversion is within two
-//!   8-bit levels of OpenCV's);
-//! - flow-consistency occlusion masks (`compute_flow_occlusion_masks`).
+//!   `ezsynth/kernels/imageops/taichi_kernels.py`);
+//! - histogram blending (`hist_blend` of `ezsynth/kernels/imageops/opencv.py`; the Lab
+//!   conversion is within two 8-bit levels of OpenCV's);
+//! - flow-consistency occlusion masks (`occlusion_masks`, same module).
+//!
+//! Python wrappers: `ezsynth/kernels/imageops/wgpu.py`.
 
 use std::sync::Arc;
 

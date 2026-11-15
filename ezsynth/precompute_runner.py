@@ -15,6 +15,7 @@ from .flow.run import (
     compute_bidirectional_optical_flow_sequence,
     compute_optical_flow_sequence,
 )
+from .kernels.imageops import resolve_exact_ops
 from .precompute import PrecomputeState, compute_guide
 from .utils.feature_utils import generate_tracked_features, render_gaussian_guide
 from .utils.io_utils import load_frames_from_dir, write_image
@@ -50,8 +51,7 @@ class PrecomputeRunner:
         self.pipeline_cfg = pipeline_cfg
         self.debug_cfg = debug_cfg
         self.state = state if state is not None else PrecomputeState()
-        # Occlusion masks run on WebGPU with the wgpu synthesis backend.
-        self.occlusion_engine = "wgpu" if backend == "wgpu" else "opencv"
+        self.occlusion_engine = resolve_exact_ops(backend)
 
     def run(self, content_frames: list[np.ndarray]) -> PrecomputeState:
         if self.uses_bidirectional_flow():

@@ -3,88 +3,12 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Literal
 
 import cv2
 import numpy as np
 
-
-def _grid(height: int, width: int) -> np.ndarray:
-    x, y = np.meshgrid(np.arange(width), np.arange(height), indexing="xy")
-    return np.stack((x, y), axis=-1).astype(np.float32)
-
-
-def _as_float32(array: np.ndarray) -> np.ndarray:
-    if array.dtype == np.float32:
-        return array
-    return array.astype(np.float32)
-
-
-def _sample_flow(flow: np.ndarray, coords: np.ndarray) -> np.ndarray:
-    coords_f32 = _as_float32(coords)
-    return cv2.remap(
-        _as_float32(flow),
-        coords_f32[..., 0],
-        coords_f32[..., 1],
-        interpolation=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=0,
-    )
-
-
-def _outside(coords: np.ndarray, height: int, width: int) -> np.ndarray:
-    return (
-        (coords[..., 0] < 0)
-        | (coords[..., 0] > width - 1)
-        | (coords[..., 1] < 0)
-        | (coords[..., 1] > height - 1)
-    )
-
-
-def _consistency_mask(
-    primary_flow: np.ndarray,
-    secondary_flow: np.ndarray,
-    *,
-    alpha: float,
-    beta: float,
-    dilate: int,
-) -> np.ndarray:
-    """Return target-space unreliable mask for primary then secondary flow."""
-    h, w = primary_flow.shape[:2]
-    primary_flow = _as_float32(primary_flow)
-    grid = _grid(h, w)
-    target_coords = grid + primary_flow
-    sampled_secondary = _sample_flow(secondary_flow, target_coords)
-
-    residual_sq = np.sum((primary_flow + sampled_secondary) ** 2, axis=2)
-    flow_mag_sq = np.sum(primary_flow**2, axis=2) + np.sum(sampled_secondary**2, axis=2)
-    threshold = alpha * flow_mag_sq + beta
-
-    mask = (residual_sq > threshold) | _outside(target_coords, h, w)
-    out = mask.astype(np.uint8) * 255
-    if dilate > 0:
-        k = 2 * dilate + 1
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-        out = cv2.dilate(out, kernel)
-    return out
-
-
-def _coverage_holes(flow: np.ndarray) -> np.ndarray:
-    """Approximate target pixels not reached by rounded forward splats."""
-    h, w = flow.shape[:2]
-    coords = _grid(h, w) + _as_float32(flow)
-    xi = np.rint(coords[..., 0]).astype(np.int32)
-    yi = np.rint(coords[..., 1]).astype(np.int32)
-    valid = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
-
-    covered = np.zeros((h, w), dtype=np.uint8)
-    covered[yi[valid], xi[valid]] = 1
-    covered = cv2.dilate(
-        covered,
-        cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
-        iterations=1,
-    )
-    return covered == 0
+from ..kernels.imageops import ImageOpsEngine, load_op
+from ..kernels.imageops.opencv import flow_grid, outside, sample_flow
 
 
 def compute_flow_occlusion_masks(
@@ -95,7 +19,7 @@ def compute_flow_occlusion_masks(
     beta: float = 0.5,
     dilate: int = 1,
     coverage: bool = True,
-    engine: Literal["opencv", "wgpu"] = "opencv",
+    engine: ImageOpsEngine = "opencv",
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """
     Build per-transition unreliable masks for both temporal directions.
@@ -108,49 +32,14 @@ def compute_flow_occlusion_masks(
         raise ValueError(
             f"Forward/backward flow length mismatch: {len(fwd_flows)} vs {len(bwd_flows)}"
         )
-
-    if engine == "wgpu":
-        from ..engines.backends.wgpu_backend import import_wgpu
-
-        ew = import_wgpu()
-        pairs = [
-            ew.occlusion_masks(
-                np.ascontiguousarray(fwd, dtype=np.float32),
-                np.ascontiguousarray(bwd, dtype=np.float32),
-                alpha=alpha,
-                beta=beta,
-                dilate=dilate,
-                coverage=coverage,
-            )
-            for fwd, bwd in zip(fwd_flows, bwd_flows)
-        ]
-        return [p[0] for p in pairs], [p[1] for p in pairs]
-    if engine != "opencv":
-        raise ValueError(f"Unknown occlusion mask engine {engine!r}")
-
-    fwd_masks = []
-    bwd_masks = []
-    for fwd, bwd in zip(fwd_flows, bwd_flows):
-        fwd_mask = _consistency_mask(
-            bwd,
-            fwd,
-            alpha=alpha,
-            beta=beta,
-            dilate=dilate,
+    occlusion_masks = load_op(engine, "occlusion_masks")
+    pairs = [
+        occlusion_masks(
+            fwd, bwd, alpha=alpha, beta=beta, dilate=dilate, coverage=coverage
         )
-        bwd_mask = _consistency_mask(
-            fwd,
-            bwd,
-            alpha=alpha,
-            beta=beta,
-            dilate=dilate,
-        )
-        if coverage:
-            fwd_mask = np.maximum(fwd_mask, _coverage_holes(fwd).astype(np.uint8) * 255)
-            bwd_mask = np.maximum(bwd_mask, _coverage_holes(bwd).astype(np.uint8) * 255)
-        fwd_masks.append(fwd_mask)
-        bwd_masks.append(bwd_mask)
-    return fwd_masks, bwd_masks
+        for fwd, bwd in zip(fwd_flows, bwd_flows)
+    ]
+    return [p[0] for p in pairs], [p[1] for p in pairs]
 
 
 def mask_to_bgr(mask: np.ndarray) -> np.ndarray:
@@ -223,19 +112,19 @@ def accumulate_target_to_source_coords(
     bwd_flows: list[np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compose adjacent flows to map target-frame pixels into a source frame."""
-    coords = _grid(height, width)
+    coords = flow_grid(height, width)
     valid = np.ones((height, width), dtype=bool)
 
     if target_idx < source_idx:
         for i in range(target_idx, source_idx):
-            delta = _sample_flow(fwd_flows[i], coords)
+            delta = sample_flow(fwd_flows[i], coords)
             coords = coords + delta
-            valid &= ~_outside(coords, height, width)
+            valid &= ~outside(coords, height, width)
     elif target_idx > source_idx:
         for i in range(target_idx - 1, source_idx - 1, -1):
-            delta = _sample_flow(bwd_flows[i], coords)
+            delta = sample_flow(bwd_flows[i], coords)
             coords = coords + delta
-            valid &= ~_outside(coords, height, width)
+            valid &= ~outside(coords, height, width)
 
     return coords.astype(np.float32), valid
 
@@ -259,7 +148,7 @@ def build_dfs_pseudo_style(
     offset stays coherent. Remaining holes are inpainted from neighboring style.
     """
     h, w = target_content.shape[:2]
-    grid = _grid(h, w)
+    grid = flow_grid(h, w)
     offsets = source_coords - grid
 
     sampled_content = cv2.remap(

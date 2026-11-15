@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 from ..config import DebugConfig
 from ..guide import GuideObject
+from ..kernels.imageops import resolve_exact_ops, resolve_image_ops
 from ..precompute import PrecomputeState
-from ..utils.image_ops import resolve_image_ops
 from ..utils.io_utils import write_image
 from ..utils.occlusion import (
     composite_masked_regions,
@@ -36,7 +36,9 @@ class SynthesisPassRunner:
         self.engine = engine
         self.precompute_state = precompute_state
         self.debug_cfg = debug_cfg
-        self._warp_tools_cache: dict[tuple[int, int], tuple[Warp, PositionalGuide]] = {}
+        self._warp_tools_cache: dict[
+            tuple[int, int], tuple[Warp, Warp, PositionalGuide]
+        ] = {}
 
     def run(
         self,
@@ -64,7 +66,7 @@ class SynthesisPassRunner:
         nnf_maps = []
 
         h, w, _ = content_frames[0].shape
-        warp, pos_guider = self._warp_tools(h, w)
+        warp, nnf_warp, pos_guider = self._warp_tools(h, w)
         source_pos_guide = pos_guider.get_pristine_guide_uint8()
 
         previous_nnf = None
@@ -120,7 +122,7 @@ class SynthesisPassRunner:
 
             initial_nnf_for_target = None
             if use_propagation and previous_nnf is not None:
-                warped_nnf_float = warp.run_warping_float_map(
+                warped_nnf_float = nnf_warp.run_warping_float_map(
                     previous_nnf,
                     directed_flow,
                     interpolation=cv2.INTER_NEAREST,
@@ -195,17 +197,21 @@ class SynthesisPassRunner:
 
         return stylized_frames, error_maps, flows_used_in_pass, nnf_maps
 
-    def _warp_tools(self, height: int, width: int) -> tuple[Warp, PositionalGuide]:
+    def _warp_tools(
+        self, height: int, width: int
+    ) -> tuple[Warp, Warp, PositionalGuide]:
+        """Image warper, nearest-neighbour NNF warper and positional guide."""
         key = (height, width)
         tools = self._warp_tools_cache.get(key)
         if tools is None:
             pipeline_config = self.engine.pipeline_config
+            backend = self.engine.ebsynth_config.backend
             engine = resolve_image_ops(
-                self.engine.ebsynth_config.backend,
-                gpu_ops=pipeline_config.use_forward_warping,
+                backend, gpu_ops=pipeline_config.use_forward_warping
             )
             tools = (
                 Warp(height, width, engine=engine),
+                Warp(height, width, engine=resolve_exact_ops(backend)),
                 PositionalGuide(
                     height,
                     width,
