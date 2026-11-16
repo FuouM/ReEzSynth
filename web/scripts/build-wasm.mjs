@@ -21,7 +21,8 @@ if (existsSync(join(localBin, `cargo${exe}`))) {
 const release = !process.argv.includes("--debug");
 
 function run(cmd, args) {
-  console.log(`> ${cmd} ${args.join(" ")}`);
+  // Only the tool and its subcommand: the arguments carry paths taken from the environment.
+  console.log(`> ${cmd} ${args[0]}`);
   const r = spawnSync(cmd, args, { stdio: "inherit", env, shell: false });
   if (r.error) {
     console.error(`could not run ${cmd}: ${r.error.message}`);
