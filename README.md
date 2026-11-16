@@ -42,6 +42,47 @@ Synthesis runs on one of several backends:
 
 > Sum of squared differences (top) and normalized cross-correlation (bottom) patch costs
 
+## Speed
+
+Measured on an RTX 3060 (12 GB) with a Ryzen 5 3600 on Windows 10, at commit `5990dce` (November 2026). Times are wall clock. Command-line runs were capped with `EZSYNTH_GPU_MEMORY_LIMIT_MB=4000`.
+
+Single image, `run_img_synth.py --full-params`. The first example of each run also pays the backend's start-up.
+
+| Backend | Retarget 320×462 | Stylit 1200×912 | Face style 810×1000 |
+|:-|-:|-:|-:|
+| `wgpu` | 1.71 s | 0.98 s | 0.62 s |
+| `cuda` | 2.65 s | 0.90 s | 0.60 s |
+| `taichi` | 5.43 s | 5.45 s | 3.59 s |
+| `torch` | 3.48 s | 33.6 s | 23.1 s |
+
+Video, `reezsynth-video` on 20 frames of `examples/cat_full.mp4` (960×544) with keyframes on the first and last frame: NeuFlow flow, NCC cost, temporal NNF propagation, sparse feature guides and `lsqr` Poisson blending. Whole run, including optical flow and saving:
+
+| Backend | Time |
+|:-|-:|
+| `wgpu` | 50 s |
+| `cuda` | 54 s |
+| `taichi` (with `use_taichi_ops`) | 129 s |
+| `torch` | 954 s |
+
+Under the 4 GiB cap the `torch` backend gathers its patches in chunks; with more memory it materializes them.
+
+FastBlend on the same 20 frames, whole command including start-up:
+
+| Command | `wgpu` | `cupy` | `cuda` | `taichi` |
+|:-|-:|-:|-:|-:|
+| `fastblend` (deflicker) | 31 s | 33 s | 45 s | 47 s |
+| `fastblend-interpolate` (2 keyframes) | 29 s | | | 53 s |
+
+ComfyUI, the bundled workflows on the full 100-frame clip (flow switched to NeuFlow, since the default RAFT checkpoints are a separate download):
+
+- Video Synth: 112 s with `wgpu`, 9 min 53 s with `taichi` (the workflow's backend).
+- FastBlend (keyframes 0 and 99, `auto` picks `wgpu`): 118 s.
+- Image Synth (`taichi`): Stylit 15 s, Face style 6 s, Texture by numbers 3 s.
+
+FaceBlit, `FaceBlit/examples/target2.png` (768×1024) with the watercolor style and FAN landmarks, including style preparation: `torch` 15.4 s (numba DFS), 11.7 s (vectorized) or 32.9 s (Python DFS); `taichi` 13.5 s.
+
+The browser app synthesizes the 810×1000 face style example in 1.1 s.
+
 ## Installation
 
 You need Python 3.10–3.12 and [uv](https://docs.astral.sh/uv/). The default `wgpu` backend runs on any GPU; the `torch`, `taichi` and `wgpu` backends need no CUDA Toolkit.

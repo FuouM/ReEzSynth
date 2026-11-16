@@ -119,6 +119,8 @@ def test_precompute_runner_populates_occlusion_masks(tmp_path, monkeypatch):
             occlusion_use_coverage_mask=False,
         ),
         debug_cfg=DebugConfig(),
+        # OpenCV occlusion masks: runs without a WebGPU adapter (CI).
+        backend="torch",
     )
 
     state = runner.run(frames)
