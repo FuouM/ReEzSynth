@@ -178,6 +178,21 @@ PRECISION_TOOLTIP = (
 )
 
 
+def validate_synthesis_inputs(
+    cls,
+    backend=None,
+    cost_function=None,
+    search_mode=None,
+    precision=None,
+    multicand_k=None,
+):
+    """ComfyUI ``VALIDATE_INPUTS`` shared by the image and video config nodes."""
+    values = (backend, cost_function, search_mode, precision, multicand_k)
+    if any(v is None for v in values):
+        return True  # linked inputs: validated in build()
+    return validate_synthesis_options(*values) or True
+
+
 def synthesis_core_inputs() -> dict:
     """EbSynth core parameters shared by the image and video config nodes."""
     return {
@@ -258,19 +273,7 @@ class ReEzSynthImageSynthConfig:
     FUNCTION = "build"
     CATEGORY = CATEGORY
 
-    @classmethod
-    def VALIDATE_INPUTS(
-        cls,
-        backend=None,
-        cost_function=None,
-        search_mode=None,
-        precision=None,
-        multicand_k=None,
-    ):
-        values = (backend, cost_function, search_mode, precision, multicand_k)
-        if any(v is None for v in values):
-            return True  # linked inputs: validated in build()
-        return validate_synthesis_options(*values) or True
+    VALIDATE_INPUTS = classmethod(validate_synthesis_inputs)
 
     def build(self, **kwargs):
         cfg = ReEzImgSynthConfig(**kwargs)

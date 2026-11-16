@@ -31,11 +31,6 @@ class ConvBlock(torch.nn.Module):
         x = self.relu(self.norm2(self.conv2(x)))
         return x
 
-    def forward_fuse(self, x):
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
-        return x
-
 
 class CNNEncoder(torch.nn.Module):
     def __init__(

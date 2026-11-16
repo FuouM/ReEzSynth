@@ -19,22 +19,14 @@ class GuideObject:
                 "Guide keyframe and target must have the same channel count."
             )
 
-    @staticmethod
-    def load_guide(
-        source: str | np.ndarray,
-        target: str | np.ndarray,
-        weight: float = 1.0,
-    ) -> "GuideObject":
-        src_img = io_utils.read_image(source) if isinstance(source, str) else source
-        tgt_img = io_utils.read_image(target) if isinstance(target, str) else target
-        return GuideObject(keyframe=src_img, target=tgt_img, weight=weight)
-
 
 def load_guide(
     source: str | np.ndarray, target: str | np.ndarray, weight: float = 1.0
 ) -> GuideObject:
     """Guide from a source/target image pair (file paths or uint8 BGR arrays)."""
-    return GuideObject.load_guide(source, target, weight)
+    src_img = io_utils.read_image(source) if isinstance(source, str) else source
+    tgt_img = io_utils.read_image(target) if isinstance(target, str) else target
+    return GuideObject(keyframe=src_img, target=tgt_img, weight=weight)
 
 
 def _validate_guide_array(array: np.ndarray, name: str) -> None:

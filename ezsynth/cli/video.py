@@ -101,13 +101,6 @@ def main():
                 mp4_path = od.parent / f"{od.name}.mp4"
             export_frames_to_browser_h264_mp4(final_frames, mp4_path, args.mp4_fps)
 
-    except FileNotFoundError as e:
-        logger.error(f"\n[ERROR] {e}")
-        if "ffmpeg" not in str(e).lower():
-            logger.error("Please check the paths in your configuration file.")
-    except Exception as e:
-        logger.exception(f"\n[ERROR] An unexpected error occurred: {e}")
-
     finally:
         end_time = time.time()
         logger.info("\n----------------------------------------")

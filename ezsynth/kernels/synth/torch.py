@@ -347,7 +347,7 @@ class Backend:
             search.omega_best,
             target_modulation_patches=search.target_modulation_patches,
             **search.cost_kw,
-        )[1]
+        )[0]
 
     def _initial_alternatives(self, nnf: torch.Tensor) -> CandidateSet | None:
         if self.search_mode != SEARCH_MODE_MULTICAND:
@@ -441,20 +441,15 @@ class Backend:
         )
 
         with self._timed("patch_extraction"):
-            source_style_patches = self._patch_grid(
-                style_tensor, patch_size, plan, clear_device_cache=False
-            )
+            source_style_patches = self._patch_grid(style_tensor, patch_size, plan)
             if H_s == H_t and W_s == W_t:
                 target_style_patches = source_style_patches
             else:
                 target_style_patches = self._patch_grid(
-                    resample_tensor(style_tensor, H_t, W_t),
-                    patch_size,
-                    plan,
-                    clear_device_cache=False,
+                    resample_tensor(style_tensor, H_t, W_t), patch_size, plan
                 )
             source_guide_patches = self._patch_grid(
-                source_guide_tensor, patch_size, plan, clear_device_cache=False
+                source_guide_tensor, patch_size, plan
             )
             has_mod = modulation_tensor.numel() > 0
             target_guide_patches = self._patch_grid(
@@ -495,28 +490,7 @@ class Backend:
         del source_style_patches, source_guide_patches, target_guide_patches
         del target_modulation_patches
 
-        with self._timed("nnf_initialization"):
-            # ``try_patch_batch`` treats candidate/current coordinates as read-only.
-            # Its result is not assigned: the search starts from an all-inf error
-            # map, as in the CUDA dispatch.
-            try_patch_batch(
-                nnf,
-                nnf,
-                error_map,
-                omega_map,
-                search.source_style_patches,
-                target_style_patches,
-                search.source_guide_patches,
-                search.target_guide_patches,
-                style_weights,
-                guide_weights,
-                uniformity_weight,
-                patch_size,
-                cost_function_mode,
-                search.omega_best,
-                target_modulation_patches=search.target_modulation_patches,
-                **search.cost_kw,
-            )
+        # The search starts from the all-inf error map, as in the CUDA dispatch.
 
         convergence_mask = torch.full(
             (H_t, W_t), 255, dtype=torch.uint8, device=self.device
@@ -579,8 +553,8 @@ class Backend:
         random_generator,
     ):
         """
-        New, fast algorithm matching CUDA. Iteratively refines the NNF and the
-        synthesized image together in a loop.
+        Synthesis level with residual transfer (matches CUDA): iteratively refines
+        the NNF and the synthesized image together.
         """
         H_s, W_s, _ = style_tensor.shape
         H_t, W_t, _ = target_guide_tensor.shape
@@ -598,11 +572,9 @@ class Backend:
         )
 
         with self._timed("patch_extraction"):
-            source_style_patches = self._patch_grid(
-                style_tensor, patch_size, plan, clear_device_cache=False
-            )
+            source_style_patches = self._patch_grid(style_tensor, patch_size, plan)
             source_guide_patches = self._patch_grid(
-                source_guide_tensor, patch_size, plan, clear_device_cache=False
+                source_guide_tensor, patch_size, plan
             )
             # The target guide does not change during the iterative process.
             has_mod = modulation_tensor.numel() > 0

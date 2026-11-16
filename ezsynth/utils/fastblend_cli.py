@@ -14,8 +14,8 @@ from FastBlend.src.engine import FastBlendEngine, FastBlendInput_Keyframes
 
 logger = logging.getLogger(__name__)
 
+# ``create_config`` keyword defaults of the CLI scripts and the ComfyUI node.
 _STANDALONE_DEFAULTS = {
-    "enabled": True,
     "accuracy": 2,
     "window_size": 5,
     "batch_size": 16,
@@ -26,63 +26,33 @@ _STANDALONE_DEFAULTS = {
 }
 
 _INTERPOLATION_DEFAULTS = {
-    "enabled": True,
-    "accuracy": 2,
-    "window_size": 5,
+    **_STANDALONE_DEFAULTS,
     "batch_size": 8,
     "minimum_patch_size": 15,
-    "num_iter": 5,
-    "guide_weight": 10.0,
-    "backend": "auto",
 }
 
 
 def create_fastblend_config(fastblend_params: dict | None = None) -> FastBlendConfig:
     """FastBlend config for full-sequence post-processing."""
-    params = dict(_STANDALONE_DEFAULTS)
-    if fastblend_params:
-        params.update(fastblend_params)
-
-    return create_config(
-        accuracy=params["accuracy"],
-        window_size=params["window_size"],
-        batch_size=params["batch_size"],
-        minimum_patch_size=params["minimum_patch_size"],
-        num_iter=params["num_iter"],
-        guide_weight=params["guide_weight"],
-        backend=params["backend"],
-    )
+    return create_config(**{**_STANDALONE_DEFAULTS, **(fastblend_params or {})})
 
 
 def create_interpolation_config(
     fastblend_params: dict | None = None,
 ) -> FastBlendConfig:
     """FastBlend config tuned for keyframe interpolation."""
-    params = dict(_INTERPOLATION_DEFAULTS)
-    if fastblend_params:
-        params.update(fastblend_params)
-
-    return create_config(
-        accuracy=params["accuracy"],
-        window_size=params["window_size"],
-        batch_size=params["batch_size"],
-        minimum_patch_size=params["minimum_patch_size"],
-        num_iter=params["num_iter"],
-        guide_weight=params["guide_weight"],
-        backend=params["backend"],
-    )
+    return create_config(**{**_INTERPOLATION_DEFAULTS, **(fastblend_params or {})})
 
 
 def load_frames_sorted_with_names(
     directory: str,
-    *,
-    tqdm_desc: str | None = None,
 ) -> tuple[list[np.ndarray], list[str]]:
     """Load frames by natural image sort and return aligned basenames."""
     path = Path(directory)
     paths = get_sorted_image_paths(path)
-    desc = tqdm_desc or f"Loading frames from {path.name}"
-    frames = [read_image(p) for p in tqdm(paths, desc=desc)]
+    frames = [
+        read_image(p) for p in tqdm(paths, desc=f"Loading frames from {path.name}")
+    ]
     names = [p.name for p in paths]
     logger.info(f"Loaded {len(frames)} frames from {directory}")
     return frames, names

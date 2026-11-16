@@ -85,11 +85,7 @@ class Warp:
             )
 
         if _is_identity_flow(flow, self.H, self.W):
-            out = (
-                _as_uint8_array(img).copy()
-                if img.dtype == np.uint8
-                else _as_float32_array(img).copy()
-            )
+            out = img.copy() if img.dtype == np.uint8 else _as_float32_array(img).copy()
             if return_weight:
                 return out, np.ones((self.H, self.W), dtype=np.float32)
             return out
@@ -124,16 +120,9 @@ class Warp:
         )
 
 
-def _as_uint8_array(array: np.ndarray) -> np.ndarray:
-    if array.dtype == np.uint8:
-        return np.ascontiguousarray(array) if not array.flags.c_contiguous else array
-    safe = np.nan_to_num(array, nan=0.0, posinf=255.0, neginf=0.0)
-    return safe.clip(0, 255).astype(np.uint8)
-
-
 def _as_float32_array(array: np.ndarray) -> np.ndarray:
     if array.dtype == np.float32:
-        out = np.ascontiguousarray(array) if not array.flags.c_contiguous else array
+        out = np.ascontiguousarray(array)
     else:
         out = array.astype(np.float32)
     if not np.isfinite(out).all():

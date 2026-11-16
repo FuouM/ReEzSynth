@@ -11,6 +11,7 @@ lists them in ``OPS``:
 | ``hist_blend``      | yes    | approximate | yes  |
 | ``occlusion_masks`` | yes    | -           | yes  |
 | ``poisson_cg``      | -      | yes         | -    |
+| ``poisson_lsq``     | yes    | -           | -    |
 
 An engine raises ValueError for an op or mode it lacks; nothing is substituted.
 

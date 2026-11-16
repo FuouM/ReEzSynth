@@ -1,5 +1,4 @@
 import logging
-from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -27,17 +26,9 @@ def has_exact_cache_files(cache_dir: Path, extension: str, num_expected: int) ->
     return actual == expected and all(path.is_file() for path in expected)
 
 
-def _clear_cache_files(cache_dir: Path, extensions: Iterable[str]) -> None:
-    for extension in extensions:
-        for path in cache_dir.glob(f"*.{extension}"):
-            path.unlink()
-
-
-def load_cached_flow(cache_dir: Path):
-    logger.info(f"Loading optical flow from cache: {cache_dir}")
-    flow_paths = sorted(cache_dir.glob("*.npy"))
-    fwd_flows = [np.load(p) for p in tqdm(flow_paths, desc="Loading Cached Flow")]
-    return fwd_flows
+def _clear_cache_files(cache_dir: Path, extension: str) -> None:
+    for path in cache_dir.glob(f"*.{extension}"):
+        path.unlink()
 
 
 def load_cached_arrays(cache_dir: Path):
@@ -49,22 +40,14 @@ def load_cached_arrays(cache_dir: Path):
 def save_array_cache(arrays, cache_dir: Path):
     logger.info(f"Saving {len(arrays)} arrays to cache: {cache_dir}")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    _clear_cache_files(cache_dir, ["npy"])
+    _clear_cache_files(cache_dir, "npy")
     for i, array in enumerate(tqdm(arrays, desc="Saving Array Cache")):
         np.save(cache_dir / f"{i:05d}.npy", array)
-
-
-def save_flow_cache(fwd_flows, cache_dir: Path):
-    logger.info(f"Saving {len(fwd_flows)} flow fields to cache: {cache_dir}")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    _clear_cache_files(cache_dir, ["npy"])
-    for i, flow in enumerate(tqdm(fwd_flows, desc="Saving Flow Cache")):
-        np.save(cache_dir / f"{i:05d}.npy", flow)
 
 
 def save_edge_map_cache(edge_maps, cache_dir: Path):
     logger.info(f"Saving {len(edge_maps)} edge maps to cache: {cache_dir}")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    _clear_cache_files(cache_dir, ["png"])
+    _clear_cache_files(cache_dir, "png")
     for i, edge_map in enumerate(edge_maps):
         write_image(cache_dir / f"{i:05d}.png", edge_map)

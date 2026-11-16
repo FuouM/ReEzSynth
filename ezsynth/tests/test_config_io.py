@@ -6,10 +6,10 @@ from ezsynth.config import (
     BlendingConfig,
     DebugConfig,
     EbsynthParamsConfig,
+    MainConfig,
     PrecomputationConfig,
 )
 from ezsynth.config_io import configs_from_mapping, configs_from_yaml
-from ezsynth.service import SynthesisConfigs
 
 
 def _minimal_config_data():
@@ -29,7 +29,7 @@ def _minimal_config_data():
 def test_configs_from_mapping_builds_config_sections():
     configs = configs_from_mapping(_minimal_config_data())
 
-    assert isinstance(configs, SynthesisConfigs)
+    assert isinstance(configs, MainConfig)
     assert configs.project.content_dir == "content"
     assert isinstance(configs.blending, BlendingConfig)
     assert isinstance(configs.ebsynth_params, EbsynthParamsConfig)
@@ -60,7 +60,7 @@ ebsynth_params: {}
 
     configs = configs_from_yaml(config_path)
 
-    assert isinstance(configs, SynthesisConfigs)
+    assert isinstance(configs, MainConfig)
     assert configs.project.output_dir == "output"
 
 

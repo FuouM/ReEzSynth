@@ -10,7 +10,7 @@
   `fastblend_standalone.py` → `fastblend`, `fastblend_standalone_interpolate.py` → `fastblend-interpolate`.
 - FaceBlit is a package: run `python -m FaceBlit.src.faceblit_run` from the repository root (no more `sys.path` edits).
 - Removed unused vendored RAFT helpers (`ezsynth/raft/OpticalFlow.py`, `ezsynth/raft/warp.py`, `forward_interpolate`).
-- Native extension sources moved `ebsynth_extension/` → `ezsynth/ebsynth_extension/`; `ebsynth_torch_loader.py` removed (use `ezsynth.native.ensure_extension_loaded()`).
+- Native extension sources moved `ebsynth_extension/` → `ezsynth/ebsynth_extension/` (now `ezsynth/kernels/synth/cuda_src/`); `ebsynth_torch_loader.py` removed (use `ezsynth.kernels.synth.cuda_loader.ensure_extension_loaded()`).
 - The project installs as a package (`uv sync` installs it editable); the root `__init__.py` remains only as the ComfyUI entry point.
 - The prototype `ebsynth_torch` wheel in Releases no longer matches the supported PyTorch; wheels without `compiled_with_cuda()` are treated as CPU-only.
 - Compute kernels are grouped by operation family under `ezsynth/kernels/`, one module per backend:
@@ -25,6 +25,14 @@
 - `RunConfig(use_lsqr=...)` is replaced by `RunConfig(poisson_solver=...)` (any `BlendingConfig.poisson_solver` value); `use_lsqr` was silently ignored. `Ezsynth` now passes `RunConfig.alpha` to the pipeline (it always used 0.75).
 - Synthesis options are checked against `ezsynth/kernels/synth/capabilities.py` (shared with the ComfyUI nodes) before a backend is built: `precision="float16"|"bfloat16"` on a backend other than `torch` now raises instead of being ignored.
 - Cross-backend tests are one file per kernel family (`test_synth_parity.py`, `test_imageops_parity.py`, `test_fastblend_parity.py`, replacing `test_wgpu_backend.py`, `test_wgpu_image_ops.py` and `FastBlend/tests/`); each backend runs when it can on the machine, the JIT-built `cuda` extensions with `EZSYNTH_TEST_JIT=1`. Known divergences are strict xfails: the cuda extension's bilateral votes and `n_size_step > 1` error maps differ from Taichi/wgpu/torch.
+- Unused code removed:
+  - Modules: `ezsynth.service`, `ezsynth.output`, `ezsynth.integration_io`, `ezsynth.pyramid`, `ezsynth.edge.edge_detection`, `ezsynth.engines.edge_engine`, `ezsynth.utils.mask_utils`.
+  - ezsynth API: `GuideObject.load_guide` (use `load_guide`), `ProjectData.from_config` / `get_mask_frames` / `get_modulation_frames`, the `ezsynth.consts` mirror of the native extension state (use `kernels.synth.cuda_loader`), the unread `EZSYNTH_TORCH_COMPILE_MASK_OPS` variable.
+  - Unused RAFT / NeuFlow layers; FastBlend `InterpolationModeSingleFrameRunner`; FaceBlit `utils_io` helpers and the `build_nnf_dfs_voting_*` wrappers (the numpy one could not run).
+  - Torch kernel helpers: `compute_patch_stats`, `extract_patches_from_coords`, `compute_omega_scores`, `unfold_omega_patches`.
+- `SynthesisPipeline(configs, data)` takes a `MainConfig`, which replaces the duplicate `SynthesisConfigs`; `configs_from_yaml` / `configs_from_mapping` return `MainConfig`. `RunConfig` is a dataclass (same fields and order).
+- Flow caches use `save_array_cache` / `load_cached_arrays` (`save_flow_cache` / `load_cached_flow` removed). FastBlend config builders raise `TypeError` on unknown keys.
+- `reezsynth-video` and `reezsynth-prepare` exit non-zero on failure (they logged the error and exited 0); a missing or unreadable video, or a failed frame write, raises.
 
 ### Added
 - GPU memory budget: outside ComfyUI, the PyTorch CUDA allocator is capped from the memory free at startup, keeping 1.5 GiB for other applications (`EZSYNTH_GPU_MEMORY_*` overrides).
@@ -45,7 +53,7 @@
 - RAFT autocast follows the input device and its `mixed_precision` flag.
 - Example media tracked with Git LFS.
 - Repository formatted with ruff 0.17; wider lint rule set.
-- Native extensions: single lazy loader (`ezsynth.native`); kernels launch on PyTorch's current stream with device guards and launch checks; no per-level device sync; `.cu` files are torch-free (nvcc C++17) while host glue uses PyTorch's C++ standard, so CUDA 12.4 builds against torch ≥ 2.12; portable host flags (`EZSYNTH_NATIVE_ARCH=1` opts in to native tuning); `ninja` is a dependency.
+- Native extensions: single lazy loader (`ezsynth.kernels.synth.cuda_loader`); kernels launch on PyTorch's current stream with device guards and launch checks; no per-level device sync; `.cu` files are torch-free (nvcc C++17) while host glue uses PyTorch's C++ standard, so CUDA 12.4 builds against torch ≥ 2.12; portable host flags (`EZSYNTH_NATIVE_ARCH=1` opts in to native tuning).
 - FastBlend `is_available()` returns False (cached) instead of raising when its CUDA build fails.
 - ComfyUI nodes and example workflows default to the Taichi backend (about 10x faster than pure PyTorch at full resolution); `taichi` is in `requirements.txt`. The video workflow uses ComfyUI's core video load/save nodes.
 - Initial NNF is seeded (2024), so repeated runs give identical output.

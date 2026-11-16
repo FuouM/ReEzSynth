@@ -71,18 +71,12 @@ class SynthesisScheduler:
         content_frames: list[np.ndarray],
         style_frames: list[np.ndarray],
     ) -> list[np.ndarray]:
-        pass_runner_args = {
-            "seq": seq,
-            "content_frames": content_frames,
-        }
-
         if seq.mode in (SynthesisSequence.MODE_FWD, SynthesisSequence.MODE_REV):
-            is_forward = seq.mode == SynthesisSequence.MODE_FWD
-            style_img = style_frames[seq.style_indices[0]]
             styled_sequence, _, _, _ = self.pass_runner.run(
-                **pass_runner_args,
-                style_img=style_img,
-                is_forward=is_forward,
+                seq=seq,
+                content_frames=content_frames,
+                style_img=style_frames[seq.style_indices[0]],
+                is_forward=seq.mode == SynthesisSequence.MODE_FWD,
                 collect_intermediates=False,
             )
             return styled_sequence

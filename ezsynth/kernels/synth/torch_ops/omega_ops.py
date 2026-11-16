@@ -1,4 +1,3 @@
-# ezsynth/torch_ops/omega_ops.py
 """
 Omega map operations for tracking patch usage in EBSynth.
 
@@ -10,7 +9,6 @@ import torch
 import torch.nn.functional as F
 
 from ....consts import vote_chunk_budget_bytes
-from .device_cache import clear_torch_device_cache
 
 # conv2d kernels for box-filter omega (device, patch_size, dtype) -> cached tensor
 _OMEGA_BOX_KERNEL: dict = {}
@@ -22,7 +20,7 @@ _OMEGA_DELTA_CACHE: dict = {}
 _OMEGA_MEAN_BUF: dict = {}
 # Float conversion scratch for omega conv input (same keys as mean buf)
 _OMEGA_FLOAT_SCRATCH: dict = {}
-# Padded (1,1,H+2r,W+2r) conv inputs — avoids allocating ``F.pad`` output each rebuild
+# Padded (1,1,H+2r,W+2r) conv inputs: avoids allocating ``F.pad`` output each rebuild
 _OMEGA_PADDED_CONV: dict = {}
 
 
@@ -147,10 +145,13 @@ def omega_patch_mean_map_into(
     patch_size: int,
 ) -> None:
     """
-    Box-filter mean of ``omega_map`` into ``out`` (float32, shape ``H_s×W_s``).
+    Per-source-pixel mean omega over a ``patch_size`` x ``patch_size`` patch with
+    implicit **zero** edge padding (same as ``F.unfold(..., padding=r)`` + mean),
+    written into ``out`` (float32, shape ``H_s x W_s``).
 
-    Same numerics as :func:`omega_patch_mean_map`; avoids allocating a new tensor
-    when callers reuse a scratch buffer (e.g. random-search radius iterations).
+    Implemented as a box ``conv2d``, which is much faster than ``unfold`` at large
+    ``H_s x W_s`` (e.g. megapixel Stylit). Callers reuse ``out`` as a scratch buffer
+    (e.g. random-search radius iterations).
     """
     device = omega_map.device
     H_s, W_s = omega_map.shape[-2], omega_map.shape[-1]
@@ -178,23 +179,6 @@ def omega_mean_map_buffer(device: torch.device, H: int, W: int) -> torch.Tensor:
     return buf
 
 
-def omega_patch_mean_map(omega_map: torch.Tensor, patch_size: int) -> torch.Tensor:
-    """
-    Per-source-pixel mean omega over a ``patch_size``×``patch_size`` patch with
-    implicit **zero** edge padding (same as ``F.unfold(..., padding=r)`` + mean).
-
-    Implemented as a box ``conv2d``, which is much faster than ``unfold`` at
-    large ``H_s×W_s`` (e.g. megapixel Stylit).
-    """
-    out = torch.empty(
-        omega_map.shape[-2:],
-        dtype=torch.float32,
-        device=omega_map.device,
-    )
-    omega_patch_mean_map_into(out, omega_map, patch_size)
-    return out
-
-
 def gather_omega_scores_from_patches(
     omega_mean_map: torch.Tensor, nnf: torch.Tensor
 ) -> torch.Tensor:
@@ -202,7 +186,7 @@ def gather_omega_scores_from_patches(
     Look up precomputed per-source-cell mean patch omega at each NNF center.
 
     Args:
-        omega_mean_map: (H_s, W_s) float32 from :func:`omega_patch_mean_map`
+        omega_mean_map: (H_s, W_s) float32 from :func:`omega_patch_mean_map_into`
         nnf: (..., 2) int32 last dimension (sx, sy)
 
     Returns:
@@ -244,40 +228,11 @@ def gather_omega_scores_pair(
     return both[:, 0].view(original_shape), both[:, 1].view(original_shape)
 
 
-def unfold_omega_patches(omega_map: torch.Tensor, patch_size: int) -> torch.Tensor:
-    """Deprecated alias for :func:`omega_patch_mean_map` (2D map, not unfold layout)."""
-    return omega_patch_mean_map(omega_map, patch_size)
-
-
-def compute_omega_scores(
-    omega_map: torch.Tensor,  # (H_s, W_s) int32
-    nnf: torch.Tensor,  # (H_t, W_t, 2) int32
-    patch_size: int,
-) -> torch.Tensor:
-    """
-    Compute average omega value for each patch in the NNF.
-
-    Args:
-        omega_map: Usage counts for each source pixel
-        nnf: Current nearest neighbor field
-        patch_size: Size of patches
-
-    Returns:
-        omega_scores: ``nnf.shape[:-1]`` float32 average omega values per patch
-    """
-    op = omega_patch_mean_map(omega_map, patch_size)
-    scores = gather_omega_scores_from_patches(op, nnf)
-    clear_torch_device_cache(scores.device)
-    return scores
-
-
 def update_omega_map(
     omega_map: torch.Tensor,  # (H_s, W_s) int32, modified in-place
     old_coords: torch.Tensor,  # (N, 2) int32 - coordinates to decrement
     new_coords: torch.Tensor,  # (N, 2) int32 - coordinates to increment
     patch_size: int,
-    *,
-    clear_device_cache: bool = True,
 ):
     """
     Update omega map when NNF entries change.
@@ -290,7 +245,6 @@ def update_omega_map(
         old_coords: Source coordinates to decrement (N, 2)
         new_coords: Source coordinates to increment (N, 2)
         patch_size: Size of patches
-        clear_device_cache: If True, clear MPS/CUDA cache after scatter when enabled in consts.
 
     Coordinates are expanded to their clamped patch pixels in bounded chunks and
     scatter-added (exact integer arithmetic, independent of the chunking).
@@ -308,6 +262,3 @@ def update_omega_map(
         del old_linear
         new_linear = _omega_linear_indices(new_coords[start:end], patch_size, H_s, W_s)
         omega_flat.scatter_add_(0, new_linear, inc)
-
-    if clear_device_cache:
-        clear_torch_device_cache(device)

@@ -6,11 +6,7 @@ import torch
 import torch.nn.functional as F
 
 from FaceBlit.src.utils_draw import draw_ellipse, fill_convex_poly
-from FaceBlit.src.utils_io import (
-    bgr_to_yuv,
-    ensure_grayscale,
-    to_uint8,
-)
+from FaceBlit.src.utils_io import bgr_to_yuv, ensure_grayscale, to_uint8
 
 
 def alpha_blend(
@@ -25,12 +21,7 @@ def alpha_blend(
     a = np.asarray(alpha, dtype=np.float32)
     if a.ndim == 2:
         a = a[:, :, None]
-    elif a.ndim == 3 and a.shape[2] == 1:
-        pass
-    elif a.ndim == 3 and a.shape[2] == 3:
-        # already 3 channels
-        pass
-    else:
+    elif a.ndim != 3 or a.shape[2] not in (1, 3):
         a = a.reshape(alpha.shape[0], alpha.shape[1], -1)
         if a.shape[2] != 1 and a.shape[2] != 3:
             a = a[:, :, :1]
@@ -41,8 +32,6 @@ def alpha_blend(
     a_t = F.avg_pool2d(a_t, kernel_size=k, stride=1, padding=k // 2)
     a = a_t.squeeze(0).permute(1, 2, 0).numpy()
 
-    if a.ndim == 2:
-        a = a[:, :, None]
     if a.shape[2] == 1:
         a = np.repeat(a, 3, axis=2)
     a = np.clip(a, 0.0, 1.0)
@@ -112,30 +101,20 @@ def _gaussian_pyr_down(image: torch.Tensor, rounds: int = 3) -> torch.Tensor:
     return t
 
 
-def gradient_guide(
-    width: int,
-    height: int,
-    draw_grid: bool = False,
-    *,
-    device: torch.device | None = None,
-    as_numpy: bool = True,
-) -> np.ndarray | torch.Tensor:
+def gradient_guide(width: int, height: int, draw_grid: bool = False) -> np.ndarray:
     """Create a positional gradient guide equivalent to C++ getGradient."""
-    xs = torch.linspace(0, 255, width, device=device)
-    ys = torch.linspace(0, 255, height, device=device)
+    xs = torch.linspace(0, 255, width)
+    ys = torch.linspace(0, 255, height)
     grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
     b = torch.zeros_like(grid_x)
     g = grid_y
     r = grid_x
-    guide = torch.stack([b, g, r], dim=-1).to(torch.uint8)
+    guide = torch.stack([b, g, r], dim=-1).to(torch.uint8).numpy()
     if draw_grid:
-        guide_np = guide.cpu().numpy()
         step = 10
-        guide_np[step::step, :] = 255
-        guide_np[:, step::step] = 255
-        guide = torch.from_numpy(guide_np)
-
-    return guide.cpu().numpy() if as_numpy else guide
+        guide[step::step, :] = 255
+        guide[:, step::step] = 255
+    return guide
 
 
 def warp_mls_similarity(
@@ -149,28 +128,17 @@ def warp_mls_similarity(
     img = image.unsqueeze(0) if image.ndim == 3 else image
     _, _c, h, w = img.shape
     device = img.device
-    # src_points/dst_points are expected as (x, y)
-
-    # Fix: Use strictly uniform grid extended beyond boundaries to avoid F.interpolate distortion
-    # We want grid points at 0, 10, 20... ensuring we cover the whole image.
+    # src_points/dst_points are (x, y). Uniform grid extended past the image
+    # border (0, grid_size, 2 * grid_size, ...) so it covers every pixel.
     max_x = int(math.ceil((w - 1) / grid_size) * grid_size)
     max_y = int(math.ceil((h - 1) / grid_size) * grid_size)
 
     xs = list(range(0, max_x + 1, grid_size))
     ys = list(range(0, max_y + 1, grid_size))
 
-    rdx, rdy = _calc_mls_delta(
-        src_points,
-        dst_points,
-        h,
-        w,
-        grid_points_x=xs,
-        grid_points_y=ys,
-        grid_size=grid_size,
-        device=device,
-    )
+    rdx, rdy = _calc_mls_delta(src_points, dst_points, xs, ys, device)
 
-    # rdx/rdy are now shape (len(ys), len(xs)) - the coarse grid
+    # rdx/rdy have shape (len(ys), len(xs)): the coarse grid
 
     # Interpolate delta field to dense resolution of the EXTENDED size
     # shape (1, 2, grid_h, grid_w)
@@ -214,32 +182,14 @@ def warp_mls_similarity(
 def _calc_mls_delta(
     src_points: torch.Tensor,
     dst_points: torch.Tensor,
-    out_h: int,
-    out_w: int,
-    grid_points_x: list[int] | None = None,
-    grid_points_y: list[int] | None = None,
-    grid_size: int = 10,
-    device: torch.device | None = None,
+    xs: list[int],
+    ys: list[int],
+    device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute displacement field at grid nodes (only nodes are filled)."""
-    device = device or src_points.device
     # Follow C++ ImgWarp_MLS: oldDotL = dst (target), newDotL = src (style)
     new_pts = src_points.to(device, dtype=torch.float32)  # style/source
     old_pts = dst_points.to(device, dtype=torch.float32)  # target/destination
-
-    if grid_points_x is not None:
-        xs = grid_points_x
-    else:
-        xs = list(range(0, out_w, grid_size))
-        if xs[-1] != out_w - 1:
-            xs.append(out_w - 1)
-
-    if grid_points_y is not None:
-        ys = grid_points_y
-    else:
-        ys = list(range(0, out_h, grid_size))
-        if ys[-1] != out_h - 1:
-            ys.append(out_h - 1)
 
     # Output grid shape matches the provided grid points
     grid_h = len(ys)
@@ -316,7 +266,7 @@ def _calc_mls_delta(
 def get_skin_mask(
     image_bgr: np.ndarray, landmarks: Sequence[tuple[int, int]]
 ) -> np.ndarray:
-    """Generate skin mask using PyTorch operations."""
+    """Generate the skin mask (forehead colour samples, face contour and ellipse)."""
     lm = np.asarray([(int(x), int(y)) for x, y in landmarks], dtype=np.int32)
     face_contour = lm[:17]
     face_width = face_contour[-1, 0] - face_contour[0, 0]

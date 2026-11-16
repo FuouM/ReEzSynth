@@ -23,10 +23,8 @@ from .utils.occlusion import compute_flow_occlusion_masks, mask_to_bgr
 from .utils.pipeline_utils import (
     has_exact_cache_files,
     load_cached_arrays,
-    load_cached_flow,
     save_array_cache,
     save_edge_map_cache,
-    save_flow_cache,
 )
 from .utils.viz_utils import flow_to_image
 
@@ -43,14 +41,13 @@ class PrecomputeRunner:
         precomputation_cfg: PrecomputationConfig,
         pipeline_cfg: PipelineConfig,
         debug_cfg: DebugConfig,
-        state: PrecomputeState | None = None,
         backend: str = "wgpu",
     ) -> None:
         self.project_cfg = project_cfg
         self.precomputation_cfg = precomputation_cfg
         self.pipeline_cfg = pipeline_cfg
         self.debug_cfg = debug_cfg
-        self.state = state if state is not None else PrecomputeState()
+        self.state = PrecomputeState()
         self.occlusion_engine = resolve_exact_ops(backend)
 
     def run(self, content_frames: list[np.ndarray]) -> PrecomputeState:
@@ -101,9 +98,9 @@ class PrecomputeRunner:
             force_recompute=self.project_cfg.force_recompute_flow,
             num_expected=len(content_frames) - 1,
             title="Optical flow",
-            load_cache_fn=load_cached_flow,
+            load_cache_fn=load_cached_arrays,
             compute_fn=compute_optical_flow_sequence,
-            save_fn=save_flow_cache,
+            save_fn=save_array_cache,
             compute_kwargs={"precomputation_cfg": self.precomputation_cfg},
         )
 
@@ -122,9 +119,9 @@ class PrecomputeRunner:
             force_recompute=self.project_cfg.force_recompute_flow,
             num_expected=len(content_frames) - 1,
             title="Backward optical flow",
-            load_cache_fn=load_cached_flow,
+            load_cache_fn=load_cached_arrays,
             compute_fn=compute_backward_optical_flow_sequence,
-            save_fn=save_flow_cache,
+            save_fn=save_array_cache,
             compute_kwargs={"precomputation_cfg": self.precomputation_cfg},
         )
 
@@ -145,15 +142,6 @@ class PrecomputeRunner:
             num_expected,
         )
 
-        if (
-            not self.project_cfg.force_recompute_flow
-            and fwd_cache_ready
-            and bwd_cache_ready
-        ):
-            self._compute_optical_flow(content_frames)
-            self._compute_backward_optical_flow(content_frames)
-            return
-
         if self.project_cfg.force_recompute_flow or (
             not fwd_cache_ready and not bwd_cache_ready
         ):
@@ -163,8 +151,8 @@ class PrecomputeRunner:
                     self.precomputation_cfg,
                 )
             )
-            save_flow_cache(self.state.fwd_flows, cache_root / "flow")
-            save_flow_cache(self.state.bwd_flows, cache_root / "flow_bwd")
+            save_array_cache(self.state.fwd_flows, cache_root / "flow")
+            save_array_cache(self.state.bwd_flows, cache_root / "flow_bwd")
             if self.debug_cfg.save_flow_viz and self.state.fwd_flows:
                 self._save_flow_visualizations(self.state.fwd_flows, subdir="fwd")
             if self.debug_cfg.save_flow_viz and self.state.bwd_flows:

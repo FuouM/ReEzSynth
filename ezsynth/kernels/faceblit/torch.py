@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from FaceBlit.src.utils_io import (
-    ensure_grayscale,
-    get_torch_device,
-)
-
-PathLike = str | Path
+from FaceBlit.src.utils_io import ensure_grayscale, get_torch_device
 
 
 def _denoise_nnf_torch(
@@ -165,18 +158,12 @@ def compute_look_up_cube_optimized(
     lambda_app: int = 2,
     search_radius: int = 30,
     device: str | torch.device | None = None,
-) -> torch.Tensor:
-    """
-    Vectorized version of compute_look_up_cube using PyTorch.
-    Support GPU acceleration (CUDA/MPS).
-    """
+) -> np.ndarray:
+    """Vectorized ``compute_look_up_cube`` (``numpy.py``) on any torch device."""
     device = get_torch_device(device)
 
-    # Prepare inputs
+    # BGR guide: red (index 2) is the x coordinate, green (index 1) the y coordinate.
     if style_pos_guide.ndim == 3 and style_pos_guide.shape[2] == 3:
-        # BGR to RGB? No, guide generation already handles order locally,
-        # but here we just need channels. original uses BGR indices [2] and [1].
-        # pos[..., 2] is Red (x index), pos[..., 1] is Green (y index).
         pos_r = torch.from_numpy(style_pos_guide[..., 2].astype(np.int32)).to(device)
         pos_g = torch.from_numpy(style_pos_guide[..., 1].astype(np.int32)).to(device)
     else:
@@ -185,27 +172,17 @@ def compute_look_up_cube_optimized(
     app = torch.from_numpy(style_app_guide.astype(np.int32)).to(device)
     h, w = app.shape
 
-    # Output buffer: (256, 256, 256, 2)
-    # Dimensions: [target_r(x), target_g(y), target_app(z), coords(2)]
-    # Use int32 for intermediate storage
+    # Output buffer: [pos_r(x), pos_g(y), app(z), coords(2)]
     output = torch.zeros((256, 256, 256, 2), dtype=torch.int16, device=device)
 
-    # Precompute norms
     x_norm = w / 256.0
     y_norm = h / 256.0
 
-    # We iterate over target_x (0..255)
-    # And process all target_y (0..255) in parallel vectors
-
-    # Optimization: To avoid OOM, processing one X at a time is safe.
-    # Total memory for 256 Ys * patch_size is small.
-
+    # One x at a time keeps memory small; all 256 y values are batched.
     k_inf = 2**30
 
-    # Grid for y iteration
-    y_indices = torch.arange(256, device=device, dtype=torch.int32)  # [0..255]
+    y_indices = torch.arange(256, device=device, dtype=torch.int32)
 
-    # Prepare constants
     l_pos = torch.tensor(lambda_pos, device=device, dtype=torch.int32)
     l_app = torch.tensor(lambda_app, device=device, dtype=torch.int32)
 
@@ -214,7 +191,7 @@ def compute_look_up_cube_optimized(
         c_start = max(0, seed_col - search_radius)
         c_end = min(w, seed_col + search_radius)
 
-        # Crop strips based on x
+        # Column strip around the seed column for this x
         strip_pos_r = pos_r[:, c_start:c_end]  # (H, W_strip)
         strip_pos_g = pos_g[:, c_start:c_end]
         strip_app = app[:, c_start:c_end]
@@ -224,85 +201,38 @@ def compute_look_up_cube_optimized(
         r_starts = (seed_rows - search_radius).clamp(min=0)
         r_ends = (seed_rows + search_radius).clamp(max=h)
 
-        # We need to process each 'y' (0..255).
-        # Since r_start/r_end varies per y, we can't easily do a rectangular batch
-        # unless we pad or just extract the max union.
-        # But 'search_radius' is small (30). The window height is ~60.
-        # The strips are full height H.
-
-        # Vectorized gather approach:
-        # Create a unified buffer of all patches?
-        # A simple loop over Y inside X is actually decently fast on GPU if operations are batched?
-        # No, 256x256 = 65k iterations is too slow if loop is in Python.
-        # We MUST batch Y.
-
-        # Strategy:
-        # Each 'y' needs a window [r_start[y]:r_end[y], :].
-        # These windows overlap heavily.
-        # We can construct a mask or gather indices.
-        # Let's create a tensor of indices.
-
+        # Each y searches rows [r_start[y], r_end[y]); gather a fixed-height
+        # window per y and mask the rows past r_end.
         max_h_window = search_radius * 2 + 1
         window_width = c_end - c_start
 
-        # Construct gather indices (Batch=256, max_h, width)
-        # Offsets relative to r_start
-        # If r_end - r_start < max_h, we need masking.
-
-        # Base rows: (256, 1) + (1, max_h)
         rel_rows = torch.arange(max_h_window, device=device).unsqueeze(0)  # (1, max_h)
         abs_rows = r_starts.unsqueeze(1) + rel_rows  # (256, max_h)
 
-        # Mask for valid rows
         valid_mask = abs_rows < r_ends.unsqueeze(1)
 
-        # Clamping for safety (masked values won't be used)
+        # Masked rows are clamped for safe indexing and never win.
         abs_rows_clamped = abs_rows.clamp(max=h - 1)
 
-        # Extract patches: (256, max_h, W_strip)
-        # Using fancy indexing
-        # Expand indices to match strip width
-        # abs_rows_exp: (256, max_h, 1)
-
-        # We need (256, max_h, W_strip)
-        # strip is (H, W_strip)
-        # We select rows from strip.
-
-        # Gather rows
-        # Flattening H for gather?
-        # patches_r = strip_pos_r[abs_rows_clamped] # shape (256, max_h, W_strip)
+        # (256, max_h, W_strip)
         patches_r = strip_pos_r[abs_rows_clamped]
         patches_g = strip_pos_g[abs_rows_clamped]
         patches_app = strip_app[abs_rows_clamped]
 
-        # Compute Error
-        # base_err = (abs(pg - y) + abs(pr - x)) * lambda_pos
-        # y is varying per batch (0..255), x is constant scalar
-
-        # y needs to be broadcast: (256, 1, 1)
+        # base_err = (|pg - y| + |pr - x|) * lambda_pos, y broadcast per batch
         y_view = y_indices.view(256, 1, 1)
-
         base_err = (torch.abs(patches_g - y_view) + torch.abs(patches_r - x)) * l_pos
 
-        # Mask out invalid pixels (out of r_start/r_end bounds)
-        # valid_mask is (256, max_h). Expand to width.
+        # Invalid rows (outside r_start/r_end) get infinite error.
         full_mask = valid_mask.unsqueeze(2).expand_as(base_err)
-
-        # Set error to infinity for invalid pixels
         base_err = torch.where(full_mask, base_err, torch.tensor(k_inf, device=device))
 
-        # Now Reduction: For each batch 'b' (y), and each unique app value 'z', find min base_err.
-        # We need the argmin (coordinates).
-        # Grid X coords for patches: range(c_start, c_end) -> (1, 1, W_strip)
-        # Grid Y coords for patches: abs_rows_clamped -> (256, max_h, 1)
-
+        # Per (y, app) bin: min error and its (row, col).
         grid_cols = torch.arange(c_start, c_end, device=device, dtype=torch.int32).view(
             1, 1, -1
         )
         grid_rows = abs_rows_clamped  # (256, max_h)
 
-        # Flatten everything per batch
-        # (256, N_pixels)
         flat_err = base_err.view(256, -1)  # (256, K)
         flat_app = patches_app.view(256, -1)  # (256, K)
         flat_cols = grid_cols.expand(256, max_h_window, -1).reshape(256, -1)
@@ -312,20 +242,11 @@ def compute_look_up_cube_optimized(
             .reshape(256, -1)
         )
 
-        # We need independent reduction per batch.
-        # Offset app keys by batch index: batch_keys = app + batch_idx * 256
+        # Independent reduction per y: offset app keys by y * 256.
         batch_offset = (y_indices * 256).unsqueeze(1)  # (256, 1)
-        flat_keys = (
-            flat_app.long() + batch_offset.long()
-        )  # (256, K) -> flatten to (256*K)
+        flat_keys = flat_app.long() + batch_offset.long()  # (256, K)
 
-        # Pack (Error, Index) into int64 for argmin
-        # Error is ~255*20 = 5000. Fits in 16 bits easily.
-        # Index is just an identifier to retrieve row/col.
-        # Actually we need to store (row, col).
-        # Let's pack row/col into one int32: (row << 16) | col
-        # Combine error: (error << 32) | (packed_coords)
-
+        # Pack (error << 32) | (row << 16) | col so one amin gives error and coords.
         packed_coords = (flat_rows << 16) | flat_cols
         scores = (flat_err.long() << 32) | packed_coords.long()
 
@@ -333,51 +254,32 @@ def compute_look_up_cube_optimized(
         all_keys = flat_keys.view(-1)
         all_scores = scores.view(-1)
 
-        # Scatter Reduce Min
-        # Output buffer size: 256 * 256 (all possible Y * App combinations)
-        # Initialize with infinity-like score
+        # Scatter-min into all 256 * 256 (y, app) bins.
         init_val = torch.tensor(k_inf, device=device).long() << 32
-
-        # torch.scatter_reduce_ is available in 1.12+, 'amin' mode
-        # or scatter_reduce in 2.0
-        # If unavailable, use custom scatter min?
-        # Assuming torch 2.0+ based on user context
-
         min_scores = torch.full(
             (256 * 256,), init_val.item(), device=device, dtype=torch.int64
         )
-
-        if hasattr(torch.Tensor, "scatter_reduce_"):
-            if device.type == "mps" and all_scores.dtype == torch.int64:
-                # MPS workaround for int64 atomic min
-                min_scores_cpu = min_scores.cpu()
-                min_scores_cpu.scatter_reduce_(
-                    0,
-                    all_keys.cpu(),
-                    all_scores.cpu(),
-                    reduce="amin",
-                    include_self=True,
-                )
-                min_scores = min_scores_cpu.to(device)
-            else:
-                min_scores.scatter_reduce_(
-                    0, all_keys, all_scores, reduce="amin", include_self=True
-                )
+        if device.type == "mps":
+            # MPS workaround for int64 atomic min
+            min_scores_cpu = min_scores.cpu()
+            min_scores_cpu.scatter_reduce_(
+                0,
+                all_keys.cpu(),
+                all_scores.cpu(),
+                reduce="amin",
+                include_self=True,
+            )
+            min_scores = min_scores_cpu.to(device)
         else:
-            # Fallback for older torch versions if needed
             min_scores.scatter_reduce_(
                 0, all_keys, all_scores, reduce="amin", include_self=True
             )
 
-        # Unpack results: (256, 256) -> (Y, App)
-        min_scores = min_scores.view(256, 256)
+        min_scores = min_scores.view(256, 256)  # (y, app)
 
-        # If best_err >= k_inf, it means no pixel found for that app bin.
-        # In original code, we retain seed_coord if cost >= k_inf after smoothing.
-        # The smoothing step handles this propagation.
-
-        # Smoothing (Forward/Backward) without Python loops.
-        # Reformulate DP as prefix/suffix minima with linear offset.
+        # Bins with no pixel (cost >= k_inf) are filled by the app smoothing below,
+        # else fall back to the seed coord. The forward/backward DP is computed as
+        # prefix/suffix minima with a linear offset.
         def _smooth_scores(
             min_scores_local: torch.Tensor, work_device: torch.device
         ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -427,11 +329,7 @@ def compute_look_up_cube_optimized(
         final_rows = (final_coords >> 16).short()
         final_cols = (final_coords & 0xFFFF).short()
 
-        # Fill holes: if cost >= k_inf, use seed coord
-        # Seed coord depends on Y (and X).
-        # seed_rows: (256,)
-        # seed_col: scalar
-
+        # Fill holes: if cost >= k_inf, use the seed coord.
         seed_r = seed_rows.short().unsqueeze(1).expand(256, 256)
         seed_c = torch.full((256, 256), seed_col, device=device, dtype=torch.int16)
 
@@ -440,9 +338,6 @@ def compute_look_up_cube_optimized(
         final_rows = torch.where(invalid_mask, seed_r, final_rows)
 
         # Store in output: [x, y, z, 2]
-        # output[x, :, :, 0] = final_cols
-        # output[x, :, :, 1] = final_rows
-
         output[x, :, :, 0] = final_cols
         output[x, :, :, 1] = final_rows
 

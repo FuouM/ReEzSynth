@@ -1,4 +1,3 @@
-# ezsynth/utils/io_utils.py
 import re
 from pathlib import Path
 
@@ -23,18 +22,12 @@ def read_image(path: str | Path) -> np.ndarray:
 
     EXIF orientation is ignored so pixels match the stored frame layout.
     """
-    try:
-        return _decode(path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-    except Exception as e:
-        raise OSError(f"Error reading image at {path}: {e}") from e
+    return _decode(path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
 
 
 def read_mask(path: str | Path) -> np.ndarray:
     """Reads a mask as a single-channel grayscale image."""
-    try:
-        return _decode(path, cv2.IMREAD_GRAYSCALE)
-    except Exception as e:
-        raise OSError(f"Error reading mask at {path}: {e}") from e
+    return _decode(path, cv2.IMREAD_GRAYSCALE)
 
 
 def write_image(path: str | Path, image: np.ndarray):
@@ -74,12 +67,3 @@ def load_frames_from_dir(dir_path: Path) -> list[np.ndarray]:
         read_image(p) for p in tqdm(paths, desc=f"Loading frames from {dir_path.name}")
     ]
     return frames
-
-
-def load_masks_from_dir(dir_path: Path) -> list[np.ndarray]:
-    """Loads a sequence of masks from a directory."""
-    paths = get_sorted_image_paths(dir_path)
-    masks = [
-        read_mask(p) for p in tqdm(paths, desc=f"Loading masks from {dir_path.name}")
-    ]
-    return masks

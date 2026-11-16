@@ -1,11 +1,10 @@
-# ezsynth/torch_ops/voting_ops.py
 """
 Voting operations for image reconstruction in EBSynth.
 
 These functions reconstruct the target image by averaging overlapping source patches
 that contribute to each target pixel according to the current NNF.
 
-Offsets are applied in a single vectorized pass over ``K = patch_size²`` (or in
+Offsets are applied in a single vectorized pass over ``K = patch_size**2`` (or in
 chunks when memory is tight) to avoid Python double-loop dispatch on large grids.
 """
 

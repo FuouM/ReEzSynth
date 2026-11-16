@@ -1,5 +1,6 @@
 import logging
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from .config import (
     BlendingConfig,
     DebugConfig,
     EbsynthParamsConfig,
+    MainConfig,
     PipelineConfig,
     PrecomputationConfig,
     ProjectConfig,
@@ -16,92 +18,56 @@ from .config import (
 from .data import ProjectData
 from .engines.synthesis_engine import EbsynthEngine
 from .guide import GuideObject, load_guide
-from .output import OutputManager
 from .pipeline import SynthesisPipeline
-from .service import SynthesisConfigs
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class RunConfig:
     """
     A configuration class similar to the one in the old Ezsynth,
     bundling common synthesis parameters for ease of use.
     """
 
-    def __init__(
-        self,
-        uniformity=3500.0,
-        patch_size=7,
-        pyramid_levels=6,
-        search_vote_iters=12,
-        patch_match_iters=6,
-        backend="wgpu",
-        extra_pass_3x3=False,
-        edge_weight=1.0,
-        image_weight=6.0,
-        pos_weight=2.0,
-        warp_weight=0.5,
-        sparse_anchor_weight=50.0,
-        poisson_solver: str = "lsqr",
-        poisson_maxiter: int | None = None,
-        alpha: float = 0.75,
-        use_temporal_nnf_propagation: bool = True,
-        use_sparse_feature_guide: bool = True,
-        use_residual_transfer: bool = True,
-        cost_function: str = "ssd",
-        search_mode: str = "patchmatch",
-        multicand_k: int = 3,
-        precision: str = "float32",
-        device: str | None = None,
-        use_optimization: bool = True,
-        use_bilateral: bool = False,
-        sigma_spatial: float = 4.0,
-        sigma_color: float = 10.0,
-        n_size_step: int = 1,
-        use_taichi_ops: bool = False,
-    ):
-        # Ebsynth gen params
-        self.uniformity = uniformity
-        self.patch_size = patch_size
-        self.pyramid_levels = pyramid_levels
-        self.search_vote_iters = search_vote_iters
-        self.patch_match_iters = patch_match_iters
-        self.backend = backend
-        self.extra_pass_3x3 = extra_pass_3x3
-
-        # Guide weights
-        self.edge_weight = edge_weight
-        self.image_weight = image_weight
-        self.pos_weight = pos_weight
-        self.warp_weight = warp_weight
-        self.sparse_anchor_weight = sparse_anchor_weight
-
-        # Blending params
-        self.poisson_solver = poisson_solver
-        self.poisson_maxiter = poisson_maxiter
-
-        # Pipeline params
-        self.alpha = alpha
-        self.use_temporal_nnf_propagation = use_temporal_nnf_propagation
-        self.use_sparse_feature_guide = use_sparse_feature_guide
-        self.use_residual_transfer = use_residual_transfer
-        self.cost_function = cost_function
-        self.search_mode = search_mode
-        self.multicand_k = multicand_k
-        self.precision = precision
-        self.device = device
-        self.use_optimization = use_optimization
-        self.use_bilateral = use_bilateral
-        self.sigma_spatial = sigma_spatial
-        self.sigma_color = sigma_color
-        self.n_size_step = n_size_step
-        self.use_taichi_ops = use_taichi_ops
+    # Ebsynth gen params
+    uniformity: float = 3500.0
+    patch_size: int = 7
+    pyramid_levels: int = 6
+    search_vote_iters: int = 12
+    patch_match_iters: int = 6
+    backend: str = "wgpu"
+    extra_pass_3x3: bool = False
+    # Guide weights
+    edge_weight: float = 1.0
+    image_weight: float = 6.0
+    pos_weight: float = 2.0
+    warp_weight: float = 0.5
+    sparse_anchor_weight: float = 50.0
+    # Blending params
+    poisson_solver: str = "lsqr"
+    poisson_maxiter: int | None = None
+    # Pipeline params
+    alpha: float = 0.75
+    use_temporal_nnf_propagation: bool = True
+    use_sparse_feature_guide: bool = True
+    use_residual_transfer: bool = True
+    cost_function: str = "ssd"
+    search_mode: str = "patchmatch"
+    multicand_k: int = 3
+    precision: str = "float32"
+    device: str | None = None
+    use_optimization: bool = True
+    use_bilateral: bool = False
+    sigma_spatial: float = 4.0
+    sigma_color: float = 10.0
+    n_size_step: int = 1
+    use_taichi_ops: bool = False
 
 
 class Ezsynth:
     """
-    High-level path-based video synthesis: builds ``SynthesisConfigs`` from simple
+    High-level path-based video synthesis: builds a ``MainConfig`` from simple
     directory arguments and runs ``SynthesisPipeline`` (same core as the CLI).
     """
 
@@ -137,6 +103,7 @@ class Ezsynth:
         """
         config = config if config is not None else RunConfig()
         self.output_dir_path = Path(output_dir) if output_dir else None
+        # Temporary directories are removed when this object is garbage collected.
         self._temp_output_dir = None
         self._temp_cache_dir = None
 
@@ -148,60 +115,40 @@ class Ezsynth:
             self._temp_cache_dir = tempfile.TemporaryDirectory()
             cache_dir = self._temp_cache_dir.name
 
-        # --- 1. Translate simple args into structured config sections ---
-        project_cfg = ProjectConfig(
-            name=Path(content_dir).name,
-            content_dir=content_dir,
-            style_path=style_paths,
-            style_indices=style_indices,
-            output_dir=output_dir,
-            cache_dir=cache_dir,
-            mask_dir=mask_dir,
-            modulation_dir=modulation_dir,
+        self.configs = MainConfig(
+            project=ProjectConfig(
+                name=Path(content_dir).name,
+                content_dir=content_dir,
+                style_path=style_paths,
+                style_indices=style_indices,
+                output_dir=output_dir,
+                cache_dir=cache_dir,
+                mask_dir=mask_dir,
+                modulation_dir=modulation_dir,
+            ),
+            precomputation=PrecomputationConfig(
+                flow_engine=flow_engine,
+                flow_model=flow_model,
+                edge_method=edge_method,
+            ),
+            pipeline=PipelineConfig(
+                pyramid_levels=config.pyramid_levels,
+                alpha=config.alpha,
+                use_residual_transfer=config.use_residual_transfer,
+                use_temporal_nnf_propagation=config.use_temporal_nnf_propagation,
+                use_sparse_feature_guide=config.use_sparse_feature_guide,
+            ),
+            blending=BlendingConfig(
+                poisson_solver=config.poisson_solver,
+                poisson_maxiter=config.poisson_maxiter,
+                use_taichi_ops=config.use_taichi_ops,
+            ),
+            ebsynth_params=_ebsynth_params(config),
+            debug=DebugConfig(),
         )
 
-        precomputation_cfg = PrecomputationConfig(
-            flow_engine=flow_engine,
-            flow_model=flow_model,
-            edge_method=edge_method,
-        )
-
-        pipeline_cfg = PipelineConfig(
-            pyramid_levels=config.pyramid_levels,
-            alpha=config.alpha,
-            use_residual_transfer=config.use_residual_transfer,
-            use_temporal_nnf_propagation=config.use_temporal_nnf_propagation,
-            use_sparse_feature_guide=config.use_sparse_feature_guide,
-        )
-
-        blending_cfg = BlendingConfig(
-            poisson_solver=config.poisson_solver,
-            poisson_maxiter=config.poisson_maxiter,
-            use_taichi_ops=config.use_taichi_ops,
-        )
-
-        ebsynth_params_cfg = _ebsynth_params(config)
-
-        self.configs = SynthesisConfigs(
-            project=project_cfg,
-            precomputation=precomputation_cfg,
-            pipeline=pipeline_cfg,
-            blending=blending_cfg,
-            ebsynth_params=ebsynth_params_cfg,
-            debug=DebugConfig(),  # Use default debug settings
-        )
-
-        # --- 2. Initialize the core pipeline components ---
-        self.data = ProjectData.from_config(self.configs.project)
-        self.pipeline = SynthesisPipeline(
-            ebsynth_params_cfg=self.configs.ebsynth_params,
-            pipeline_cfg=self.configs.pipeline,
-            project_cfg=self.configs.project,
-            precomputation_cfg=self.configs.precomputation,
-            blending_cfg=self.configs.blending,
-            data=self.data,
-            debug_cfg=self.configs.debug,
-        )
+        self.data = ProjectData(self.configs.project)
+        self.pipeline = SynthesisPipeline(self.configs, self.data)
 
         logger.info("\nEzsynth API initialized successfully.")
 
@@ -219,23 +166,12 @@ class Ezsynth:
             logger.info(
                 f"\nSaving output to specified directory: {self.output_dir_path}"
             )
-            OutputManager(self.data).handle(
-                final_frames,
-                save=True,
-                visible_output_dir=self.output_dir_path,
-            )
+            self.data.save_output_frames(final_frames)
         else:
             logger.warning("\nOutput directory not specified, skipping save.")
 
         logger.info("\n--- Synthesis via API Finished ---")
         return final_frames
-
-    def __del__(self):
-        # Clean up temporary directories when the object is garbage collected
-        if self._temp_output_dir:
-            self._temp_output_dir.cleanup()
-        if self._temp_cache_dir:
-            self._temp_cache_dir.cleanup()
 
 
 class ImageSynth:
@@ -256,9 +192,7 @@ class ImageSynth:
             config (RunConfig): An object containing detailed synthesis parameters.
         """
         config = config if config is not None else RunConfig()
-        self.style = GuideObject.load_guide(style_image, style_image).keyframe
-
-        ebsynth_params_cfg = _ebsynth_params(config)
+        self.style = load_guide(style_image, style_image).keyframe
 
         pipeline_cfg = PipelineConfig(
             pyramid_levels=config.pyramid_levels,
@@ -268,7 +202,7 @@ class ImageSynth:
         )
 
         self.engine = EbsynthEngine(
-            ebsynth_config=ebsynth_params_cfg, pipeline_config=pipeline_cfg
+            ebsynth_config=_ebsynth_params(config), pipeline_config=pipeline_cfg
         )
         logger.info("\nImageSynth API initialized successfully.")
 
@@ -294,11 +228,7 @@ class ImageSynth:
 
         processed_guides = [_as_guide(guide) for guide in guides]
 
-        stylized_image, error_map = self.engine.run(
-            self.style, guides=processed_guides, benchmark=benchmark
-        )
-
-        return stylized_image, error_map
+        return self.engine.run(self.style, guides=processed_guides, benchmark=benchmark)
 
 
 def _as_guide(guide: GuideObject | tuple[Any, Any, float]) -> GuideObject:

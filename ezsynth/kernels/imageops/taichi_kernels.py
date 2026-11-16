@@ -111,13 +111,10 @@ def compute_stats_kernel(
 def hist_blend_apply_kernel(
     a: ti.types.ndarray(),
     b: ti.types.ndarray(),
-    mask: ti.types.ndarray(),
     a_mean: ti.types.ndarray(),
     a_std: ti.types.ndarray(),
     b_mean: ti.types.ndarray(),
     b_std: ti.types.ndarray(),
-    min_e_mean: ti.types.ndarray(),
-    min_e_std: ti.types.ndarray(),
     weight1: float,
     weight2: float,
     out: ti.types.ndarray(),

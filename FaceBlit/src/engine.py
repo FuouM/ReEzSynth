@@ -242,9 +242,6 @@ class FaceBlitInput_Target:
 
 
 class FaceBlitEngine:
-    def __init__(self):
-        pass
-
     def stylize_image_with_guide_and_landmarks(
         self,
         input_target: FaceBlitInput_Target,
@@ -387,11 +384,7 @@ def style_blit_cpu(
 
     if use_vectorized:
         nnf = initialize_nnf_vectorized(
-            target_pos_guide,
-            target_app_gray,
-            look_up_cube,
-            (style_h, style_w),
-            (x, y, w, h),
+            target_pos_guide, target_app_gray, look_up_cube, (style_h, style_w)
         )
         if patch_size > 1:
             for _ in range(max(0, int(denoise_iters))):
@@ -451,7 +444,7 @@ def initialize_nnf(
     w_t,
     backend: Literal["auto", "python", "numba"],
 ):
-    """DFS-based region growing NNF, then :func:`denoise_nnf` (pure Python / NumPy)."""
+    """DFS seed-grow NNF over the head rect (python or numba); unreached pixels use the LUT."""
     if backend == "python":
         covered_pixels, seeds = prepare_dfs_voting_arrays(
             target_pos_guide,
@@ -509,7 +502,7 @@ def initialize_nnf(
             w_t,
         )
 
-    # DFS only seeds the head box and propagates with a fixed style–target
+    # DFS only seeds the head box and propagates with a fixed style-target
     # translation. Pixels that go out of style bounds or fail the error
     # threshold are never visited; without a fill, they stay (0,0) and
     # patch-voting leaves them black. Use the same LUT as vectorized init.

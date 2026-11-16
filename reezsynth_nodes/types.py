@@ -23,9 +23,6 @@ class ReEzGuideList:
 
     guides: tuple[GuideObject, ...] = field(default_factory=tuple)
 
-    def append(self, guide: GuideObject) -> ReEzGuideList:
-        return ReEzGuideList(guides=(*self.guides, guide))
-
 
 @dataclass(frozen=True)
 class ReEzImgSynthConfig:

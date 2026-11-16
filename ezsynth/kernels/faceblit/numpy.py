@@ -5,15 +5,11 @@ denoise paths.
 
 from __future__ import annotations
 
-import heapq
 from collections import deque
-from pathlib import Path
 
 import numpy as np
 
 from FaceBlit.src.utils_io import ensure_grayscale, to_uint8
-
-PathLike = str | Path
 
 
 def compute_guided_error(
@@ -46,72 +42,6 @@ def compute_guided_error(
         app_error = abs(ta - sa)
 
     return int(lambda_pos * int(pos_error) + lambda_app * int(app_error))
-
-
-def dfs_seed_grow(
-    target_seed_point: tuple[int, int],
-    style_seed_point: tuple[int, int],
-    style_pos_guide: np.ndarray,
-    target_pos_guide: np.ndarray,
-    style_app_guide: np.ndarray | None,
-    target_app_guide: np.ndarray | None,
-    result_img: np.ndarray,
-    style_img: np.ndarray,
-    covered_pixels: np.ndarray,
-    chunk_number: int,
-    threshold: int,
-    lambda_pos: int,
-    lambda_app: int,
-) -> None:
-    """Perform DFS seed growing from seed point."""
-    h, w = target_pos_guide.shape[:2]
-
-    # Priority queue: (error, y, x)
-    pq = []
-    heapq.heappush(pq, (0, target_seed_point[0], target_seed_point[1]))
-
-    # Track visited pixels
-    visited = np.zeros((h, w), dtype=bool)
-
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 4-connectivity
-
-    while pq:
-        _error, ty, tx = heapq.heappop(pq)
-
-        if visited[ty, tx] or covered_pixels[ty, tx] != 0:
-            continue
-
-        visited[ty, tx] = True
-
-        # Mark as covered and assign style color
-        covered_pixels[ty, tx] = chunk_number
-        sy, sx = style_seed_point
-        if 0 <= sy < style_img.shape[0] and 0 <= sx < style_img.shape[1]:
-            result_img[ty, tx] = style_img[sy, sx]
-
-        # Explore neighbors
-        for dy, dx in directions:
-            ny, nx = ty + dy, tx + dx
-            if (
-                0 <= ny < h
-                and 0 <= nx < w
-                and not visited[ny, nx]
-                and covered_pixels[ny, nx] == 0
-            ):
-                # Compute error for this neighbor
-                neighbor_error = compute_guided_error(
-                    style_pos_guide,
-                    target_pos_guide,
-                    style_app_guide,
-                    target_app_guide,
-                    (ny, nx),
-                    style_seed_point,
-                    lambda_pos,
-                    lambda_app,
-                )
-
-                if neighbor_error <= threshold:
-                    heapq.heappush(pq, (neighbor_error, ny, nx))
 
 
 def _pixel_out_of_range(
@@ -180,7 +110,6 @@ def dfs_seed_grow_voting_numpy(
     lambda_app: int,
 ) -> None:
     """Replica of C++ DFSSeedGrow_voting using a FIFO queue (pure Python / NumPy)."""
-    # print("DFS PYTHON")
     h, w = target_pos_guide.shape[:2]
     q: deque[tuple[int, int]] = deque()
     q.append((0, 0))
@@ -224,10 +153,8 @@ def initialize_nnf_vectorized(
     target_app_guide: np.ndarray | None,
     look_up_cube: np.ndarray | None,
     style_shape: tuple[int, int],
-    stylization_rect: tuple[int, int, int, int],
-    # kept for call-site compatibility; unused
 ) -> np.ndarray:
-    """LUT-based NNF for every target pixel (full frame; head-only init left borders black under voting)."""
+    """LUT-based NNF for every target pixel (full frame)."""
     h_t, w_t = target_pos_guide.shape[:2]
     nnf = np.zeros((h_t, w_t, 2), dtype=np.int32)
 
@@ -260,8 +187,6 @@ def prepare_dfs_voting_arrays(
     seeds: list[tuple[int, int, tuple[int, int]]] = []
     for row_t in range(y, y + h):
         for col_t in range(x, x + w):
-            if covered_pixels[row_t, col_t] != 0:
-                continue
             style_seed_point = _compute_style_seed_point(
                 target_pos_guide,
                 target_app_gray,
@@ -301,78 +226,6 @@ def denoise_nnf_python(nnf: np.ndarray, patch_size: int) -> np.ndarray:
                 result[row, col, 1] = best_offset[1] + col
 
     return result
-
-
-def build_nnf_dfs_voting_numpy(
-    style_pos_guide: np.ndarray,
-    target_pos_guide: np.ndarray,
-    style_app_guide: np.ndarray | None,
-    target_app_gray: np.ndarray | None,
-    h_t: int,
-    w_t: int,
-    threshold: int | None,
-    x: int,
-    y: int,
-    h: int,
-    w: int,
-    look_up_cube: np.ndarray | None,
-    style_h: int,
-    style_w: int,
-    lambda_app: int,
-    lambda_pos: int,
-    patch_size: int,
-) -> np.ndarray:
-    """DFS-based region growing NNF, then :func:`denoise_nnf` (pure Python / NumPy)."""
-    (
-        style_pos_int,
-        target_pos_int,
-        style_app_int,
-        target_app_int,
-        nnf,
-        covered_pixels,
-        seeds,
-        thresh,
-        _use_app,
-    ) = prepare_dfs_voting_arrays(
-        style_pos_guide,
-        target_pos_guide,
-        style_app_guide,
-        target_app_gray,
-        h_t,
-        w_t,
-        threshold,
-        x,
-        y,
-        h,
-        w,
-        look_up_cube,
-        style_h,
-        style_w,
-        lambda_app,
-    )
-
-    chunk_number = 1
-    for row_t, col_t, style_seed_point in seeds:
-        if covered_pixels[row_t, col_t] != 0:
-            continue
-        target_seed_point = (row_t, col_t)
-        dfs_seed_grow_voting_numpy(
-            target_seed_point,
-            style_seed_point,
-            style_pos_int,
-            target_pos_int,
-            style_app_int,
-            target_app_int,
-            nnf,
-            covered_pixels,
-            chunk_number,
-            thresh,
-            lambda_pos,
-            lambda_app,
-        )
-        chunk_number += 1
-
-    return denoise_nnf_python(nnf, patch_size)
 
 
 def voting_on_rgb(

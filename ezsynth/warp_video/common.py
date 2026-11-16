@@ -153,15 +153,17 @@ def precompute_adjacent_flows(
     return adj_fwd, adj_to_prev
 
 
+def psnr(img1: np.ndarray, img2: np.ndarray) -> float:
+    """PSNR in dB of two 8-bit images (100 when identical)."""
+    mse = np.mean((img1.astype(np.float32) - img2.astype(np.float32)) ** 2)
+    return 20 * np.log10(255.0 / np.sqrt(mse)) if mse > 0 else 100.0
+
+
 def compute_warp_score_from_flow(
     warper: Warp, src_frame: np.ndarray, tgt_frame: np.ndarray, flow: np.ndarray
 ) -> float:
     """PSNR of backward-warped content vs target (higher = better alignment)."""
-    warped_content = warper.run_warping(src_frame, -flow)
-    mse = np.mean(
-        (warped_content.astype(np.float32) - tgt_frame.astype(np.float32)) ** 2
-    )
-    return 20 * np.log10(255.0 / np.sqrt(mse)) if mse > 0 else 100.0
+    return psnr(warper.run_warping(src_frame, -flow), tgt_frame)
 
 
 def blended_splat_fill_holes(

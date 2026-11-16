@@ -33,7 +33,7 @@ def smooth_video(
         window_size: Temporal window size for blending. Uses default if None.
         batch_size: Batch size for processing. Uses default if None.
         progress_callback: Optional callback function called with (current_frame, total_frames)
-        backend: Backend to use ("auto", "cuda", "cupy", "taichi")
+        backend: Backend to use ("auto", "cuda", "cupy", "taichi", "wgpu")
         config: Optional FastBlendConfig. If provided, other parameters are ignored.
 
     Returns:
@@ -50,14 +50,8 @@ def smooth_video(
         >>> # Apply FastBlend
         >>> smoothed = smooth_video(guide_frames, style_frames, accuracy=2)
     """
-    # Create configuration
     if config is None:
-        config = get_default_config(accuracy)
-        # Override specific parameters if provided
-        if window_size is not None:
-            config.window_size = window_size
-        if batch_size is not None:
-            config.batch_size = batch_size
+        config = create_config(accuracy, window_size=window_size, batch_size=batch_size)
 
     engine = FastBlendEngine()
     return engine.smooth_sequence(
@@ -88,7 +82,7 @@ def create_config(
         minimum_patch_size: Minimum patch size for matching
         num_iter: Number of patch matching iterations
         guide_weight: Weight for guide matching
-        backend: Backend to use ("auto", "cuda", "cupy", "taichi")
+        backend: Backend to use ("auto", "cuda", "cupy", "taichi", "wgpu")
         gpu_id: GPU device ID
 
     Returns:
@@ -175,7 +169,7 @@ def interpolate_video(
         window_size: Temporal window size for blending. Uses default if None.
         batch_size: Batch size for processing. Uses default if None.
         progress_callback: Optional callback function called with (current_frame, total_frames)
-        backend: Backend to use ("auto", "cuda", "cupy", "taichi"). Default: "auto"
+        backend: Backend to use ("auto", "cuda", "cupy", "taichi", "wgpu"). Default: "auto"
         config: Optional FastBlendConfig. If provided, other parameters are ignored.
 
     Returns:

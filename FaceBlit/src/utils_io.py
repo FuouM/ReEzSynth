@@ -1,10 +1,8 @@
-import datetime
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from PIL import Image
 
 from ezsynth.utils.gpu_memory import apply_gpu_memory_limit
@@ -12,28 +10,9 @@ from ezsynth.utils.gpu_memory import apply_gpu_memory_limit
 PathLike = str | Path
 
 
-def to_path(path: PathLike) -> str:
-    return str(Path(path))
-
-
-def load_precomputed(paths: dict[str, Path]) -> dict[str, str] | None:
-    required = [paths["landmarks"], paths["pos"], paths["app"], paths["lut"]]
-    try:
-        if all(p.exists() and p.stat().st_size > 0 for p in required):
-            return {
-                "landmarks_path": to_path(paths["landmarks"]),
-                "style_pos_guide_path": to_path(paths["pos"]),
-                "style_app_guide_path": to_path(paths["app"]),
-                "lut_path": to_path(paths["lut"]),
-            }
-    except OSError:
-        return None
-    return None
-
-
 def read_image_pil(path: PathLike, convert="RGB") -> np.ndarray:
     """Read image using PIL and return as BGR numpy array (OpenCV format)."""
-    img = Image.open(to_path(path)).convert(convert)
+    img = Image.open(path).convert(convert)
     arr = np.array(img)
     # Convert RGB to BGR for consistency with OpenCV
     return arr[..., ::-1].copy()
@@ -43,48 +22,12 @@ def normalize_landmarks(landmarks: Sequence[tuple[int, int]]) -> list[tuple[int,
     return [(int(x), int(y)) for x, y in landmarks]
 
 
-def clamp_landmarks(
-    landmarks: Sequence[tuple[int, int]], size: tuple[int, int]
-) -> list[tuple[int, int]]:
-    h, w = size
-    clamped = []
-    for x, y in landmarks:
-        clamped.append((int(np.clip(x, 0, w - 1)), int(np.clip(y, 0, h - 1))))
-    return clamped
-
-
 def write_image_pil(path: PathLike, image: np.ndarray) -> None:
     """Write BGR numpy array as image using PIL."""
     # Convert BGR to RGB
     rgb = image[..., ::-1]
     img = Image.fromarray(rgb)
-    img.save(to_path(path))
-
-
-def style_asset_paths(
-    out_dir: Path, stem: str, lut_path: Path | None
-) -> dict[str, Path]:
-    default_lut_path = out_dir / f"{stem}_lut.bytes"
-    lut_candidates: list[Path] = []
-    if lut_path is not None:
-        lut_candidates.append(lut_path)
-    lut_candidates.append(default_lut_path)
-
-    resolved_lut_path = lut_candidates[0]
-    for candidate in lut_candidates:
-        try:
-            if candidate.exists() and candidate.stat().st_size > 0:
-                resolved_lut_path = candidate
-                break
-        except OSError:
-            continue
-
-    return {
-        "landmarks": out_dir / f"{stem}_landmarks.txt",
-        "pos": out_dir / f"{stem}_style_pos.png",
-        "app": out_dir / f"{stem}_style_app.png",
-        "lut": resolved_lut_path,
-    }
+    img.save(path)
 
 
 def to_uint8(image: np.ndarray) -> np.ndarray:
@@ -94,11 +37,10 @@ def to_uint8(image: np.ndarray) -> np.ndarray:
 
 
 def ensure_grayscale(image: np.ndarray) -> np.ndarray:
-    """Convert BGR image to grayscale using PyTorch."""
+    """Convert BGR image to grayscale (cv2.cvtColor weights)."""
     if image.ndim == 2:
         return to_uint8(image)
     if image.ndim == 3 and image.shape[2] == 3:
-        # Use PyTorch for grayscale conversion (matches cv2.cvtColor weights)
         # BGR format: [B, G, R] at indices [0, 1, 2]
         r = image[..., 2] * 0.299
         g = image[..., 1] * 0.587
@@ -136,15 +78,11 @@ def unpack_lut_packed(packed: np.ndarray | torch.Tensor) -> np.ndarray:
     return np.stack([lut_col, lut_row], axis=-1)
 
 
-def pack_lut_packed(
-    lut: np.ndarray | torch.Tensor,
-    *,
-    cost: int | np.ndarray | torch.Tensor = 0,
-) -> np.ndarray:
-    """Inverse of :func:`unpack_lut_packed`: ``(..., 2)`` uint16 ``[sx, sy]`` → int32 packed word.
+def pack_lut_packed(lut: np.ndarray | torch.Tensor) -> np.ndarray:
+    """Inverse of :func:`unpack_lut_packed`: ``(..., 2)`` uint16 ``[sx, sy]`` -> int32 packed word.
 
-    Layout matches Taichi: ``(cost & 0x7FF) << 20 | (sx & 0x3FF) << 10 | (sy & 0x3FF)``.
-    On-disk / PyTorch LUTs omit cost; use ``cost=0`` (default) unless you have the original cost field.
+    Layout matches Taichi: ``(cost & 0x7FF) << 20 | (sx & 0x3FF) << 10 | (sy & 0x3FF)``;
+    on-disk / PyTorch LUTs carry no cost, so the cost field is 0.
     """
     if isinstance(lut, torch.Tensor):
         lut_np = lut.detach().cpu().numpy()
@@ -154,12 +92,7 @@ def pack_lut_packed(
         raise ValueError(f"Expected LUT shape (*, *, *, 2), got {lut_np.shape}")
     sx = lut_np[..., 0].astype(np.int32, copy=False) & 0x3FF
     sy = lut_np[..., 1].astype(np.int32, copy=False) & 0x3FF
-    if isinstance(cost, torch.Tensor):
-        c = cost.detach().cpu().numpy()
-    else:
-        c = np.asarray(cost, dtype=np.int32)
-    c = np.bitwise_and(c, 0x7FF)
-    return (np.left_shift(c, 20) | np.left_shift(sx, 10) | sy).astype(np.int32)
+    return ((sx << 10) | sy).astype(np.int32)
 
 
 def load_look_up_cube(path: Path | str) -> np.ndarray:
@@ -170,12 +103,8 @@ def load_look_up_cube(path: Path | str) -> np.ndarray:
     return data.reshape((256, 256, 256, 2))
 
 
-def get_timestamp():
-    return datetime.datetime.now().strftime("%H:%M:%S")
-
-
 def bgr_to_yuv(bgr: np.ndarray) -> np.ndarray:
-    """Convert BGR to YUV using PyTorch (matches cv2.cvtColor)."""
+    """Convert BGR to YUV (BT.601, matches cv2.cvtColor)."""
     # BGR to RGB first
     rgb = bgr[..., ::-1].astype(np.float32) / 255.0
 
@@ -218,12 +147,6 @@ def to_numpy_image(t: torch.Tensor) -> np.ndarray:
     return to_uint8(arr)
 
 
-def to_numpy_hwc(x: np.ndarray | torch.Tensor) -> np.ndarray:
-    if isinstance(x, torch.Tensor):
-        return x.detach().cpu().numpy()
-    return np.asarray(x)
-
-
 def get_torch_device(device=None):
     if device is None:
         device = (
@@ -234,27 +157,3 @@ def get_torch_device(device=None):
     device = torch.device(device)
     apply_gpu_memory_limit(device)
     return device
-
-
-def get_taichi_arch(device: str | None = None):
-    """Pick Taichi arch for a PyTorch-style ``device``; ``None`` uses auto-defaults."""
-    from ezsynth.utils.taichi_runtime import get_ti_arch
-
-    return get_ti_arch(device)
-
-
-def resize_torch(image: np.ndarray, size: tuple[int, int]) -> np.ndarray:
-    """Resize image using PyTorch. size is (width, height)."""
-    # Convert to tensor (H, W, C) -> (1, C, H, W)
-    if image.ndim == 2:
-        t = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).float()
-        t_resized = F.interpolate(
-            t, size=(size[1], size[0]), mode="bilinear", align_corners=False
-        )
-        return t_resized.squeeze(0).squeeze(0).numpy().astype(image.dtype)
-    else:
-        t = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()
-        t_resized = F.interpolate(
-            t, size=(size[1], size[0]), mode="bilinear", align_corners=False
-        )
-        return t_resized.squeeze(0).permute(1, 2, 0).numpy().astype(image.dtype)

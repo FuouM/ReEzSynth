@@ -1,10 +1,6 @@
 import torch
 import torch.nn.functional as F
 
-# def normalize(x):
-#     x_min = x.min()
-#     return (x - x_min) / (x.max() - x_min)
-
 
 def coords_grid(b, h, w, device, amp):
     ys, xs = torch.meshgrid(
@@ -34,11 +30,3 @@ def bilinear_sample(img, sample_coords):
     )
 
     return img
-
-
-def flow_warp(feature, flow):
-    b, _c, h, w = feature.size()
-
-    grid = coords_grid(b, h, w).to(flow.device) + flow  # [B, 2, H, W]
-
-    return bilinear_sample(feature, grid)

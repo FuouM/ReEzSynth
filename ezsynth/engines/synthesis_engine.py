@@ -88,10 +88,7 @@ class PreparedSynthesisContext:
                 dtype=torch.uint8,
                 device=engine.device,
             )
-        self._modulation_tensor: torch.Tensor | None = None
-        self._modulation_shape: tuple[int, int, int] | None = None
-        self._initial_nnf_tensor: torch.Tensor | None = None
-        self._initial_nnf_shape: tuple[int, int, int] | None = None
+        self._upload_buffers: dict[str, torch.Tensor] = {}
 
         self.p_style: list[torch.Tensor] = []
         self.p_source_guide: list[torch.Tensor] = []
@@ -124,7 +121,7 @@ class PreparedSynthesisContext:
 
         modulation_tensor = self.empty_modulation
         if modulation_map is not None:
-            modulation_tensor = self._modulation_map_tensor(modulation_map)
+            modulation_tensor = self.upload("modulation", modulation_map, torch.uint8)
 
         empty_pyramid = [self.empty_modulation] * self.num_pyramid_levels
         p_target_guide: list[torch.Tensor] = empty_pyramid.copy()
@@ -135,8 +132,6 @@ class PreparedSynthesisContext:
                 p_target_guide[i] = resample_tensor(target_guide_cat, p_th, p_tw)
                 if modulation_map is not None:
                     p_modulation[i] = resample_tensor(modulation_tensor, p_th, p_tw)
-                else:
-                    p_modulation[i] = self.empty_modulation
 
         engine._timed_operation("target_pyramid_preparation", _prepare_target_pyramid)
 
@@ -166,49 +161,17 @@ class PreparedSynthesisContext:
         self._target_guide_cat_tensor.copy_(target_guide_cpu, non_blocking=True)
         return self._target_guide_cat_tensor
 
-    def _modulation_map_tensor(self, modulation_map: np.ndarray) -> torch.Tensor:
-        modulation_np = _contiguous_array(modulation_map)
+    def upload(self, name: str, array: np.ndarray, dtype: torch.dtype) -> torch.Tensor:
+        """``array`` on the engine device, through a staging buffer reused per ``name``."""
+        source = torch.from_numpy(np.ascontiguousarray(array))
         if self.device_type == "cpu":
-            return torch.from_numpy(modulation_np)
-
-        if (
-            self._modulation_tensor is None
-            or self._modulation_shape != modulation_np.shape
-        ):
-            self._modulation_shape = modulation_np.shape
-            self._modulation_tensor = torch.empty(
-                modulation_np.shape,
-                dtype=torch.uint8,
-                device=self.engine.device,
-            )
-
-        self._modulation_tensor.copy_(
-            torch.from_numpy(modulation_np),
-            non_blocking=True,
-        )
-        return self._modulation_tensor
-
-    def initial_nnf_tensor(self, initial_nnf: np.ndarray) -> torch.Tensor:
-        initial_nnf_np = _contiguous_array(initial_nnf)
-        if self.device_type == "cpu":
-            return torch.from_numpy(initial_nnf_np)
-
-        if (
-            self._initial_nnf_tensor is None
-            or self._initial_nnf_shape != initial_nnf_np.shape
-        ):
-            self._initial_nnf_shape = initial_nnf_np.shape
-            self._initial_nnf_tensor = torch.empty(
-                initial_nnf_np.shape,
-                dtype=torch.int32,
-                device=self.engine.device,
-            )
-
-        self._initial_nnf_tensor.copy_(
-            torch.from_numpy(initial_nnf_np),
-            non_blocking=True,
-        )
-        return self._initial_nnf_tensor
+            return source
+        buffer = self._upload_buffers.get(name)
+        if buffer is None or buffer.shape != source.shape:
+            buffer = torch.empty(source.shape, dtype=dtype, device=self.engine.device)
+            self._upload_buffers[name] = buffer
+        buffer.copy_(source, non_blocking=True)
+        return buffer
 
     def _build_pyramid_shapes(self) -> list[tuple[int, int, int, int]]:
         shapes = []
@@ -365,11 +328,6 @@ class EbsynthEngine:
         cost_function_mode = self.cost_function_map[self.ebsynth_config.cost_function]
 
         def _run_pyramid_loop():
-            nonlocal nnf, output_image, output_error
-            nnf = None
-            output_image = None
-            output_error = None
-
             for level in range(context.num_pyramid_levels):
 
                 def _process_pyramid_level():
@@ -384,7 +342,9 @@ class EbsynthEngine:
 
                     if level == 0:
                         if initial_nnf is not None:
-                            initial_nnf_tensor = context.initial_nnf_tensor(initial_nnf)
+                            initial_nnf_tensor = context.upload(
+                                "initial_nnf", initial_nnf, torch.int32
+                            )
                             scale_h = p_th / context.th
                             scale_w = p_tw / context.tw
 
@@ -528,10 +488,6 @@ def _channel_slices(channel_counts: list[int]) -> list[slice]:
         slices.append(slice(start, stop))
         start = stop
     return slices
-
-
-def _contiguous_array(array: np.ndarray) -> np.ndarray:
-    return array if array.flags.c_contiguous else np.ascontiguousarray(array)
 
 
 def _validate_image_array(array: np.ndarray, name: str) -> None:

@@ -6,7 +6,7 @@ make that exceed the process GPU budget,
 so each pyramid level picks a strategy:
 
 - ``materialized``: the unfold grids (fastest) when the estimate fits the budget;
-- ``bounded``: :class:`~ezsynth.torch_ops.patch_ops.ImagePatches` views that gather
+- ``bounded``: :class:`.patch_ops.ImagePatches` views that gather
   patches for chunks of target pixels, with the chunk size derived from the budget.
 
 Environment overrides (read per level):

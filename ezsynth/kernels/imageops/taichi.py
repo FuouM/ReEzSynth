@@ -119,9 +119,7 @@ def hist_blend(
     K.compute_stats_kernel(m_lab, mme, sme)
 
     temp_lab = np.zeros_like(a, dtype=np.float32)
-    K.hist_blend_apply_kernel(
-        a, b, error_mask, ma, sa, mb, sb, mme, sme, weight1, weight2, temp_lab
-    )
+    K.hist_blend_apply_kernel(a, b, ma, sa, mb, sb, weight1, weight2, temp_lab)
 
     out = np.zeros_like(a)
     mab = np.mean(temp_lab, axis=(0, 1))

@@ -121,31 +121,11 @@ class PatchMatcher(FaceBlitPatchMatcherCore):
 
 
 class PyramidPatchMatcher(PyramidPatchMatcherCore):
+    level_matcher = PatchMatcher
+
     @property
     def _pyramid_torch_device(self) -> torch.device:
         return staging_device(self.gpu_id)
 
     def _pyramid_run_context(self):
         return torch.cuda.device(self.gpu_id)
-
-    def _new_level_matcher(self, height: int, width: int, channel: int):
-        return PatchMatcher(
-            height,
-            width,
-            channel,
-            minimum_patch_size=self.minimum_patch_size,
-            threads_per_block=self.threads_per_block,
-            num_iter=self.num_iter,
-            gpu_id=self.gpu_id,
-            guide_weight=self.guide_weight,
-            use_mean_target_style=self.use_mean_target_style,
-            use_pairwise_patch_error=self.use_pairwise_patch_error,
-            tracking_window_size=self.tracking_window_size,
-        )
-
-    def apply_nnf_to_image(
-        self, nnf: torch.Tensor, image: torch.Tensor
-    ) -> torch.Tensor:
-        with torch.cuda.device(self.gpu_id):
-            image = self.patch_matchers[-1].pad_image(image)
-            return self.patch_matchers[-1].apply_nnf_to_image(nnf, image)

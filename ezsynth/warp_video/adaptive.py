@@ -178,29 +178,18 @@ def _refine_records_with_imagesynth(
 
 def _propagate_hole_fills(
     records: list[dict[str, Any]],
-    frames: list[np.ndarray],
     warper: Warp,
-    h: int,
-    w: int,
-    adj_fwd: list[np.ndarray],
-    adj_to_prev: list[np.ndarray],
-    direct_long_flow: bool,
-    compute_flow: Callable[[list[np.ndarray]], list[np.ndarray]],
+    get_flow_pair: Callable[[int, int], np.ndarray],
     feather_sigma: float,
     bidirectional: bool,
 ) -> None:
     n = len(records)
 
-    def flow_fwd(a: int, b: int) -> np.ndarray:
-        if direct_long_flow or not adj_fwd:
-            return compute_flow([frames[a], frames[b]])[0]
-        return flow_between_frames(a, b, adj_fwd, adj_to_prev, h, w)
-
     styl = [rec["stylized"].copy() for rec in records]
     hole = [rec["hole_mask"].copy() for rec in records]
 
     for j in range(n - 1):
-        f_j_to_jp1 = flow_fwd(j, j + 1)
+        f_j_to_jp1 = get_flow_pair(j, j + 1)
         prop = warper.run_warping(styl[j], -f_j_to_jp1).astype(np.float32)
         m_prop = warper.run_warping(
             (hole[j] > 0).astype(np.float32), -f_j_to_jp1
@@ -215,7 +204,7 @@ def _propagate_hole_fills(
 
     if bidirectional:
         for j in range(n - 1, 0, -1):
-            f_jm1_to_j = flow_fwd(j - 1, j)
+            f_jm1_to_j = get_flow_pair(j - 1, j)
             prop = warper.run_warping(styl[j], f_jm1_to_j).astype(np.float32)
             k = _feather_alpha(hole[j - 1], feather_sigma)
             alpha = np.clip(k[..., np.newaxis], 0.0, 1.0)
@@ -399,14 +388,8 @@ def run(args: argparse.Namespace) -> None:
             logger.info("Hole propagate: flow-warp hole fills...")
             _propagate_hole_fills(
                 records,
-                frames,
                 warper,
-                h,
-                w,
-                adj_fwd,
-                adj_to_prev,
-                args.direct_long_flow,
-                compute_flow,
+                get_flow_pair,
                 args.hole_feather,
                 bidirectional=not args.no_hole_prop_bidirectional,
             )

@@ -3,7 +3,7 @@
 import taichi as ti
 import torch
 
-from ezsynth.utils.taichi_runtime import ensure_ti_init as ensure_ti_init
+from ezsynth.utils.taichi_runtime import ensure_ti_init
 
 
 def compute_lut_taichi(
@@ -119,7 +119,7 @@ def compute_lut_smooth_kernel(
                 prev_cost = prop_cost
                 # prev_coords_packed already holds the propagated source
             elif curr_cost < k_inf_cost:
-                # Valid cell wins over propagation — anchor to it
+                # Valid cell wins over propagation: anchor to it
                 prev_cost = curr_cost
                 prev_coords_packed = curr_packed & 0xFFFFF  # 20 bits for coords
             # else: empty cell, leave prev_cost / prev_coords unchanged so
@@ -140,7 +140,7 @@ def compute_lut_smooth_kernel(
                 ) | prev_coords_packed
                 prev_cost = prop_cost
             elif curr_cost < k_inf_cost:
-                # Valid cell wins — anchor
+                # Valid cell wins: anchor
                 prev_cost = curr_cost
                 prev_coords_packed = curr_packed & 0xFFFFF
             # else: empty cell, preserve propagation state

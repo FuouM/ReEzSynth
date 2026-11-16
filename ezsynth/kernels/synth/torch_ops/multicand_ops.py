@@ -1,4 +1,3 @@
-# ezsynth/torch_ops/multicand_ops.py
 """
 Multi-candidate (k-NN) PatchMatch for the PyTorch backend.
 
@@ -188,7 +187,7 @@ def refresh_and_promote(
     for index in range(alternatives.slots):
         candidate = alternatives.slot(index)
         candidate_errors = alternatives.errors[:, :, index].contiguous()
-        _, _, update = try_patch_batch(
+        _, update = try_patch_batch(
             candidate,
             nnf,
             error_map,
@@ -227,7 +226,6 @@ def refresh_and_promote(
             torch.cat(old_parts, dim=0),
             torch.cat(new_parts, dim=0),
             patch_size,
-            clear_device_cache=False,
         )
 
 
@@ -271,7 +269,7 @@ def propagation_step_multicand(
     """
     Propagation over the best match and every alternative of the left/top
     (``is_odd``) or right/bottom neighbour, same scan convention as
-    :func:`~ezsynth.torch_ops.patchmatch_ops.propagation_step`.
+    :func:`.patchmatch_ops.propagation_step`.
     """
     device = nnf.device
     H_s, W_s = source_style_patches.shape[:2]
@@ -329,7 +327,7 @@ def propagation_step_multicand(
                 **cost_kw,
                 region="mc:prop",
             )
-            _, _, update = try_patch_batch(
+            _, update = try_patch_batch(
                 candidate,
                 nnf,
                 error_map,
@@ -370,7 +368,6 @@ def propagation_step_multicand(
             torch.cat(old_parts, dim=0),
             torch.cat(new_parts, dim=0),
             patch_size,
-            clear_device_cache=False,
         )
 
 

@@ -1,4 +1,3 @@
-# ezsynth/torch_ops/jfa_ops.py
 """
 Jump Flooding (JFA) correspondence search for the PyTorch backend.
 
@@ -117,7 +116,7 @@ def jfa_step(
             # Pixels whose neighbour is outside the frame propose their own match.
             candidate = torch.where((inside & active).unsqueeze(-1), neighbor, nnf)
 
-        _, new_errors, update = try_patch_batch(
+        new_errors, update = try_patch_batch(
             candidate,
             nnf,
             error_map,
@@ -156,7 +155,6 @@ def jfa_step(
                 torch.cat(old_parts, dim=0),
                 torch.cat(new_parts, dim=0),
                 patch_size,
-                clear_device_cache=False,
             )
 
 

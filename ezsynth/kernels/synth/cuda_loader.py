@@ -54,7 +54,6 @@ _CUDA_SOURCES = ("cuda_dispatch.cpp", "dispatch.cu", "kernels.cu", "integral_ima
 
 # Loader state; read through the accessors below or ``ezsynth.consts``.
 module: ModuleType | None = None
-module_source: str | None = None  # "pre-compiled" or "jit"
 cuda_available = False
 _load_attempted = False
 
@@ -65,7 +64,7 @@ def _log(msg: str) -> None:
 
 def ensure_extension_loaded() -> bool:
     """Load the native extension once; return whether it is available."""
-    global _load_attempted, module, module_source, cuda_available
+    global _load_attempted, module, cuda_available
     if module is not None:
         return True
     if _load_attempted:
@@ -96,7 +95,6 @@ def ensure_extension_loaded() -> bool:
         return False
 
     module = loaded
-    module_source = source
     cuda_available = _module_has_cuda(loaded) and torch.cuda.is_available()
     if consts.JIT_VERBOSE:
         _log(f"Extension ready ({source}, {get_backend_type()}).")

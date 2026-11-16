@@ -18,16 +18,9 @@ from ..flow.run import compute_optical_flow_sequence
 from ..flow.types import FlowEngineName, FlowModelName
 from ..utils.viz_utils import flow_to_image
 from ..utils.warp_utils import Warp
-from .common import add_image_ops_argument
+from .common import add_image_ops_argument, psnr
 
 logger = logging.getLogger(__name__)
-
-
-def _compute_metrics(img1: np.ndarray, img2: np.ndarray) -> tuple[float, float]:
-    diff = (img1.astype(np.float32) - img2.astype(np.float32)) ** 2
-    mse = float(np.mean(diff))
-    psnr = 20 * np.log10(255.0 / np.sqrt(mse)) if mse > 0 else 100.0
-    return mse, psnr
 
 
 def _load_frame(cap: cv2.VideoCapture, idx: int) -> tuple[bool, np.ndarray | None]:
@@ -91,8 +84,8 @@ def run(args: argparse.Namespace) -> None:
                 warp_src, flow, return_weight=True
             )
 
-            _, psnr_back = _compute_metrics(warped_backward, frame2)
-            _, psnr_fwd = _compute_metrics(warped_forward, frame2)
+            psnr_back = psnr(warped_backward, frame2)
+            psnr_fwd = psnr(warped_forward, frame2)
             psnrs_back.append(psnr_back)
             psnrs_fwd.append(psnr_fwd)
 

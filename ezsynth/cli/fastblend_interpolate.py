@@ -149,26 +149,14 @@ def main():
 
     # Determine keyframes based on interval
     if interval_mode:
-        # Use keyframes at regular intervals from available style frames
-        #
-        # Two typical cases:
-        # 1) Only keyframes are present in keyframes_dir (style_frames shorter than guide_frames)
-        # 2) All frames are present in keyframes_dir (style_frames same length as guide_frames)
-        #
-        # In case (2) we want to ignore the extra style frames and only use frames
-        # at the desired interval positions, matching the behavior of case (1).
-        if full_style_coverage:
-            max_keyframes = (
-                len(guide_frames) + args.keyframe_interval - 1
-            ) // args.keyframe_interval
-        else:
-            max_keyframes = min(
-                len(style_frames),
-                (len(guide_frames) + args.keyframe_interval - 1)
-                // args.keyframe_interval,
-            )
+        # Keyframe positions 0, k, 2k, ... below len(guide_frames), at most one per
+        # style frame. When keyframes_dir holds every frame (full coverage), only the
+        # frames at those positions are used (see keyframes_to_use below).
+        max_keyframes = min(
+            len(style_frames),
+            (len(guide_frames) + args.keyframe_interval - 1) // args.keyframe_interval,
+        )
         keyframe_indices = [i * args.keyframe_interval for i in range(max_keyframes)]
-        keyframe_indices = [idx for idx in keyframe_indices if idx < len(guide_frames)]
 
         if len(keyframe_indices) == 0:
             logger.error(

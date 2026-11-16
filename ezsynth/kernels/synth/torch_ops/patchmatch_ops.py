@@ -1,4 +1,3 @@
-# ezsynth/torch_ops/patchmatch_ops.py
 """
 PatchMatch algorithm operations for EBSynth.
 
@@ -122,8 +121,6 @@ def _patch_errors(
     cost_function_mode: int,
     target_modulation_patches: torch.Tensor | None,
     ssd_kw: dict,
-    source_stats=None,
-    target_stats=None,
     *,
     region: str,
 ) -> torch.Tensor:
@@ -154,8 +151,6 @@ def _patch_errors(
                 patch_size,
                 style_weights,
                 guide_weights,
-                source_stats,
-                target_stats,
                 target_modulation_patches,
             )
     has_guide = source_guide_patches.numel() > 0
@@ -400,8 +395,6 @@ def grid_patch_errors(
     patch_size: int,
     cost_function_mode: int,
     target_modulation_patches=None,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,
@@ -460,8 +453,6 @@ def grid_patch_errors(
         cost_function_mode,
         target_modulation_patches,
         ssd_kw,
-        source_stats,
-        target_stats,
         region=region,
     )
 
@@ -488,8 +479,6 @@ class ActivePatchCost:
         patch_size: int,
         cost_function_mode: int,
         target_modulation_patches=None,
-        source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-        target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
         use_bilateral: bool = False,
         sigma_spatial: float = 4.0,
         sigma_color: float = 10.0,
@@ -506,7 +495,6 @@ class ActivePatchCost:
         self.guide_weights = guide_weights
         self.patch_size = patch_size
         self.cost_function_mode = cost_function_mode
-        self.source_stats = source_stats
         self.ssd_kw = {
             "use_bilateral": use_bilateral,
             "sigma_spatial": sigma_spatial,
@@ -521,7 +509,7 @@ class ActivePatchCost:
             target_modulation_patches,
         )
         self.target_style_v = self.target_guide_v = None
-        self.target_mod_v = self.target_stats_v = None
+        self.target_mod_v = None
         if not self.bounded:
             self.target_style_v = target_style_patches[target_ys, target_xs]
             self.target_guide_v = (
@@ -534,13 +522,6 @@ class ActivePatchCost:
                 if target_modulation_patches is not None
                 else None
             )
-            if target_stats is not None:
-                t_vals, t_mean, t_std = target_stats
-                self.target_stats_v = (
-                    t_vals[target_ys, target_xs],
-                    t_mean[target_ys, target_xs],
-                    t_std[target_ys, target_xs],
-                )
 
     def __call__(self, candidates: torch.Tensor) -> torch.Tensor:
         if self.bounded:
@@ -572,8 +553,6 @@ class ActivePatchCost:
             self.cost_function_mode,
             self.target_mod_v,
             self.ssd_kw,
-            self.source_stats,
-            self.target_stats_v,
             region="rs",
         )
 
@@ -593,20 +572,19 @@ def try_patch_batch(
     patch_size: int,
     cost_function_mode: int,
     omega_best: float,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
     sigma_color: float = 10.0,
     n_size_step: int = 1,
-    update_nnf: bool = True,
     *,
     omega_mean_map: torch.Tensor | None = None,
     candidate_patch_errors: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Try candidate patches and update NNF if better.
+    Patch errors of ``candidate_coords`` and the mask of pixels where they beat the
+    current match: ``(errors, update_mask)``, ``errors`` taking the candidate's patch
+    error where it wins and ``current_errors`` elsewhere. Writes nothing.
 
     ``candidate_patch_errors`` skips the cost evaluation when the caller already
     computed :func:`grid_patch_errors` for ``candidate_coords``.
@@ -633,8 +611,6 @@ def try_patch_batch(
             patch_size,
             cost_function_mode,
             target_modulation_patches,
-            source_stats,
-            target_stats,
             use_bilateral,
             sigma_spatial,
             sigma_color,
@@ -671,20 +647,10 @@ def try_patch_batch(
                 candidate_total_error < current_total_error
             ) & valid_candidates
     with _mp_region("try_patch:select_write", _dev):
-        if update_nnf:
-            updated_nnf = torch.where(
-                update_mask.unsqueeze(-1),
-                candidate_coords,
-                current_nnf,
-            )
-            updated_errors = torch.where(
-                update_mask, candidate_patch_errors, current_errors
-            )
-        else:
-            # For initial error computation, don't update NNF, just compute errors
-            updated_nnf = current_nnf
-            updated_errors = candidate_patch_errors  # Use the computed errors
-    return updated_nnf, updated_errors, update_mask
+        updated_errors = torch.where(
+            update_mask, candidate_patch_errors, current_errors
+        )
+    return updated_errors, update_mask
 
 
 def propagation_step(
@@ -703,8 +669,6 @@ def propagation_step(
     mask: torch.Tensor,
     cost_function_mode: int,
     omega_best: float,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
@@ -712,10 +676,10 @@ def propagation_step(
     n_size_step: int = 1,
 ):
     """
-    Propagation step: try neighbors' matches for spatial coherence.
-    OPTIMIZED: Batches omega map updates to reduce overhead.
+    Propagation step: try neighbors' matches for spatial coherence, with one omega
+    map update for both directions.
 
-    Corrected Logic to match CUDA:
+    Same scan as CUDA:
     - is_odd=True  => Forward Pass (Iter 1, 3...): Look Left/Top, Propagate +1
     - is_odd=False => Backward Pass (Iter 0, 2...): Look Right/Bottom, Propagate -1
     """
@@ -731,31 +695,20 @@ def propagation_step(
             omega_patch_mean_map_into(omega_mean_buf, omega_map, patch_size)
             omega_mean_map = omega_mean_buf
 
-    # Determine propagation direction and neighbor lookup
-    if is_odd:
-        # Forward Pass: Look Left (-1, 0) and Top (0, -1)
-        # Propagate: Neighbor + 1
-        # To read Left neighbor at index i, we need to shift Right (+1)
-        shift_x, shift_y = 1, 1
-        prop_x, prop_y = 1, 1
-    else:
-        # Backward Pass: Look Right (+1, 0) and Bottom (0, +1)
-        # Propagate: Neighbor - 1
-        # To read Right neighbor at index i, we need to shift Left (-1)
-        shift_x, shift_y = -1, -1
-        prop_x, prop_y = -1, -1
+    # Forward pass reads the left/top neighbour (shift right/down) and propagates +1;
+    # backward pass reads the right/bottom neighbour and propagates -1.
+    shift = 1 if is_odd else -1
 
     # --- Horizontal Propagation ---
     nb = _prop_neighbor_nnf_buf(nnf)
-    if shift_x == 1:
+    if shift == 1:
         torch.cat((nnf[:, :1, :], nnf[:, :-1, :]), dim=1, out=nb)
     else:
         torch.cat((nnf[:, 1:, :], nnf[:, -1:, :]), dim=1, out=nb)
 
-    # Apply propagation offset
-    horiz_candidates = nb + _get_offset_tensor((prop_x, 0), device)
+    horiz_candidates = nb + _get_offset_tensor((shift, 0), device)
 
-    _, new_errors, horiz_updates = try_patch_batch(
+    new_errors, horiz_updates = try_patch_batch(
         horiz_candidates,
         nnf,
         error_map,
@@ -770,8 +723,6 @@ def propagation_step(
         patch_size,
         cost_function_mode,
         omega_best,
-        source_stats,
-        target_stats,
         target_modulation_patches,
         use_bilateral,
         sigma_spatial,
@@ -783,14 +734,14 @@ def propagation_step(
     _accept(nnf, error_map, horiz_candidates, new_errors, horiz)
 
     # --- Vertical Propagation ---
-    if shift_y == 1:
+    if shift == 1:
         torch.cat((nnf[:1, :, :], nnf[:-1, :, :]), dim=0, out=nb)
     else:
         torch.cat((nnf[1:, :, :], nnf[-1:, :, :]), dim=0, out=nb)
 
-    vert_candidates = nb + _get_offset_tensor((0, prop_y), device)
+    vert_candidates = nb + _get_offset_tensor((0, shift), device)
 
-    _, new_errors, vert_updates = try_patch_batch(
+    new_errors, vert_updates = try_patch_batch(
         vert_candidates,
         nnf,
         error_map,
@@ -805,8 +756,6 @@ def propagation_step(
         patch_size,
         cost_function_mode,
         omega_best,
-        source_stats,
-        target_stats,
         target_modulation_patches,
         use_bilateral,
         sigma_spatial,
@@ -826,7 +775,6 @@ def propagation_step(
             nnf_before[moved],
             nnf[moved],
             patch_size,
-            clear_device_cache=False,
         )
 
 
@@ -860,8 +808,6 @@ def random_search_step(
     cost_function_mode: int,
     omega_best: float,
     generator: torch.Generator = None,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
     use_bilateral: bool = False,
     sigma_spatial: float = 4.0,
@@ -870,8 +816,7 @@ def random_search_step(
     alternatives: "CandidateSet | None" = None,
 ):
     """
-    Optimized random search with pruning.
-    OPTIMIZED: Reduced omega computations and pre-computed constants.
+    Random search with pruning.
 
     With ``alternatives`` (multicand mode) every radius also samples around each
     stored alternative match, and displaced or rejected candidates are offered to
@@ -896,12 +841,12 @@ def random_search_step(
 
         rand_buf_x, rand_buf_y, candidate_buf = _random_search_buffers(num_active, nnf)
 
-        # OPTIMIZATION: Pre-compute constants outside the loop
+        # Constants of the loop below.
         patch_pixel_count = patch_size * patch_size
         omega_normalization = patch_pixel_count * omega_best
         uniformity_factor = uniformity_weight / omega_normalization
 
-        # OPTIMIZATION: Pre-extract current NNF for active pixels once
+        # Current NNF and errors of the active pixels.
         current_nnf_active = nnf[y_coords, x_coords]
         current_errors_active = error_map[y_coords, x_coords]
 
@@ -917,8 +862,6 @@ def random_search_step(
             patch_size,
             cost_function_mode,
             target_modulation_patches,
-            source_stats,
-            target_stats,
             use_bilateral,
             sigma_spatial,
             sigma_color,
@@ -943,30 +886,22 @@ def random_search_step(
             )
 
     def _draw_offsets(radius: int) -> None:
-        if generator is not None:
-            torch.randint(
-                -radius,
-                radius + 1,
-                (num_active,),
-                device=device,
-                generator=generator,
-                out=rand_buf_x,
-            )
-            torch.randint(
-                -radius,
-                radius + 1,
-                (num_active,),
-                device=device,
-                generator=generator,
-                out=rand_buf_y,
-            )
-        else:
-            torch.randint(
-                -radius, radius + 1, (num_active,), device=device, out=rand_buf_x
-            )
-            torch.randint(
-                -radius, radius + 1, (num_active,), device=device, out=rand_buf_y
-            )
+        torch.randint(
+            -radius,
+            radius + 1,
+            (num_active,),
+            device=device,
+            generator=generator,
+            out=rand_buf_x,
+        )
+        torch.randint(
+            -radius,
+            radius + 1,
+            (num_active,),
+            device=device,
+            generator=generator,
+            out=rand_buf_y,
+        )
 
     num_bases = 1 if alternatives is None else 1 + alternatives.slots
     radius = initial_radius
@@ -1038,7 +973,6 @@ def random_search_step(
                     current_nnf_active[moved],
                     cand_v[moved],
                     patch_size,
-                    clear_device_cache=False,
                 )
                 current_nnf_active.copy_(
                     torch.where(

@@ -1,7 +1,7 @@
 import torch
 
 from ezsynth import consts
-from ezsynth.kernels.synth import cuda_loader, taichi_kernels, torch_ops
+from ezsynth.kernels.synth import taichi_kernels, torch_ops
 from ezsynth.kernels.synth.common import random_init_nnf, resample_tensor
 from ezsynth.kernels.synth.torch_ops import microprofile
 from ezsynth.kernels.synth.torch_ops.device_cache import clear_torch_device_cache
@@ -56,11 +56,6 @@ def test_consts_expose_extension_and_tuning_controls(monkeypatch):
     assert hasattr(consts, "FORCE_EBSYNTH_WHEEL")
     assert hasattr(consts, "TORCH_MICROPROFILE")
     assert hasattr(consts, "TAICHI_INIT_VERBOSE")
-    assert callable(consts.ensure_extension_loaded)
-    # Extension state is mirrored from the loader without loading anything.
-    assert consts.EXTENSION_AVAILABLE is (cuda_loader.module is not None)
-    assert consts.ebsynth_torch is cuda_loader.module
-    assert consts.EXTENSION_CUDA_AVAILABLE is cuda_loader.cuda_available
 
     # Host flags are portable unless EZSYNTH_NATIVE_ARCH opts in.
     monkeypatch.delenv(jit.NATIVE_ARCH_ENV, raising=False)

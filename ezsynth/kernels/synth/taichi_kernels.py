@@ -750,7 +750,6 @@ def voting_kernel(
     use_bilateral: int,
     sigma_spatial: float,
     sigma_color: float,
-    n_size_step: int,
 ):
     th, tw, NSC = (
         output_image.shape[0],
@@ -893,7 +892,6 @@ def run_vote_dispatch(
     use_bilateral,
     sigma_spatial,
     sigma_color,
-    n_size_step,
     acc,
     wsum,
 ):
@@ -909,7 +907,6 @@ def run_vote_dispatch(
             use_bilateral,
             sigma_spatial,
             sigma_color,
-            n_size_step,
         )
     elif mode == EBSYNTH_VOTEMODE_WEIGHTED:
         vote_weighted_kernel(

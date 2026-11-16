@@ -93,7 +93,7 @@ def main():
         type=str,
         choices=["auto", "cuda", "cupy", "taichi", "wgpu"],
         default="auto",
-        help="Backend to use for FastBlend processing: auto=prefer CUDA, fallback to cupy; cuda=CUDA only; cupy=CuPy only; taichi / wgpu = Taichi / WebGPU kernels",
+        help="Backend to use for FastBlend processing: auto = first installed of wgpu, taichi, cupy; cuda = the JIT-built CUDA extension (only when requested); cupy / taichi / wgpu = that engine only",
     )
 
     parser.add_argument(
@@ -175,18 +175,10 @@ def main():
     logger.info(f"  - Guide weight: {fastblend_config.guide_weight}")
     logger.info(f"  - Backend: {fastblend_config.backend}")
 
-    if not fastblend_config.enabled:
-        logger.info("FastBlend is disabled in configuration")
-        return
-
-    def progress_callback(_current_frame, _total_frames):
-        pass
-
     engine = FastBlendEngine()
     fastblend_frames = engine.smooth_sequence(
         FastBlendInput_Sequence(content_frames, style_frames),
         fastblend_config,
-        progress_callback=progress_callback,
         backend=fastblend_config.backend,
     )
 

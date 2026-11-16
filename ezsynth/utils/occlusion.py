@@ -55,30 +55,6 @@ def modulation_from_mask(mask: np.ndarray, floor: int = 64) -> np.ndarray:
     return mask_to_bgr(mod)
 
 
-def inpaint_masked_regions(
-    base: np.ndarray,
-    mask: np.ndarray,
-    *,
-    radius: int = 3,
-    feather: int = 5,
-) -> np.ndarray:
-    """Inpaint masked pixels to avoid warped-border artifacts."""
-    binary = (mask > 0).astype(np.uint8) * 255
-    if not np.any(binary):
-        return base
-
-    filled = cv2.inpaint(base, binary, radius, cv2.INPAINT_TELEA)
-    if feather > 0:
-        k = feather if feather % 2 == 1 else feather + 1
-        alpha = cv2.GaussianBlur(binary, (k, k), 0).astype(np.float32) / 255.0
-    else:
-        alpha = binary.astype(np.float32) / 255.0
-    alpha = alpha[..., None]
-
-    out = base.astype(np.float32) * (1.0 - alpha) + filled.astype(np.float32) * alpha
-    return out.clip(0, 255).astype(np.uint8)
-
-
 def composite_masked_regions(
     base: np.ndarray,
     overlay: np.ndarray,
@@ -100,6 +76,21 @@ def composite_masked_regions(
 
     out = base.astype(np.float32) * (1.0 - alpha) + overlay.astype(np.float32) * alpha
     return out.clip(0, 255).astype(np.uint8)
+
+
+def inpaint_masked_regions(
+    base: np.ndarray,
+    mask: np.ndarray,
+    *,
+    radius: int = 3,
+    feather: int = 5,
+) -> np.ndarray:
+    """Inpaint masked pixels to avoid warped-border artifacts."""
+    binary = (mask > 0).astype(np.uint8) * 255
+    if not np.any(binary):
+        return base
+    filled = cv2.inpaint(base, binary, radius, cv2.INPAINT_TELEA)
+    return composite_masked_regions(base, filled, binary, feather=feather)
 
 
 def accumulate_target_to_source_coords(

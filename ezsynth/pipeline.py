@@ -2,20 +2,12 @@ import logging
 
 import numpy as np
 
-from .config import (
-    BlendingConfig,
-    DebugConfig,
-    EbsynthParamsConfig,
-    PipelineConfig,
-    PrecomputationConfig,
-    ProjectConfig,
-)
+from .config import MainConfig
 from .data import ProjectData
 
 # Engine modules import eagerly; their heavy optional dependencies (phycv,
 # torchvision, scipy, taichi) load inside the functions that use them.
 from .engines.synthesis_engine import EbsynthEngine
-from .precompute import PrecomputeState
 from .precompute_runner import PrecomputeRunner
 from .pseudo_endpoint import PseudoEndpointGenerator
 from .scheduler import SynthesisScheduler
@@ -30,60 +22,37 @@ class SynthesisPipeline:
     core synthesis engine for the main processing loop.
     """
 
-    def __init__(
-        self,
-        ebsynth_params_cfg: EbsynthParamsConfig,
-        pipeline_cfg: PipelineConfig,
-        project_cfg: ProjectConfig,
-        precomputation_cfg: PrecomputationConfig,
-        blending_cfg: BlendingConfig,
-        data: ProjectData,
-        debug_cfg: DebugConfig = None,
-    ):
+    def __init__(self, configs: MainConfig, data: ProjectData):
+        self.configs = configs
         self.data = data
-        self.project_cfg = project_cfg
-        self.precomputation_cfg = precomputation_cfg
-        self.pipeline_cfg = pipeline_cfg
-        self.blending_cfg = blending_cfg
-        self.ebsynth_params_cfg = ebsynth_params_cfg
-        self.debug_cfg = debug_cfg if debug_cfg is not None else DebugConfig()
-
         # The synthesis engine is used repeatedly, so we initialize it here.
-        # It's a C++ extension and manages its own memory efficiently.
         self.synthesis_engine = EbsynthEngine(
-            ebsynth_config=ebsynth_params_cfg, pipeline_config=pipeline_cfg
+            ebsynth_config=configs.ebsynth_params, pipeline_config=configs.pipeline
         )
-
-        self.precompute_state = PrecomputeState()
-
-    def _precompute(self, content_frames: list[np.ndarray]) -> None:
-        self.precompute_state = PrecomputeRunner(
-            project_cfg=self.project_cfg,
-            precomputation_cfg=self.precomputation_cfg,
-            pipeline_cfg=self.pipeline_cfg,
-            debug_cfg=self.debug_cfg,
-            state=self.precompute_state,
-            backend=self.ebsynth_params_cfg.backend,
-        ).run(content_frames)
 
     def run(self) -> list[np.ndarray]:
         """
         Main entry point for the synthesis pipeline.
         """
+        cfg = self.configs
         logger.info("Loading project data for pipeline...")
         content_frames = self.data.get_content_frames()
-        style_frames = (
-            self.data.get_style_frames()
-        )  # Ensure styles are loaded and resized if needed
-        use_pseudo_endpoint_styles = self.pipeline_cfg.use_pseudo_endpoint_styles
+        style_frames = self.data.get_style_frames()
+        use_pseudo_endpoint_styles = cfg.pipeline.use_pseudo_endpoint_styles
 
-        self._precompute(content_frames)
-        style_indices = list(self.project_cfg.style_indices)
+        precompute_state = PrecomputeRunner(
+            project_cfg=cfg.project,
+            precomputation_cfg=cfg.precomputation,
+            pipeline_cfg=cfg.pipeline,
+            debug_cfg=cfg.debug,
+            backend=cfg.ebsynth_params.backend,
+        ).run(content_frames)
+        style_indices = list(cfg.project.style_indices)
         if use_pseudo_endpoint_styles:
             style_frames, style_indices = PseudoEndpointGenerator(
                 engine=self.synthesis_engine,
-                precompute_state=self.precompute_state,
-                debug_cfg=self.debug_cfg,
+                precompute_state=precompute_state,
+                debug_cfg=cfg.debug,
             ).add_endpoint_styles(
                 content_frames=content_frames,
                 style_frames=style_frames,
@@ -93,16 +62,16 @@ class SynthesisPipeline:
         logger.info("\n--- Starting Synthesis ---")
         final_frames = SynthesisScheduler(
             engine=self.synthesis_engine,
-            precompute_state=self.precompute_state,
-            blending_cfg=self.blending_cfg,
-            debug_cfg=self.debug_cfg,
+            precompute_state=precompute_state,
+            blending_cfg=cfg.blending,
+            debug_cfg=cfg.debug,
         ).run(
             content_frames=content_frames,
             style_frames=style_frames,
             style_indices=style_indices,
             force_directional=(
                 use_pseudo_endpoint_styles
-                and not self.pipeline_cfg.pseudo_endpoint_use_blending
+                and not cfg.pipeline.pseudo_endpoint_use_blending
             ),
         )
 

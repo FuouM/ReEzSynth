@@ -1,4 +1,3 @@
-# ezsynth/torch_ops/mask_ops.py
 """
 Mask operations for convergence checking in EBSynth.
 

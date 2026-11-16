@@ -118,16 +118,6 @@ def get_fan_model(device: str, face_detector: str = DEFAULT_FAN_FACE_DETECTOR):
         logger.info(f"[FAN] Loading model ({face_detector}) for device: {device}...")
         start_time = time.time()
 
-        # LandmarksType renamed _2D -> TWO_D in face-alignment 1.4.
-        landmarks_type = getattr(face_alignment.LandmarksType, "TWO_D", None)
-        if landmarks_type is None:
-            landmarks_type = getattr(face_alignment.LandmarksType, "_2D", None)
-        if landmarks_type is None:
-            raise ImportError(
-                "face_alignment.LandmarksType has neither TWO_D nor _2D; "
-                "install face-alignment>=1.3."
-            )
-
         kwargs = {
             "device": str(device),
             "flip_input": True,
@@ -137,7 +127,7 @@ def get_fan_model(device: str, face_detector: str = DEFAULT_FAN_FACE_DETECTOR):
         # C++ toolchain (with OpenMP) at runtime; eager mode is fast enough for stills.
         if "compile" in inspect.signature(face_alignment.FaceAlignment).parameters:
             kwargs["compile"] = False
-        fa = face_alignment.FaceAlignment(landmarks_type, **kwargs)
+        fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, **kwargs)
 
         logger.info(
             f"[FAN] Model loaded for device {device} with {face_detector} "

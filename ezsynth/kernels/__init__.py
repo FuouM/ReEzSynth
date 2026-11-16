@@ -6,7 +6,7 @@ the same function names, so all versions of one operation sit in one directory:
 - ``synth``: EbSynth level synthesis (``cuda``, ``torch``, ``taichi``, ``wgpu``);
   ``synth/STAGES.md`` maps each stage to its function in every backend.
 - ``imageops``: flow warping, forward splatting, pull-push hole filling, histogram
-  blending, occlusion masks, Taichi Poisson CG (``opencv``, ``taichi``, ``wgpu``).
+  blending, occlusion masks, Poisson solves (``opencv``, ``taichi``, ``wgpu``).
 - ``fastblend``: FastBlend pyramid patch matching (``cuda``, ``cupy``, ``taichi``,
   ``wgpu``).
 - ``faceblit``: FaceBlit look-up-cube matching (``numpy``, ``numba``, ``torch``,

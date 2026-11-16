@@ -11,9 +11,7 @@ from ...consts import (
     SEARCH_MODE_JFA,
     SEARCH_MODE_MULTICAND,
 )
-from ...utils.taichi_runtime import ensure_ti_init as ensure_ti_init
-from ...utils.taichi_runtime import get_taichi_torch_device as get_taichi_torch_device
-from ...utils.taichi_runtime import get_ti_arch as get_ti_arch
+from ...utils.taichi_runtime import ensure_ti_init, get_taichi_torch_device
 from ...utils.timer import SynthesisTimer
 from . import taichi_kernels as tk
 from .torch_ops.jfa_ops import jfa_fine_radius, jfa_step_sizes
@@ -179,7 +177,6 @@ class Backend:
                 use_bilateral,
                 sigma_spatial,
                 sigma_color,
-                n_size_step,
                 acc0,
                 wsum0,
             ),
@@ -415,7 +412,6 @@ class Backend:
                         use_bilateral,
                         sigma_spatial,
                         sigma_color,
-                        n_size_step,
                         acc_i,
                         wsum_i,
                     ),

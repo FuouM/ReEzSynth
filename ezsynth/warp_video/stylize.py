@@ -21,6 +21,7 @@ from .common import (
     add_image_ops_argument,
     load_video_frames,
     precomputation_config_for_engine,
+    psnr,
     write_png_sequence,
 )
 
@@ -79,9 +80,7 @@ def run(args: argparse.Namespace) -> None:
             stylized_out.append(warped)
 
             diff_img = cv2.absdiff(warped, target_frame)
-            mse = np.mean(diff_img.astype(np.float32) ** 2)
-            psnr = 20 * np.log10(255.0 / np.sqrt(mse)) if mse > 0 else 100.0
-            psnrs.append(psnr)
+            psnrs.append(psnr(warped, target_frame))
 
             conf_viz = cv2.applyColorMap(
                 (np.clip(weight, 0, 1) * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS

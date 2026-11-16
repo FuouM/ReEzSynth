@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -37,30 +35,6 @@ class PageEdgeParams:
     thresh_min: float = 0.0
     thresh_max: float = 0.9
     morph_flag: int = 1
-
-
-def merge_pst_params(
-    overrides: PstEdgeParams | Mapping[str, Any] | None,
-) -> PstEdgeParams:
-    if overrides is None:
-        return PstEdgeParams()
-    if isinstance(overrides, PstEdgeParams):
-        return overrides
-    merged = asdict(PstEdgeParams())
-    merged.update(overrides)
-    return PstEdgeParams(**merged)
-
-
-def merge_page_params(
-    overrides: PageEdgeParams | Mapping[str, Any] | None,
-) -> PageEdgeParams:
-    if overrides is None:
-        return PageEdgeParams()
-    if isinstance(overrides, PageEdgeParams):
-        return overrides
-    merged = asdict(PageEdgeParams())
-    merged.update(overrides)
-    return PageEdgeParams(**merged)
 
 
 PAD_SIZE = 16

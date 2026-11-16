@@ -41,9 +41,6 @@ class FastBlendInput_Keyframes:
 
 
 class FastBlendEngine:
-    def __init__(self) -> None:
-        pass
-
     def smooth_sequence(
         self,
         input_sequence: FastBlendInput_Sequence,
@@ -106,16 +103,5 @@ class FastBlendEngine:
             progress_callback=progress_callback,
         )
 
-        result_frames_u8: list[np.ndarray | None] = [
-            np.clip(f, 0, 255).astype(np.uint8) if f is not None else None
-            for f in result_float
-        ]
-
-        for i in range(len(result_frames_u8)):
-            if result_frames_u8[i] is None:
-                distances = [(abs(i - k), k) for k in keyframe_indices]
-                nearest_kf_idx = min(distances)[1]
-                kf_style_idx = keyframe_indices.index(nearest_kf_idx)
-                result_frames_u8[i] = keyframes_style[kf_style_idx]
-
-        return result_frames_u8  # type: ignore[return-value]
+        # The runner fills every frame: the task groups cover [0, len(frames_guide)).
+        return [np.clip(f, 0, 255).astype(np.uint8) for f in result_float]

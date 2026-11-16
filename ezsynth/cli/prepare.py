@@ -24,16 +24,14 @@ def extract_frames(video_path: str, output_dir: str):
     output_dir = Path(output_dir)
 
     if not video_path.exists():
-        logger.error(f"Error: Video file not found at {video_path}")
-        return
+        raise FileNotFoundError(f"Video file not found at {video_path}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Extracting frames from '{video_path.name}' to '{output_dir}'...")
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        logger.error("Error: Could not open video file.")
-        return
+        raise OSError(f"Could not open video file {video_path}")
 
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
@@ -45,7 +43,8 @@ def extract_frames(video_path: str, output_dir: str):
                 break
 
             output_filename = output_dir / f"{frame_num:05d}.png"
-            cv2.imwrite(str(output_filename), frame)
+            if not cv2.imwrite(str(output_filename), frame):
+                raise OSError(f"Could not write frame {output_filename}")
 
             frame_num += 1
             pbar.update(1)

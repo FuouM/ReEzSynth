@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from .utils import bilinear_sampler
+from ..flow.grid_sample import grid_sample_bilinear_pixel_coords
 
 
 class CorrBlock:
@@ -37,7 +37,7 @@ class CorrBlock:
             delta_lvl = delta.view(1, 2 * r + 1, 2 * r + 1, 2)
             coords_lvl = centroid_lvl + delta_lvl
 
-            corr = bilinear_sampler(corr, coords_lvl)
+            corr = grid_sample_bilinear_pixel_coords(corr, coords_lvl)
             corr = corr.view(batch, h1, w1, -1)
             out_pyramid.append(corr)
 

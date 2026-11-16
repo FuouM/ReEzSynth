@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import tempfile
 from contextlib import ExitStack
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -21,6 +20,7 @@ from .nodes_image_synth import (
     _float,
     _int,
     synthesis_core_inputs,
+    validate_synthesis_inputs,
 )
 from .options import (
     COST_FUNCTIONS,
@@ -41,7 +41,6 @@ from .options import (
     check_synthesis_options,
     parse_indices,
     require_module,
-    validate_synthesis_options,
 )
 from .types import (
     REEZ_VIDEO_STYLES,
@@ -71,12 +70,13 @@ def make_style_keyframes(
     )
 
 
-def build_video_configs(cfg: ReEzVideoSynthConfig, device: str | None):
-    """Translate the node config into the ezsynth pydantic config sections."""
+def build_video_configs(cfg: ReEzVideoSynthConfig, device: str | None, project):
+    """Translate the node config into an ezsynth ``MainConfig`` for ``project``."""
     from ezsynth.config import (
         BlendingConfig,
         DebugConfig,
         EbsynthParamsConfig,
+        MainConfig,
         PipelineConfig,
         PrecomputationConfig,
     )
@@ -132,8 +132,14 @@ def build_video_configs(cfg: ReEzVideoSynthConfig, device: str | None):
         sparse_anchor_weight=cfg.sparse_anchor_weight,
         use_optimization=cfg.use_optimization,
     )
-    debug = DebugConfig(save_flow_viz=cfg.save_flow_viz)
-    return precomputation, pipeline, blending, ebsynth_params, debug
+    return MainConfig(
+        project=project,
+        precomputation=precomputation,
+        pipeline=pipeline,
+        blending=blending,
+        ebsynth_params=ebsynth_params,
+        debug=DebugConfig(save_flow_viz=cfg.save_flow_viz),
+    )
 
 
 def check_video_dependencies(cfg: ReEzVideoSynthConfig) -> None:
@@ -200,10 +206,10 @@ def _in_memory_project_data(project_cfg, content_frames, style_frames):
     styles = [resize_image_to_match(style, content_frames[0]) for style in style_frames]
 
     class _InMemoryProjectData(ProjectData):
-        def get_content_frames(self, force_reload: bool = False) -> list[np.ndarray]:
+        def get_content_frames(self) -> list[np.ndarray]:
             return content_frames
 
-        def get_style_frames(self, force_reload: bool = False) -> list[np.ndarray]:
+        def get_style_frames(self) -> list[np.ndarray]:
             return styles
 
     return _InMemoryProjectData(project_cfg)
@@ -485,19 +491,7 @@ class ReEzSynthVideoSynthConfig:
     FUNCTION = "build"
     CATEGORY = CATEGORY
 
-    @classmethod
-    def VALIDATE_INPUTS(
-        cls,
-        backend=None,
-        cost_function=None,
-        search_mode=None,
-        precision=None,
-        multicand_k=None,
-    ):
-        values = (backend, cost_function, search_mode, precision, multicand_k)
-        if any(v is None for v in values):
-            return True  # linked inputs: validated in build()
-        return validate_synthesis_options(*values) or True
+    VALIDATE_INPUTS = classmethod(validate_synthesis_inputs)
 
     def build(self, **kwargs):
         cfg = ReEzVideoSynthConfig(**kwargs)
@@ -598,8 +592,7 @@ class ReEzSynthVideoSynth:
             raise ValueError("save_outputs is on but output_dir is empty.")
 
         from ezsynth.config import ProjectConfig
-        from ezsynth.output import OutputManager
-        from ezsynth.service import SynthesisConfigs, SynthesisService
+        from ezsynth.pipeline import SynthesisPipeline
 
         from . import comfy_runtime as rt
 
@@ -610,10 +603,6 @@ class ReEzSynthVideoSynth:
 
         device = rt.torch_device()
         height, width = content_frames[0].shape[:2]
-        precomputation, pipeline, blending, ebsynth_params, debug = build_video_configs(
-            config, str(device)
-        )
-        rt.prepare_vram(device, rt.estimate_synthesis_bytes(height, width, 12))
 
         with ExitStack() as stack:
             cache = cache_dir.strip() or stack.enter_context(
@@ -630,24 +619,16 @@ class ReEzSynthVideoSynth:
                 output_dir=work_out,
                 cache_dir=cache,
             )
-            configs = SynthesisConfigs(
-                project=project,
-                precomputation=precomputation,
-                pipeline=pipeline,
-                blending=blending,
-                ebsynth_params=ebsynth_params,
-                debug=debug,
-            )
+            configs = build_video_configs(config, str(device), project)
+            rt.prepare_vram(device, rt.estimate_synthesis_bytes(height, width, 12))
             data = _in_memory_project_data(project, content_frames, list(styles.frames))
             try:
                 with rt.comfy_progress():
-                    frames = SynthesisService().build_pipeline(configs, data).run()
+                    frames = SynthesisPipeline(configs, data).run()
             finally:
                 rt.release_vram()
             if save_outputs:
-                OutputManager(data).handle(
-                    frames, save=True, visible_output_dir=Path(out_dir)
-                )
+                data.save_output_frames(frames)
 
         images = bgr_uint8_sequence_to_image_tensor(frames)
         frame_count = int(images.shape[0])

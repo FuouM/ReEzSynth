@@ -47,7 +47,7 @@ def run_landmark_preview_video(
     faceblit_style_cache_dir: Path | None = None,
     output_parent: Path | None = None,
 ) -> Path:
-    """Landmark overlay / optional temporal smooth / optional Taichi FaceBlit column → MP4.
+    """Landmark overlay / optional temporal smooth / optional Taichi FaceBlit column -> MP4.
 
     If ``trajectory_only_path`` is set, writes only the matplotlib trajectory figure
     (same smooth settings) and returns that path; no video is produced.

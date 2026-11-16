@@ -1,4 +1,3 @@
-# import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -47,11 +46,6 @@ class RAFT(nn.Module):
                 output_dim=hdim + cdim, norm_fn="batch", dropout=args.dropout
             )
             self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
-
-    def freeze_bn(self):
-        for m in self.modules():
-            if isinstance(m, nn.BatchNorm2d):
-                m.eval()
 
     def initialize_flow(self, img):
         """Flow is represented as difference between two coordinate grids flow = coords1 - coords0"""

@@ -15,83 +15,28 @@ class GPUAccumulator:
         self.device = device
         self.buffer: dict[int, tuple[torch.Tensor, float]] = {}
 
-    def update(self, target_idx: int, result_tensor, weight_inc: float = 1.0):
-        """
-        Accumulate a result into the buffer for target_idx.
-        result_tensor: (H, W, C) float32 tensor on GPU or numpy array
-        """
-        # Convert to tensor if needed
-        if isinstance(result_tensor, np.ndarray):
-            result_tensor = (
-                torch.from_numpy(result_tensor)
-                .to(self.device, dtype=torch.float32)
-                .contiguous()
-            )
-        elif not isinstance(result_tensor, torch.Tensor):
-            raise TypeError(
-                f"result_tensor must be numpy array or torch tensor, got {type(result_tensor)}"
-            )
+    def update(self, target_idx: int, result_tensor: torch.Tensor):
+        """Add an (H, W, C) float32 result for ``target_idx`` (sum of results and count).
 
+        ``get_final`` adds the base style frame with weight 1, so the result is the
+        running average ``(base + sum(results)) / (1 + count)``.
+        """
         if target_idx not in self.buffer:
-            # First contribution: just store it
-            # We store (accumulated_frame, accumulated_weight)
-            # To match the lerp logic: frame = frame * (w/(w+1)) + result * (1/(w+1))
-            # This is equivalent to weighted average.
-            # We can just sum them up and divide by total weight at the end?
-            # The original code did iterative update:
-            # frame = frame * (weight / (weight + 1)) + result / (weight + 1)
-            # This is exactly running average: NewAvg = (OldAvg * OldWeight + NewVal * 1) / (OldWeight + 1)
-            # So yes, we can just sum values and sum weights.
-            # But wait, original code initialized with `frames_style[target]` if None.
-            # "if frame is None: frame = frames_style[target]"
-            # So the base is the original style frame with weight 1.
-            # Then we add results.
-
-            # We need to handle the initialization logic outside or here.
-            # Let's assume the caller handles initialization if needed,
-            # or we initialize with 0 and add the base frame separately?
-            # The runner logic:
-            # frames = [(None, 1) for i in range(n)]
-            # ...
-            # if frame is None: frame = frames_style[target]
-            # frame = frame * ...
-
-            # So effectively: Final = (Original * 1 + Sum(Results)) / (1 + Count)
-            # We can store Sum(Results) and Count.
-
-            self.buffer[target_idx] = (result_tensor.clone(), weight_inc)
+            self.buffer[target_idx] = (result_tensor.clone(), 1.0)
         else:
             acc_frame, acc_weight = self.buffer[target_idx]
             acc_frame.add_(result_tensor)
-            self.buffer[target_idx] = (acc_frame, acc_weight + weight_inc)
+            self.buffer[target_idx] = (acc_frame, acc_weight + 1.0)
 
     def get_final(self, target_idx: int, base_frame_cpu: np.ndarray) -> np.ndarray:
-        """
-        Compute final result for target_idx, combining with base frame.
-        Returns uint8 numpy array (or float32 if that was input).
-        """
-        if target_idx not in self.buffer:
-            return base_frame_cpu
-
-        acc_frame, acc_weight = self.buffer[target_idx]
-
-        # Move base frame to GPU
+        """Pop ``target_idx`` and return ``(base + sum) / (1 + count)`` as float32 numpy."""
+        acc_frame, acc_weight = self.buffer.pop(target_idx)
         base_frame = (
             torch.from_numpy(base_frame_cpu)
             .to(self.device, dtype=torch.float32)
             .contiguous()
         )
-
-        # Final = (Base * 1 + Sum) / (1 + Weight)
-        final_frame = (base_frame + acc_frame) / (1.0 + acc_weight)
-
-        # Clean up
-        del self.buffer[target_idx]
-
-        return final_frame.cpu().numpy()
-
-    def clear(self):
-        self.buffer.clear()
+        return ((base_frame + acc_frame) / (1.0 + acc_weight)).cpu().numpy()
 
 
 class FrameCache:
@@ -149,9 +94,6 @@ class FrameCache:
 
 
 class BalancedModeRunner:
-    def __init__(self):
-        pass
-
     def run(
         self,
         frames_guide,
@@ -160,20 +102,16 @@ class BalancedModeRunner:
         window_size,
         patch_matcher_config,
         desc="Balanced Mode",
-        save_path=None,
         progress_callback: Callable[[int, int], None] | None = None,
         backend="auto",
     ):
-        """
-        Run FastBlend processing with progress tracking.
-        """
+        """Blend every frame with the frames within ``window_size`` matched onto it."""
         resolved = resolve(backend)
 
         suffix = " (auto)" if backend == "auto" else ""
         logger.info(f"FastBlend: Using {resolved} backend{suffix}")
 
         pm_cfg = {k: v for k, v in patch_matcher_config.items() if k != "backend"}
-        # Setup Engine
         patch_match_engine = build_pyramid_matcher(
             resolved,
             image_height=frames_style[0].shape[0],
@@ -185,7 +123,7 @@ class BalancedModeRunner:
             int(patch_matcher_config.get("gpu_id", 0))
         )
 
-        # Generate all tasks
+        # (source, target) pairs in target order, so targets complete in order.
         n = len(frames_style)
         tasks = []
         for target in range(n):
@@ -198,21 +136,14 @@ class BalancedModeRunner:
             f"FastBlend: Processing {total_tasks} frame pairs in {len(frames_style)} frames"
         )
 
-        # Sort tasks by target to optimize accumulation locality
-        # They are already generated in target order, so that's good.
-
         output = [None for _ in range(n)]
         completed_frames = 0
 
-        # Buffers
         accumulator = GPUAccumulator(device)
-        # Cache size: 2GB default.
-        # 512x512x3 float32 is ~3MB. 2GB holds ~600 frames.
-        # 1080p is ~24MB. 2GB holds ~80 frames.
+        # 2 GB LRU cache: ~600 frames at 512x512, ~80 at 1080p (float32).
         guide_cache = FrameCache(frames_guide, device)
         style_cache = FrameCache(frames_style, device)
 
-        # Process tasks
         with tqdm(total=total_tasks, desc=desc, unit="pairs") as pbar:
             for batch_id in range(0, total_tasks, batch_size):
                 tasks_batch = tasks[batch_id : min(batch_id + batch_size, len(tasks))]
@@ -220,55 +151,36 @@ class BalancedModeRunner:
                 sources = [s for s, t in tasks_batch]
                 targets = [t for s, t in tasks_batch]
 
-                # Optimized CUDA Path
-
-                # Fetch data using cache (returns GPU tensors)
                 s_guide_t = guide_cache.get_batch(sources)
                 t_guide_t = guide_cache.get_batch(targets)
                 s_style_t = style_cache.get_batch(sources)
 
-                # Run patch match
-                # Note: estimate_nnf expects (B, H, W, C)
                 _, target_style_t = patch_match_engine.estimate_nnf(
                     s_guide_t, t_guide_t, s_style_t
                 )
 
-                # Accumulate
                 for i, (_source, target) in enumerate(tasks_batch):
-                    result = target_style_t[i]
-                    accumulator.update(target, result)
+                    accumulator.update(target, target_style_t[i])
 
-                    # Check completion
+                    # Window frames of ``target``, itself (the base frame) included.
                     expected_weight = min(n, target + window_size + 1) - max(
                         0, target - window_size
                     )
-                    # We need to track current weight.
-                    # GPUAccumulator stores it.
                     _, current_weight = accumulator.buffer[target]
-
-                    # Note: accumulator stores SUM of weights of added frames.
-                    # Base frame has weight 1.
-                    # So total weight = current_weight + 1.
-
                     if current_weight + 1 >= expected_weight:
-                        # Finalize
-                        final_frame = accumulator.get_final(
+                        output[target] = accumulator.get_final(
                             target, frames_style[target]
                         )
-                        output[target] = final_frame
                         completed_frames += 1
 
                         if progress_callback:
                             progress_callback(completed_frames, n)
 
-                # Periodic cache cleanup if needed (FrameCache handles LRU)
-
                 pbar.update(len(tasks_batch))
 
-        # Fill any remaining frames (should be none if logic is correct)
+        # A single-frame sequence has no pairs: its frame is returned unchanged.
         for i in range(n):
             if output[i] is None:
-                # Fallback if something went wrong or single frame
                 output[i] = frames_style[i]
 
         logger.info(f"FastBlend: Completed processing {completed_frames}/{n} frames")

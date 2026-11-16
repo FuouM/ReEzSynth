@@ -107,39 +107,3 @@ class FeatureAttention(torch.nn.Module):
             concat_features0 = self.norm(concat_features0)
 
         return concat_features0
-
-
-class FlowAttention(torch.nn.Module):
-    """
-    flow propagation with self-attention on feature
-    query: feature0, key: feature0, value: flow
-    """
-
-    def __init__(self, feature_dim):
-        super().__init__()
-
-        self.q_proj = torch.nn.Linear(feature_dim, feature_dim)
-        self.k_proj = torch.nn.Linear(feature_dim, feature_dim)
-
-    def forward(self, feature, flow):
-        # q, k: feature [B, C, H, W], v: flow [B, 2, H, W]
-        b, c, h, w = feature.size()
-
-        feature = feature.flatten(-2).permute(0, 2, 1)  # [B, H*W, C]
-
-        flow = flow.flatten(-2).permute(0, 2, 1)
-
-        query = self.q_proj(feature)  # [B, H*W, C]
-        key = self.k_proj(feature)  # [B, H*W, C]
-
-        if query.device.type == "mps":
-            # Manual attention to avoid MPS SDPA shape bug (V dim = 2)
-            scale = c**-0.5
-            attn = (query @ key.transpose(-2, -1) * scale).softmax(dim=-1)
-            flow = attn @ flow
-        else:
-            flow = F.scaled_dot_product_attention(query, key, flow, dropout_p=0.0)
-
-        flow = flow.view(b, h, w, 2).permute(0, 3, 1, 2)
-
-        return flow

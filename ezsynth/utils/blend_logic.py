@@ -27,7 +27,6 @@ SCIPY_SOLVERS = ("lsmr", "cg", "amg")
 
 def seamless_clone_blending(frame_fwd, frame_bwd, mask):
     """Blends using OpenCV's seamlessClone."""
-    _h, _w, _ = frame_fwd.shape
     # seamlessClone requires a single-channel mask
     if len(mask.shape) > 2:
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
@@ -118,13 +117,14 @@ def poisson_fusion_cpu(blendI, I1, I2, mask, cache, solver, maxiter, grad_weight
     out_all = np.zeros((h * w, c), dtype=np.float32)
 
     for ch in range(c):
-        b = np.vstack(
-            [
-                gx_reshaped[:, ch : ch + 1] * grad_weights[ch],
-                gy_reshaped[:, ch : ch + 1] * grad_weights[ch],
-                Iab_centered[:, ch : ch + 1],
-            ]
-        )
+        if solver in SCIPY_SOLVERS:
+            b = np.vstack(
+                [
+                    gx_reshaped[:, ch : ch + 1] * grad_weights[ch],
+                    gy_reshaped[:, ch : ch + 1] * grad_weights[ch],
+                    Iab_centered[:, ch : ch + 1],
+                ]
+            )
         if solver == "lsqr":
             out_all[:, ch] = load_op("opencv", "poisson_lsq")(
                 gx_reshaped[:, ch].reshape(h, w),

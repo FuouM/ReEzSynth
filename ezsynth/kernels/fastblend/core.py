@@ -303,7 +303,12 @@ class FaceBlitPatchMatcherCore(ABC):
 
 
 class PyramidPatchMatcherCore(ABC):
-    """Image pyramid wiring shared by CUDA, CuPy, and Taichi backends."""
+    """Image pyramid wiring shared by CUDA, CuPy, and Taichi backends.
+
+    Subclasses set ``level_matcher`` to their single-level ``PatchMatcher`` class.
+    """
+
+    level_matcher: type[FaceBlitPatchMatcherCore]
 
     def __init__(
         self,
@@ -344,12 +349,21 @@ class PyramidPatchMatcherCore(ABC):
             width = image_width // (2 ** (self.pyramid_level - 1 - level))
             self.pyramid_heights.append(height)
             self.pyramid_widths.append(width)
-            self.patch_matchers.append(self._new_level_matcher(height, width, channel))
-
-    @abstractmethod
-    def _new_level_matcher(
-        self, height: int, width: int, channel: int
-    ) -> FaceBlitPatchMatcherCore: ...
+            self.patch_matchers.append(
+                self.level_matcher(
+                    height,
+                    width,
+                    channel,
+                    minimum_patch_size=minimum_patch_size,
+                    threads_per_block=threads_per_block,
+                    num_iter=num_iter,
+                    gpu_id=gpu_id,
+                    guide_weight=guide_weight,
+                    use_mean_target_style=use_mean_target_style,
+                    use_pairwise_patch_error=use_pairwise_patch_error,
+                    tracking_window_size=tracking_window_size,
+                )
+            )
 
     @property
     @abstractmethod
@@ -432,18 +446,11 @@ class PyramidPatchMatcherCore(ABC):
                 nnf, size=(height, width), mode="bilinear", align_corners=False
             )
             nnf = nnf.permute(0, 2, 3, 1).int()
-            # Match ``clamp_bound``: channel 0 = row (y) ∈ [0, height-1], channel 1 = col (x) ∈ [0, width-1].
+            # Match ``clamp_bound``: channel 0 = row (y) in [0, height-1], channel 1 = col (x) in [0, width-1].
             nnf[..., 0] = torch.clamp(nnf[..., 0], 0, height - 1)
             nnf[..., 1] = torch.clamp(nnf[..., 1], 0, width - 1)
 
         return nnf.contiguous()
-
-    @abstractmethod
-    def apply_nnf_to_image(
-        self, nnf: torch.Tensor, image: torch.Tensor
-    ) -> torch.Tensor:
-        """Backend-specific (padded vs unpadded) final remap."""
-        ...
 
     def estimate_nnf(
         self,

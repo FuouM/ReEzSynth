@@ -510,7 +510,7 @@ def write_landmarks_preview_mp4(
 
     If ``faceblit_taichi_solo`` is True (requires ``smooth_landmarks``), each frame
     is only the Taichi FaceBlit result (``stylize_background=False``) at the
-    original resolution—no landmark overlay columns.
+    original resolution (no landmark overlay columns).
 
     If ``faceblit_taichi_triplet`` is True (requires ``smooth_landmarks``; mutually
     exclusive with ``faceblit_taichi_solo``), two landmark columns plus a third
@@ -538,16 +538,16 @@ def write_landmarks_preview_mp4(
             rigid_mix_power=smooth_rigid_mix_power,
         )
 
-    smooth_for_plot = smooth_seq
-    if trajectory_plot_path is not None and smooth_for_plot is None:
-        smooth_for_plot = _smooth_landmarks_for_video(
-            raw_stack,
-            smooth_sigma_frames,
-            motion_aware=smooth_motion_aware,
-            follow_sigma_scale=smooth_follow_sigma_scale,
-            rigid_mix_power=smooth_rigid_mix_power,
-        )
-    if trajectory_plot_path is not None and smooth_for_plot is not None:
+    if trajectory_plot_path is not None:
+        smooth_for_plot = smooth_seq
+        if smooth_for_plot is None:
+            smooth_for_plot = _smooth_landmarks_for_video(
+                raw_stack,
+                smooth_sigma_frames,
+                motion_aware=smooth_motion_aware,
+                follow_sigma_scale=smooth_follow_sigma_scale,
+                rigid_mix_power=smooth_rigid_mix_power,
+            )
         write_landmark_trajectory_figure(
             raw_stack,
             smooth_for_plot,
@@ -583,7 +583,7 @@ def write_landmarks_preview_mp4(
             faceblit_style_cache_dir
             or (output_mp4.parent / f"_fb_style_cache_{style_p.stem}")
         )
-        logger.info(f"[landmark viz] Precomputing Taichi style assets → {cache}")
+        logger.info(f"[landmark viz] Precomputing Taichi style assets -> {cache}")
         fb_style = _prepare_faceblit_style_taichi(
             style_p,
             cache,
@@ -598,10 +598,8 @@ def write_landmarks_preview_mp4(
         fd, raw_path = tempfile.mkstemp(suffix=".mp4", prefix="faceblit_landmarks_")
         os.close(fd)
         video_target = Path(raw_path)
-        cleanup_raw = True
     else:
         video_target = output_mp4
-        cleanup_raw = False
 
     writer = cv2.VideoWriter(str(video_target), fourcc_code, fps, (out_w, out_h))
     if not writer.isOpened():
@@ -640,13 +638,9 @@ def write_landmarks_preview_mp4(
                     left_vis, "no face", (8, 24), font_scale=0.7
                 )
 
-            if smooth_landmarks and smooth_seq is not None:
+            if smooth_seq is not None:
                 sm = smooth_seq[i]
-                if (
-                    faceblit_taichi_solo
-                    and fb_engine is not None
-                    and fb_style is not None
-                ):
+                if faceblit_taichi_solo:
                     if _row_has_valid_landmarks(sm):
                         lm_tuples = _landmarks_to_int_tuples(sm)
                         vis = _stylize_target_taichi_no_bg(
@@ -675,11 +669,7 @@ def write_landmarks_preview_mp4(
                         right_vis, "smoothed", (8, out_h - 12), font_scale=0.65
                     )
                     panels = [left_vis, right_vis]
-                    if (
-                        faceblit_taichi_triplet
-                        and fb_engine is not None
-                        and fb_style is not None
-                    ):
+                    if faceblit_taichi_triplet:
                         if _row_has_valid_landmarks(sm):
                             lm_tuples = _landmarks_to_int_tuples(sm)
                             fb_vis = _stylize_target_taichi_no_bg(
@@ -719,15 +709,9 @@ def write_landmarks_preview_mp4(
                 preset=h264_preset,
             )
         finally:
-            if cleanup_raw:
-                video_target.unlink(missing_ok=True)
+            video_target.unlink(missing_ok=True)
 
     return output_mp4
-
-
-def _default_predictor_path() -> Path:
-    root = Path(__file__).resolve().parent.parent.parent
-    return root / "FaceBlit" / "models" / "shape_predictor_68_face_landmarks.dat"
 
 
 def _default_faceblit_style_path() -> Path:

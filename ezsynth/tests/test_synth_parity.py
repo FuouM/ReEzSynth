@@ -194,7 +194,6 @@ def test_torch_vote_matches_taichi(level_inputs, weighted, bilateral):
         int(bilateral),
         2.0,
         6.0,
-        1,
         torch.zeros((TH, TW, 3), dtype=torch.float32, device=device),
         torch.zeros((TH, TW), dtype=torch.float32, device=device),
     )

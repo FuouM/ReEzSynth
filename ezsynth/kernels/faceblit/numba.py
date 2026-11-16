@@ -29,7 +29,6 @@ def dfs_seed_grow_voting_numba(
     q_y: np.ndarray,
     q_x: np.ndarray,
 ) -> None:
-    # print("DFS NUMBA")
     h, w = target_pos_guide.shape[:2]
     max_q = h * w
     head = 0
@@ -278,46 +277,3 @@ def initialize_nnf_dfs_voting_numba(
     )
 
     return nnf, covered_pixels
-
-
-def build_nnf_dfs_voting_numba(
-    style_pos_guide: np.ndarray,
-    target_pos_guide: np.ndarray,
-    style_app_guide: np.ndarray | None,
-    target_app_gray: np.ndarray | None,
-    h_t: int,
-    w_t: int,
-    threshold: int | None,
-    x: int,
-    y: int,
-    h: int,
-    w: int,
-    look_up_cube: np.ndarray | None,
-    style_h: int,
-    style_w: int,
-    lambda_app: int,
-    lambda_pos: int,
-    patch_size: int,
-) -> np.ndarray:
-    """DFS voting NNF using :func:`dfs_seed_grow_voting_numba` and :func:`denoise_nnf_numba`."""
-    thresh = 50 if threshold is None else threshold
-    nnf, _covered_pixels = initialize_nnf_dfs_voting_numba(
-        target_pos_guide,
-        target_app_gray,
-        style_pos_guide,
-        style_app_guide,
-        look_up_cube,
-        thresh,
-        lambda_pos,
-        lambda_app,
-        style_h,
-        style_w,
-        x,
-        y,
-        h,
-        w,
-        h_t,
-        w_t,
-    )
-
-    return denoise_nnf_numba(nnf, patch_size)

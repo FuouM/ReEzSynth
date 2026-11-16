@@ -2,7 +2,7 @@
 """
 Constants and configuration for the ezsynth library.
 
-All tunables live here as module-level values. ``run_video.py`` copies
+All tunables live here as module-level values. ``ezsynth.cli.video`` copies
 ``RUNPY_STARTUP_ENV`` into ``os.environ`` before importing the project.
 """
 
@@ -66,12 +66,11 @@ TAICHI_INIT_VERBOSE = _env_bool("EZSYNTH_TAICHI_INIT_VERBOSE", False)
 # --- PyTorch compile toggles ---
 TORCH_COMPILE_FUSED_SSD = _env_bool("EZSYNTH_TORCH_COMPILE_FUSED_SSD", False)
 TORCH_COMPILE_PATCH_SSD = _env_bool("EZSYNTH_TORCH_COMPILE_PATCH_SSD", False)
-TORCH_COMPILE_MASK_OPS = _env_bool("EZSYNTH_TORCH_COMPILE_MASK_OPS", False)
 
 # --- Voting chunk budget (megabytes, minimum 8 MiB effective) ---
 VOTE_CHUNK_BUDGET_MB = 72.0
 
-# --- run_video.py Startup Environment ---
+# --- ezsynth.cli.video Startup Environment ---
 # Applied before importing heavy runtime modules in the CLI entrypoint.
 RUNPY_STARTUP_ENV = {
     "KMP_DUPLICATE_LIB_OK": "TRUE",
@@ -86,36 +85,4 @@ def vote_chunk_budget_bytes() -> int:
 
     Controlled by ``VOTE_CHUNK_BUDGET_MB`` in megabytes with an 8 MiB floor.
     """
-    try:
-        mb = float(VOTE_CHUNK_BUDGET_MB)
-    except (TypeError, ValueError):
-        mb = 72.0
-    return max(8 << 20, int(mb * (1 << 20)))
-
-
-def ensure_extension_loaded() -> bool:
-    """Load native ``ebsynth_torch`` once; see ``kernels.synth.cuda_loader``."""
-    from .kernels.synth import cuda_loader as native
-
-    return native.ensure_extension_loaded()
-
-
-# Extension state, mirrored from ``kernels.synth.cuda_loader`` (updated by
-# ``ensure_extension_loaded()``):
-# - ``EXTENSION_AVAILABLE``: the native module is loaded.
-# - ``EXTENSION_CUDA_AVAILABLE``: it was compiled with CUDA kernels and a GPU exists.
-# - ``ebsynth_torch``: the loaded module, or None.
-_NATIVE_STATE = {
-    "EXTENSION_AVAILABLE": lambda native: native.module is not None,
-    "EXTENSION_CUDA_AVAILABLE": lambda native: native.cuda_available,
-    "ebsynth_torch": lambda native: native.module,
-}
-
-
-def __getattr__(name: str):
-    getter = _NATIVE_STATE.get(name)
-    if getter is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    from .kernels.synth import cuda_loader as native
-
-    return getter(native)
+    return max(8 << 20, int(VOTE_CHUNK_BUDGET_MB * (1 << 20)))

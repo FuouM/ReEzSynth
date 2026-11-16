@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 import torch
 
 from .ops import (
-    PAD_SIZE,
     PageEdgeParams,
     PstEdgeParams,
-    merge_page_params,
-    merge_pst_params,
     pad_gray_reflect,
     replace_zeros_tensor,
     unpad_gray,
@@ -39,15 +35,10 @@ def _page_gpu(device: str) -> PAGE_GPU:
     return PAGE_GPU(direction_bins=10, device=device)
 
 
-def compute_pst_edge(
-    bgr: np.ndarray,
-    device: str = "cuda",
-    params: PstEdgeParams | Mapping[str, Any] | None = None,
-    pad_size: int = PAD_SIZE,
-) -> np.ndarray:
-    p = merge_pst_params(params)
+def compute_pst_edge(bgr: np.ndarray, device: str = "cuda") -> np.ndarray:
+    p = PstEdgeParams()
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    padded = pad_gray_reflect(gray, pad_size)
+    padded = pad_gray_reflect(gray)
 
     pst = _pst_gpu(device)
     pst.h = padded.shape[0]
@@ -63,18 +54,13 @@ def compute_pst_edge(
         p.morph_flag,
     )
     edge_map = pst.pst_output.cpu().numpy()
-    return unpad_gray(edge_map, pad_size)
+    return unpad_gray(edge_map)
 
 
-def compute_page_edge(
-    bgr: np.ndarray,
-    device: str = "cuda",
-    params: PageEdgeParams | Mapping[str, Any] | None = None,
-    pad_size: int = PAD_SIZE,
-) -> np.ndarray:
-    p = merge_page_params(params)
+def compute_page_edge(bgr: np.ndarray, device: str = "cuda") -> np.ndarray:
+    p = PageEdgeParams()
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    padded = pad_gray_reflect(gray, pad_size)
+    padded = pad_gray_reflect(gray)
 
     page = _page_gpu(device)
     page.h = padded.shape[0]
@@ -98,4 +84,4 @@ def compute_page_edge(
     )
     page.create_page_edge()
     edge_map = page.page_edge.cpu().numpy()
-    return unpad_gray(edge_map, pad_size)
+    return unpad_gray(edge_map)

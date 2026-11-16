@@ -10,16 +10,16 @@ from .config import (
     BlendingConfig,
     DebugConfig,
     EbsynthParamsConfig,
+    MainConfig,
     PipelineConfig,
     PrecomputationConfig,
     ProjectConfig,
 )
-from .service import SynthesisConfigs
 
 
-def configs_from_mapping(data: Mapping[str, Any]) -> SynthesisConfigs:
+def configs_from_mapping(data: Mapping[str, Any]) -> MainConfig:
     """Build typed config sections from a parsed project config mapping."""
-    return SynthesisConfigs(
+    return MainConfig(
         project=ProjectConfig(**data["project"]),
         precomputation=PrecomputationConfig(**data["precomputation"]),
         pipeline=PipelineConfig(**data["pipeline"]),
@@ -29,7 +29,7 @@ def configs_from_mapping(data: Mapping[str, Any]) -> SynthesisConfigs:
     )
 
 
-def configs_from_yaml(path: str | Path) -> SynthesisConfigs:
+def configs_from_yaml(path: str | Path) -> MainConfig:
     """Load a YAML project config into typed config sections."""
     config_path = Path(path)
     if not config_path.exists():

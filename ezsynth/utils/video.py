@@ -1,4 +1,4 @@
-"""Video frame extraction and browser-friendly H.264 export helpers."""
+"""Browser-friendly H.264 video export."""
 
 import logging
 import os
@@ -10,52 +10,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
-
-
-def extract_video_frames_to_png_directory(
-    video_path: str | Path, output_dir: str | Path
-) -> int:
-    """
-    Decode ``video_path`` and write ``{i:05d}.png`` into ``output_dir``.
-
-    Returns the number of frames written.
-    """
-    video_path = Path(video_path)
-    output_dir = Path(output_dir)
-
-    if not video_path.exists():
-        logger.error(f"Error: Video file not found at {video_path}")
-        return 0
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Extracting frames from '{video_path.name}' to '{output_dir}'...")
-
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        logger.error("Error: Could not open video file.")
-        return 0
-
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    frame_num = 0
-    with tqdm(total=max(frame_count, 0), desc="Extracting Frames") as pbar:
-        while True:
-            success, frame = cap.read()
-            if not success:
-                break
-
-            output_filename = output_dir / f"{frame_num:05d}.png"
-            cv2.imwrite(str(output_filename), frame)
-
-            frame_num += 1
-            pbar.update(1)
-
-    cap.release()
-    logger.info(f"\nSuccessfully extracted {frame_num} frames.")
-    return frame_num
 
 
 def require_ffmpeg_binary() -> str:

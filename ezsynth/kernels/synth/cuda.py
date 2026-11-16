@@ -5,6 +5,7 @@ JIT-builds it.
 """
 
 import logging
+from contextlib import nullcontext
 
 import torch
 
@@ -84,34 +85,13 @@ class Backend:
             self.enable_benchmarking(True)
 
         device_type = "cpu" if style_tensor.device.type == "cpu" else "cuda"
-        timer_name = f"{device_type}_level_execution"
-
-        if self.benchmark_enabled:
-            with self.timer.time_operation(timer_name):
-                return self._ext.run_level(
-                    style_tensor,
-                    source_guide_tensor,
-                    target_guide_tensor,
-                    modulation_tensor,
-                    nnf,
-                    style_weights,
-                    guide_weights,
-                    uniformity_weight,
-                    patch_size,
-                    vote_mode,
-                    search_vote_iters,
-                    patch_match_iters,
-                    stop_threshold,
-                    rand_states,
-                    self.ebsynth_config.search_pruning_threshold,
-                    cost_function_mode,
-                    self.ebsynth_config.use_optimization,
-                    self.ebsynth_config.use_bilateral,
-                    self.ebsynth_config.sigma_spatial,
-                    self.ebsynth_config.sigma_color,
-                    self.ebsynth_config.n_size_step,
-                )
-        else:
+        timed = (
+            self.timer.time_operation(f"{device_type}_level_execution")
+            if self.benchmark_enabled
+            else nullcontext()
+        )
+        cfg = self.ebsynth_config
+        with timed:
             return self._ext.run_level(
                 style_tensor,
                 source_guide_tensor,
@@ -127,11 +107,11 @@ class Backend:
                 patch_match_iters,
                 stop_threshold,
                 rand_states,
-                self.ebsynth_config.search_pruning_threshold,
+                cfg.search_pruning_threshold,
                 cost_function_mode,
-                self.ebsynth_config.use_optimization,
-                self.ebsynth_config.use_bilateral,
-                self.ebsynth_config.sigma_spatial,
-                self.ebsynth_config.sigma_color,
-                self.ebsynth_config.n_size_step,
+                cfg.use_optimization,
+                cfg.use_bilateral,
+                cfg.sigma_spatial,
+                cfg.sigma_color,
+                cfg.n_size_step,
             )

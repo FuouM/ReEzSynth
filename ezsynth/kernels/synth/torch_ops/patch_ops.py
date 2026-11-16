@@ -1,4 +1,3 @@
-# ezsynth/torch_ops/patch_ops.py
 """
 Patch extraction and distance computation operations for EBSynth.
 
@@ -76,83 +75,6 @@ def extract_patches(
         clear_torch_device_cache(image.device)
 
     return result
-
-
-def extract_patches_from_coords(
-    image: torch.Tensor, coords: torch.Tensor, patch_size: int
-) -> torch.Tensor:
-    """
-    Extract patches from specific coordinates using advanced indexing.
-    More memory efficient than unfolding the whole image when we only need a subset.
-
-    Args:
-        image: (H, W, C) tensor
-        coords: (N, 2) tensor of (x, y) top-left coordinates
-        patch_size: Size of patches
-
-    Returns:
-        patches: (N, C*ps*ps) flattened patches
-    """
-    H, W, _C = image.shape
-    N = coords.shape[0]
-
-    # Ensure coords are long for indexing
-    coords = coords.long()
-
-    # Create grid of offsets
-    # (ps, ps)
-    ys = torch.arange(patch_size, device=image.device)
-    xs = torch.arange(patch_size, device=image.device)
-
-    # (ps*ps)
-    grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
-    grid_y = grid_y.flatten()
-    grid_x = grid_x.flatten()
-
-    # Compute all sampling coordinates
-    # coords: (N, 2) -> (N, 1)
-    # grid: (ps*ps) -> (1, ps*ps)
-    # sample_y: (N, ps*ps)
-    sample_y = coords[:, 1:2] + grid_y.unsqueeze(0)
-    sample_x = coords[:, 0:1] + grid_x.unsqueeze(0)
-
-    # Clamp to be safe (though input coords should be valid for top-left)
-    # We need to clamp the *bottom-right* of the patch too
-    # But assuming valid top-left coords that allow for a full patch:
-    # sample_y will range from y to y+ps-1.
-    # If y < H-ps+1, then y+ps-1 < H.
-    sample_y = sample_y.clamp(0, H - 1)
-    sample_x = sample_x.clamp(0, W - 1)
-
-    # Gather pixels
-    # image: (H, W, C)
-    # We want (N, ps*ps, C)
-
-    # Advanced indexing with broadcasting
-    # sample_y, sample_x are (N, ps*ps)
-    # We need to expand them to (N, ps*ps, C)? No, we can index directly if we handle C carefully.
-    # Actually, image[sample_y, sample_x] will give (N, ps*ps, C)
-
-    patches = image[sample_y, sample_x]  # (N, ps*ps, C)
-
-    # Flatten to (N, C*ps*ps) to match expected format for some ops,
-    # OR keep as (N, C, ps, ps) depending on usage.
-    # The existing extract_patches returns (H, W, patch_size*patch_size*C) -> flattened patches.
-    # Let's match that "flattened patch" structure: (N, C*ps*ps)
-    # But wait, existing extract_patches returns (H, W, -1) where -1 is C*ps*ps.
-    # Here we have N patches.
-
-    # patches is (N, ps*ps, C).
-    # We need to permute to (N, C, ps*ps) then flatten?
-    # Let's check how unfold does it.
-    # Unfold (1, C, H, W) -> (1, C*ps*ps, L).
-    # So the channel dimension comes first in the flattened vector.
-    # i.e. [R0, R1... G0, G1... B0, B1...]
-
-    patches = patches.permute(0, 2, 1)  # (N, C, ps*ps)
-    patches = patches.reshape(N, -1)  # (N, C*ps*ps)
-
-    return patches
 
 
 # (patch_size, device_str) -> (dy[K], dx[K]) long offsets in unfold order
@@ -391,37 +313,6 @@ def compute_patch_ssd_style_guide_fused(
     return error
 
 
-def compute_patch_stats(
-    patches: torch.Tensor, patch_size: int, num_channels: int
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Precompute statistics for NCC: vals (grayscale), mean, std.
-
-    Args:
-        patches: (..., C*ps*ps) flattened patches
-        patch_size: int
-        num_channels: int
-
-    Returns:
-        vals: (..., ps*ps) - channel-averaged pixel values
-        mean: (..., 1) - mean of vals
-        std: (..., 1) - std of vals
-    """
-    ps_sq = patch_size * patch_size
-    epsilon = 1e-6
-
-    # Reshape to (..., C, ps*ps)
-    patches_reshaped = patches.view(*patches.shape[:-1], num_channels, ps_sq)
-
-    # Average over channels to get "grayscale" equivalent for NCC
-    vals = patches_reshaped.float().mean(dim=-2)  # (..., ps_sq)
-
-    mean = vals.mean(dim=-1, keepdim=True)  # (..., 1)
-    std = vals.std(dim=-1, keepdim=True, unbiased=False) + epsilon  # (..., 1)
-
-    return vals, mean, std
-
-
 def compute_patch_ncc_vectorized(
     source_style_patches: torch.Tensor,
     target_style_patches: torch.Tensor,
@@ -431,8 +322,6 @@ def compute_patch_ncc_vectorized(
     patch_size: int,
     style_weights: torch.Tensor,
     guide_weights: torch.Tensor,
-    source_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-    target_stats: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     target_modulation_patches: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Dense NCC style cost plus guide SSD. Handles both 2D grid and 1D list of

@@ -1,6 +1,5 @@
 """FastBlend implementation (FaceBlit-style ``src`` package layout).
 
-Modules:
-  ``backends/`` — patch matchers (CUDA / CuPy / Taichi) and factories
-  ``runtime/`` — device selection for balanced-mode tensor staging
+The patch-matching engines live in ``ezsynth.kernels.fastblend``; this package holds the
+runners, configuration, engine and public API.
 """
