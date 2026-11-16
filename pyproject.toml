@@ -38,7 +38,9 @@ phycv = ["phycv>=1.2"]
 faceblit = [
     "face-alignment>=1.4",
     "numba>=0.59",
-    "pillow>=10.0",
+    # Pillow 13.0.0 fixes the open advisories but needs Python >= 3.11; 3.10 stays on 12.x.
+    "pillow>=13.0; python_version >= '3.11'",
+    "pillow>=10.0; python_version < '3.11'",
     "matplotlib>=3.7",
 ]
 # Optional dlib landmark backend (sdist only: needs CMake and a C++ compiler).
